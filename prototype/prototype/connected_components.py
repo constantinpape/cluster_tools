@@ -43,7 +43,6 @@ def connected_components_ufd(path, key,
         # get all the relevant blocks
         block = blocking.getBlockWithHalo(block_id, halo)
         inner_block, outer_block, local_block = block.innerBlock, block.outerBlock, block.innerBlockLocal
-        outer_shape = outer_block.shape
 
         # we offset with the coordinate of the leftmost pixel
         offset = sum(e * s for e, s in zip(inner_block.begin, shape))
@@ -53,7 +52,7 @@ def connected_components_ufd(path, key,
         begin, end = inner_block.begin, inner_block.end
         bb_inner = tuple(slice(b, e) for b, e in zip(begin, end))
         bb_local = tuple(slice(b, e) for b, e in zip(local_block.begin, local_block.end))
-        total_shape = outer_block.shape
+        outer_shape = outer_block.shape
 
         # get the subvolume, find connected components and write non-overlapping part to file
         subvolume = ds[bb_outer]
@@ -69,12 +68,12 @@ def connected_components_ufd(path, key,
             neighbor_id = blocking.getNeighborId(block_id, axis=axis, lower=to_lower)
 
             if neighbor_id != -1:
-                overlap_bb = tuple(slice(1 if begin[i] != 0 else 0,
-                                         outer_shape[i] - 1 if end[i] != shape[i] else outer_shape[i]) if i != axis else
+                overlap_bb = tuple(slice(None) if i != axis else
                                    slice(0, 2) if to_lower else
-                                   slice(total_shape[i] - 2, total_shape[i]) for i in range(3))
+                                   slice(outer_shape[i] - 2, outer_shape[i]) for i in range(3))
 
                 overlap = cc[overlap_bb]
+
                 vigra.writeHDF5(overlap, os.path.join(tmp_folder, 'block_%i_%i.h5' % (block_id, neighbor_id)),
                                 'data', compression='gzip')
 
@@ -104,9 +103,7 @@ def connected_components_ufd(path, key,
         id_a, id_b = ovlp_ids
         ovlp_a = vigra.readHDF5(os.path.join(tmp_folder, 'block_%i_%i.h5' % (id_a, id_b)), 'data')
         ovlp_b = vigra.readHDF5(os.path.join(tmp_folder, 'block_%i_%i.h5' % (id_b, id_a)), 'data')
-        if ovlp_a.shape != ovlp_b.shape:
-            print(id_a, id_b)
-            assert ovlp_a.shape == ovlp_b.shape, "%s, %s" % (str(ovlp_a.shape), str(ovlp_b.shape))
+
         # match the non-zero ids
         labeled = ovlp_a != 0
         ids_a, ids_b = ovlp_a[labeled], ovlp_b[labeled]
@@ -116,13 +113,11 @@ def connected_components_ufd(path, key,
             return node_assignment
 
     t2 = time.time()
-    # with futures.ThreadPoolExecutor(n_threads) as tp:
-    #     tasks = [tp.submit(process_overlap, ovlp_ids) for ovlp_ids in overlap_ids]
-    #     result = [t.result() for t in tasks]
-    #     result = [res for res in result if res is not None]
-    #     node_assignment = np.concatenate(result, axis=0)
-    result = [process_overlap(ovlp_ids) for ovlp_ids in overlap_ids]
-    node_assignment = np.concatenate(result, axis=0)
+    with futures.ThreadPoolExecutor(n_threads) as tp:
+        tasks = [tp.submit(process_overlap, ovlp_ids) for ovlp_ids in overlap_ids]
+        result = [t.result() for t in tasks]
+        result = [res for res in result if res is not None]
+        node_assignment = np.concatenate(result, axis=0)
     print("Second pass took", time.time() - t2, "s")
 
     #
