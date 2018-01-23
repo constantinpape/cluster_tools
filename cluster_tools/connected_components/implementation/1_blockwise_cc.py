@@ -1,6 +1,7 @@
+#! /usr/bin/python
+
 import os
 import argparse
-import json
 
 import numpy as np
 import vigra
@@ -58,17 +59,16 @@ def process_single_block(block_id, blocking, ds_in, ds_out, tmp_folder):
 
 def cc_ufd_step1(in_path, in_key,
                  out_path, out_key,
-                 block_shape, tmp_folder,
+                 tmp_folder, block_shape,
                  block_file):
 
     assert os.path.exists(in_path)
     assert os.path.exists(out_path)
     assert os.path.exists(tmp_folder)
 
-    with open(block_file, 'r') as f:
-        inputs = json.load(f)
-    job_id = inputs["job_id"]
-    block_list = inputs["block_list"]
+    block_list = np.load(block_file)
+    # we get the job id from the file name
+    job_id = int(os.path.split(block_file)[1].split('_')[2][:-4])
 
     ds_in = z5py.File(in_path, use_zarr_format=False)[in_key]
     ds_out = z5py.File(out_path, use_zarr_format=False)[out_key]
@@ -81,8 +81,8 @@ def cc_ufd_step1(in_path, in_key,
     result = [process_single_block(block_id, blocking, ds_in, ds_out, tmp_folder) for block_id in block_list]
     overlap_ids = [ids for res in result for ids in res[0]]
     max_id = np.max([res[1] for res in result])
-    with open(os.path.join(tmp_folder, '1_output_%i.json' % job_id), 'w') as f:
-        json.dump({"overlap_ids": overlap_ids, "max_id": max_id}, f)
+    np.save(overlap_ids, os.path.join(tmp_folder, '1_output_ovlps_%i.npy' % job_id))
+    np.save(max_id, os.path.join(tmp_folder, '1_output_maxid_%i.npy' % job_id))
     print("Success job %i" % job_id)
 
 
@@ -92,12 +92,12 @@ if __name__ == '__main__':
     parser.add_argument("in_key", type=str)
     parser.add_argument("out_path", type=str)
     parser.add_argument("out_key", type=str)
-    parser.add_argument("--block_shape", nargs=3, type=int)
     parser.add_argument("--tmp_folder", str)
+    parser.add_argument("--block_shape", nargs=3, type=int)
     parser.add_argument("--block_file", str)
 
     args = parser.parse_args()
     cc_ufd_step1(args.in_path, args.in_key,
                  args.out_path, args.out_key,
-                 list(args.block_shape), args.tmp_folder,
+                 args.tmp_folder, list(args.block_shape),
                  args.block_file)

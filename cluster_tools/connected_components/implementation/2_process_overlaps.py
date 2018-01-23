@@ -1,6 +1,7 @@
+#! /usr/bin/python
+
 import os
 import argparse
-import json
 import vigra
 import numpy as np
 
@@ -20,15 +21,12 @@ def process_overlap(ovlp_ids, tmp_folder):
 
 
 def cc_ufd_step2(tmp_folder, ovlp_file):
-    with open(ovlp_file, 'r') as f:
-        inputs = json.load(f)
-        job_id = inputs['job_id']
-        overlap_ids = inputs['overlap_ids']
+    overlap_ids = np.load(ovlp_file)
+    job_id = int(os.path.split(ovlp_file)[1].split('_')[2][:-4])
 
     node_assignments = [process_overlap(ovlp_ids) for ovlp_ids in overlap_ids]
     node_assignments = [na.tolist() for na in node_assignments if na is not None]
-    with open(os.path.join(tmp_folder, '2_output_%i.json' % job_id), 'w') as f:
-        json.dump(node_assignments, f)
+    np.save(node_assignments, os.path.join(tmp_folder, '2_output_%i.npy' % job_id))
     print("Success job %i" % job_id)
 
 

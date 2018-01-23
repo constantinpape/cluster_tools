@@ -1,8 +1,10 @@
+#! /usr/bin/python
+
 import os
-import json
 import argparse
 import nifty
 import z5py
+import numpy as np
 
 
 def blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder):
@@ -13,8 +15,7 @@ def blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder):
     chunk_size = n_blocks // n_jobs
     block_list = list(range(n_blocks))
     for i in range(0, len(block_list), chunk_size):
-        with open(os.path.join(tmp_folder, '1_input_%i.json' % i), 'w') as f:
-            json.dump({'job_id': i, 'block_list': block_list[i:i + chunk_size]}, f)
+        np.save(block_list[i:i + chunk_size], '1_input_%i.npy' % i)
 
 
 def prepare(in_path, in_key,
