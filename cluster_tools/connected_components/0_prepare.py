@@ -1,17 +1,26 @@
 import os
-import argparse
-import z5py
 import json
+import argparse
+import nifty
+import z5py
 
 
-def make_out_list(shape, block_shape, save_file):
-    pass
+def blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder):
+    blocking = nifty.tools.blocking(roiBegin=[0, 0, 0],
+                                    roiEnd=list(shape),
+                                    blockShape=block_shape)
+    n_blocks = blocking.numberOfBlocks
+    chunk_size = n_blocks // n_jobs
+    block_list = list(range(n_blocks))
+    for i in range(0, len(block_list), chunk_size):
+        with open(os.path.join(tmp_folder, '1_input_%i.json' % i), 'w') as f:
+            json.dump({'job_id': i, 'block_list': block_list[i:i + chunk_size]}, f)
 
 
 def prepare(in_path, in_key,
             out_path, out_key,
             tmp_folder, out_block_shape,
-            out_chunks):
+            out_chunks, n_jobs):
 
     # TODO assert that out_block_shape is a multiple of out_chunks
     assert os.path.exists(in_path), in_path
@@ -29,12 +38,22 @@ def prepare(in_path, in_key,
         assert ds_out.shape == shape
         assert ds_out.chunks == out_chunks
 
-    save_file = ''
-    make_out_list(shape, out_block_shape, save_file)
+    blocks_to_jobs(shape, out_block_shape, n_jobs, tmp_folder)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    # TODO read all arguments
-    parser.add_argument("")
-    prepare()
+    parser.add_argument("in_path", type=str)
+    parser.add_argument("in_key", type=str)
+    parser.add_argument("out_path", type=str)
+    parser.add_argument("out_key", type=str)
+    parser.add_argument("--tmp_folder", str)
+    parser.add_argument("--block_shape", nargs=3, type=int)
+    parser.add_argument("--chunks", nargs=3, type=int)
+    parser.add_argument("--n_jobs", type=int)
+
+    args = parser.parse_args()
+    prepare(args.in_path, args.in_key,
+            args.out_path, args.out_key,
+            args.tmp_folder, args.block_shape,
+            args.chunks, args.n_jobs)
