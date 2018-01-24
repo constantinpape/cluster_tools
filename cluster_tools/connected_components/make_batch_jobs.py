@@ -36,6 +36,10 @@ def make_batch_jobs_step1(in_path, in_key, out_path, out_key, tmp_folder,
     replace_shebang('1_blockwise_cc.py', shebang)
     make_executable('1_blockwise_cc.py')
 
+    copy(os.path.join(file_dir, 'implementation/1a_merge_ovlp_ids.py'), cwd)
+    replace_shebang('1a_merge_ovlp_ids.py', shebang)
+    make_executable('1a_merge_ovlp_ids.py')
+
     with open(script_file, 'w') as f:
         f.write('./0_prepare.py %s %s %s %s --tmp_folder %s --block_shape %s --chunks %s --n_jobs %s\n' %
                 (in_path, in_key, out_path, out_key, tmp_folder,
@@ -51,5 +55,12 @@ def make_batch_jobs_step1(in_path, in_key, out_path, out_key, tmp_folder,
                 f.write('./1_blockwise_cc.py %s %s %s %s --tmp_folder %s --block_shape %s --block_file %s\n' %
                         (in_path, in_key, out_path, out_key, tmp_folder,
                          ' '.join(map(str, block_shape)),
-                         os.path.join(tmp_folder, '1_inputs_%i.npy' % job_id)))
+                         os.path.join(tmp_folder, '1_input_%i.npy' % job_id)))
+
+        f.write('./1a_merge_ovlp_ids.py %s %s' % (tmp_folder, str(n_jobs)))
+
     make_executable(script_file)
+
+
+def make_batch_jobs_step2():
+    pass

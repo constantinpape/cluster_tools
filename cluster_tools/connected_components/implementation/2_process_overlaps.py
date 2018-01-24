@@ -26,13 +26,13 @@ def cc_ufd_step2(tmp_folder, ovlp_file):
 
     node_assignments = [process_overlap(ovlp_ids) for ovlp_ids in overlap_ids]
     node_assignments = [na.tolist() for na in node_assignments if na is not None]
-    np.save(node_assignments, os.path.join(tmp_folder, '2_output_%i.npy' % job_id))
+    np.save(os.path.join(tmp_folder, '2_output_%i.npy' % job_id), node_assignments)
     print("Success job %i" % job_id)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('tmp_folder', str)
-    parser.add_argument('ovlp_file', str)
+    parser.add_argument('tmp_folder', type=str)
+    parser.add_argument('ovlp_file', type=str)
     args = parser.parse_args()
     cc_ufd_step2(args.tmp_folder, args.ovlp_file)

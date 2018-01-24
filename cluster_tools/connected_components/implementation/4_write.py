@@ -45,10 +45,10 @@ def cc_ufd_step4(block_file, out_path, out_key, tmp_folder, block_shape):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('block_file', str)
-    parser.add_argument('out_path', str)
-    parser.add_argument('out_key', str)
-    parser.add_argument('tmp_folder', str)
+    parser.add_argument('block_file', type=str)
+    parser.add_argument('out_path', type=str)
+    parser.add_argument('out_key', type=str)
+    parser.add_argument('tmp_folder', type=str)
     parser.add_argument("--block_shape", nargs=3, type=int)
     args = parser.parse_args()
     cc_ufd_step4(args.block_file, args.out_path,

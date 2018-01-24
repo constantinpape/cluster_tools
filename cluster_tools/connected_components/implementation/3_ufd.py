@@ -21,14 +21,14 @@ def cc_ufd_step3(tmp_folder, n_jobs):
     node_labeling = ufd.elementLabeling()
     # TODO relabele node-labeling ?
 
-    np.save(node_labeling, os.path.join(tmp_folder, 'node_labeling.npy'))
+    np.save(os.path.join(tmp_folder, 'node_labeling.npy'), node_labeling)
 
     print("Success")
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('tmp_folder', str)
-    parser.add_argument('n_jobs', int)
+    parser.add_argument('tmp_folder', type=str)
+    parser.add_argument('n_jobs', type=int)
     args = parser.parse_args()
     cc_ufd_step3(args.tmp_folder, args.n_jobs)

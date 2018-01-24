@@ -81,8 +81,8 @@ def cc_ufd_step1(in_path, in_key,
     result = [process_single_block(block_id, blocking, ds_in, ds_out, tmp_folder) for block_id in block_list]
     overlap_ids = [ids for res in result for ids in res[0]]
     max_id = np.max([res[1] for res in result])
-    np.save(overlap_ids, os.path.join(tmp_folder, '1_output_ovlps_%i.npy' % job_id))
-    np.save(max_id, os.path.join(tmp_folder, '1_output_maxid_%i.npy' % job_id))
+    np.save(os.path.join(tmp_folder, '1_output_ovlps_%i.npy' % job_id), overlap_ids)
+    np.save(os.path.join(tmp_folder, '1_output_maxid_%i.npy' % job_id), max_id)
     print("Success job %i" % job_id)
 
 
@@ -92,9 +92,9 @@ if __name__ == '__main__':
     parser.add_argument("in_key", type=str)
     parser.add_argument("out_path", type=str)
     parser.add_argument("out_key", type=str)
-    parser.add_argument("--tmp_folder", str)
+    parser.add_argument("--tmp_folder", type=str)
     parser.add_argument("--block_shape", nargs=3, type=int)
-    parser.add_argument("--block_file", str)
+    parser.add_argument("--block_file", type=str)
 
     args = parser.parse_args()
     cc_ufd_step1(args.in_path, args.in_key,
