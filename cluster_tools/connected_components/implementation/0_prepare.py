@@ -5,6 +5,7 @@ import argparse
 import nifty
 import z5py
 import numpy as np
+from math import ceil
 
 
 def blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder):
@@ -12,7 +13,7 @@ def blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder):
                                     roiEnd=list(shape),
                                     blockShape=block_shape)
     n_blocks = blocking.numberOfBlocks
-    chunk_size = n_blocks // n_jobs
+    chunk_size = int(ceil(float(n_blocks) / n_jobs))
     block_list = list(range(n_blocks))
     for idx, i in enumerate(range(0, len(block_list), chunk_size)):
         np.save(os.path.join(tmp_folder, '1_input_%i.npy' % idx), block_list[i:i + chunk_size])

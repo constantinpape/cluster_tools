@@ -14,14 +14,14 @@ def assign_node_ids(block_id, blocking, ds_out, node_labeling):
     block = blocking.getBlock(block_id)
     bb = tuple(slice(b, e) for b, e in zip(block.begin, block.end))
     subvol = ds_out[bb]
-    # map node-ids in block
-    # TODO this can be done faster !!!!!
-    # maybe we should do this in nifty tools
-    sub_ids = np.unique(subvol)
-    sub_ids = sub_ids[sub_ids != 0]
-    for sub_id in sub_ids:
-        subvol[subvol == sub_id] = node_labeling[sub_id]
-    ds_out[bb] = subvol
+    # # map node-ids in block
+    # # TODO this can be done faster !!!!!
+    # # maybe we should do this in nifty tools
+    # sub_ids = np.unique(subvol)
+    # sub_ids = sub_ids[sub_ids != 0]
+    # for sub_id in sub_ids:
+    #     subvol[subvol == sub_id] = node_labeling[sub_id]
+    ds_out[bb] = nifty.tools.take(node_labeling, subvol)
 
 
 def cc_ufd_step4(block_file, out_path, out_key, tmp_folder, block_shape):
