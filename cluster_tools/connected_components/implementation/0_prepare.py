@@ -23,8 +23,8 @@ def prepare(in_path, in_key,
             tmp_folder, out_block_shape,
             out_chunks, n_jobs):
 
-    # TODO assert that out_block_shape is a multiple of out_chunks
-    assert os.path.exists(in_path), in_path
+    assert all(bs % cs == 0 for bs, cs in zip(out_block_shape, out_chunks)), "Block shape is not a multiple of chunk shape"
+    assert os.path.exists(in_path), "Input at %s does not exist" % in_path
     n5_in = z5py.File(in_path, use_zarr_format=False)
     ds = n5_in[in_key]
     shape = ds.shape
