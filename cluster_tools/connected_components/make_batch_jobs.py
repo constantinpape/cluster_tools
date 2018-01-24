@@ -20,7 +20,7 @@ def make_executable(path):
 
 def make_batch_jobs_step1(in_path, in_key, out_path, out_key, tmp_folder,
                           block_shape, chunks, n_jobs, executable,
-                          script_file='jobs_step1.sh', use_bsub=True):
+                          script_file='jobs_step1.sh', use_bsub=True, eta=2):
 
     # copy the relevant files
     file_dir = os.path.dirname(os.path.abspath(__file__))
@@ -44,14 +44,17 @@ def make_batch_jobs_step1(in_path, in_key, out_path, out_key, tmp_folder,
                  str(n_jobs)))
 
         for job_id in range(n_jobs):
+            command = './1_blockwise_cc.py %s %s %s %s --tmp_folder %s --block_shape %s --block_file %s' % \
+                      (in_path, in_key, out_path, out_key, tmp_folder,
+                       ' '.join(map(str, block_shape)),
+                       os.path.join(tmp_folder, '1_input_%i.npy' % job_id))
             if use_bsub:
-                # TODO
-                pass
+                f.write('bsub -J cc_ufd_step1_%i -We %i -o /dev/null \'%s > log_cc_ufd_step1_%i\' \n' %
+                        (job_id, eta, command, job_id))
             else:
-                f.write('./1_blockwise_cc.py %s %s %s %s --tmp_folder %s --block_shape %s --block_file %s\n' %
-                        (in_path, in_key, out_path, out_key, tmp_folder,
-                         ' '.join(map(str, block_shape)),
-                         os.path.join(tmp_folder, '1_input_%i.npy' % job_id)))
+                f.write(command + '\n')
+
+    make_executable(script_file)
 
 
 def make_batch_jobs_step2(tmp_folder, n_jobs, executable,
@@ -124,8 +127,8 @@ def make_batch_jobs_step4(out_path, out_key, tmp_folder, block_shape,
             else:
                 f.write('./4_write.py %s %s %s %s --block_shape %s \n' %
                         (os.path.join(tmp_folder, '1_input_%i.npy' % job_id),
-                        out_path, out_key, tmp_folder,
-                        ' '.join(map(str, block_shape))))
+                         out_path, out_key, tmp_folder,
+                         ' '.join(map(str, block_shape))))
 
     make_executable(script_file)
 
