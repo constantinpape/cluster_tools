@@ -9,6 +9,7 @@ import nifty
 import z5py
 
 
+# FIXME change offset handling !!!
 def process_single_block(block_id, blocking, ds_in, ds_out, tmp_folder):
     shape = ds_in.shape
     halo = [1, 1, 1]
