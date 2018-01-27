@@ -1,4 +1,5 @@
 import os
+import time
 import argparse
 import numpy as np
 
@@ -41,12 +42,16 @@ def merge_blocks(ovlp_ids, tmp_folder, offsets, ovlp_threshold):
 
 
 def watershed_step3(input_file, tmp_folder, ovlp_threshold=.9):
+    t0 = time.time()
     overlap_ids = np.load(input_file).squeeze()
     offsets = np.load(os.path.join(tmp_folder, 'offsets.npy'))
     results = [merge_blocks(ovlp_ids, tmp_folder, offsets, ovlp_threshold) for ovlp_ids in overlap_ids]
     node_assignment = np.concatenate([res for res in results if res is not None], axis=0)
     job_id = int(os.path.split(input_file)[1].split('_')[3][:-4])
     np.save(os.path.join(tmp_folder, '3_output_assignments_%i.npy' % job_id), node_assignment)
+
+    print("Success %i" % job_id)
+    print("In %f s" % (time.time() - t0,))
 
 
 if __name__ == '__main__':

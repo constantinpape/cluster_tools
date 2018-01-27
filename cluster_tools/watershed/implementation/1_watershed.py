@@ -1,5 +1,6 @@
 import os
 import argparse
+import time
 import numpy as np
 
 import vigra
@@ -86,7 +87,6 @@ def single_block_watershed(block_id, blocking,
                            halo, threshold_cc,
                            threshold_dt, sigma_seeds,
                            tmp_folder):
-    print("Start", block_id, "/", blocking.numberOfBlocks)
     block = blocking.getBlockWithHalo(block_id, halo)
 
     # get all blockings
@@ -127,6 +127,7 @@ def watershed_step1(aff_path_xy, key_xy, aff_path_z, key_z, out_path, key_out,
                     out_blocks, tmp_folder, block_file, halo=[5, 50, 50],
                     threshold_cc=.95, threshold_dt=.1, sigma_seeds=1.):
 
+    t0 = time.time()
     ds_xy = z5py.File(aff_path_xy)[key_xy]
     ds_z = z5py.File(aff_path_z)[key_z]
     ds_out = z5py.File(out_path, use_zarr_format=False)[key_out]
@@ -143,6 +144,9 @@ def watershed_step1(aff_path_xy, key_xy, aff_path_z, key_z, out_path, key_out,
                                           tmp_folder) for block_id in range(block_list)]
     job_id = int(os.path.split(block_file)[1].split('_')[2][:-4])
     np.save(os.path.join(tmp_folder, '1_output_ovlps_%i.npy' % job_id), overlap_ids)
+
+    print("Success job %i" % job_id)
+    print("In %f s" % (time.time() - t0,))
 
 
 if __name__ == '__main__':

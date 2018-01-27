@@ -1,4 +1,5 @@
 import os
+import time
 import argparse
 import numpy as np
 import nifty
@@ -10,7 +11,7 @@ def watershed_step2(out_path, key_out, tmp_folder, block_shape):
     blocking = nifty.tools.blocking(roiBegin=[0, 0, 0],
                                     roiEnd=shape,
                                     blockShape=block_shape)
-    # TODO
+    t0 = time.time()
     offsets = np.array([np.load(os.path.join(tmp_folder, '1_output_maxid_%i.npy' % block_id))
                         for block_id in range(blocking.numberOfBlocks)], dttype='uinty64')
 
@@ -22,6 +23,9 @@ def watershed_step2(out_path, key_out, tmp_folder, block_shape):
 
     np.save(os.path.join(tmp_folder, 'max_id.npy'), max_id)
     np.save(os.path.join(tmp_folder, 'offsets.npy'), offsets)
+
+    print("Success")
+    print("In %f s" % (time.time() - t0,))
 
 
 if __name__ == '__main__':
