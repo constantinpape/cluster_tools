@@ -1,3 +1,5 @@
+#! /usr/bin/python
+
 import os
 import time
 import argparse
@@ -13,7 +15,7 @@ def watershed_step2(out_path, key_out, tmp_folder, block_shape):
                                     blockShape=block_shape)
     t0 = time.time()
     offsets = np.array([np.load(os.path.join(tmp_folder, '1_output_maxid_%i.npy' % block_id))
-                        for block_id in range(blocking.numberOfBlocks)], dttype='uinty64')
+                        for block_id in range(blocking.numberOfBlocks)], dtype='uint64')
 
     last_max_id = offsets[0]
     offsets = np.roll(offsets, 1)

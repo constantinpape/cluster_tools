@@ -8,11 +8,9 @@ from shutil import copy, rmtree
 def replace_shebang(file_path, shebang):
     for i, line in enumerate(fileinput.input(file_path, inplace=True)):
         if i == 0:
-            pass
-            # print(shebang, end='')
+            print(shebang, end='')
         else:
-            pass
-            # print(line, end='')
+            print(line, end='')
 
 
 def make_executable(path):
@@ -89,7 +87,7 @@ def make_batch_jobs_step2(out_path, out_key, tmp_folder,
 
         for job_id in range(n_jobs):
             command = './3_merge_blocks.py %s %s' % \
-                      (os.path.join(tmp_folder, '1_input_%i.npy' % job_id), tmp_folder)
+                      (os.path.join(tmp_folder, '1_output_ovlps_%i.npy' % job_id), tmp_folder)
             if use_bsub:
                 log_file = 'logs/log_watershed_step2_%i.log' % job_id
                 err_file = 'error_logs/err_watershed_step2_%i.err' % job_id
@@ -116,7 +114,7 @@ def make_batch_jobs_step3(tmp_folder, n_jobs, executable,
 
     with open(script_file, 'w') as f:
         f.write('#! /bin/bash\n')
-        command = './4_ufd.py %s %s \n' % (tmp_folder, str(n_jobs))
+        command = './4_ufd.py %s %s' % (tmp_folder, str(n_jobs))
         if use_bsub:
             log_file = 'logs/log_watershed_step3.log'
             err_file = 'error_logs/err_watershed_step3.err'
@@ -146,9 +144,11 @@ def make_batch_jobs_step4(out_path, out_key, tmp_folder,
         f.write('#! /bin/bash\n')
 
         for job_id in range(n_jobs):
+            # --block_shape %s' % \
             command = './5_write_ids.py %s %s %s %s --block_shape %s' % \
-                      (out_path, out_key, tmp_folder, os.path.join(tmp_folder, '1_input_%i.npy' % job_id),
-                       ' '.join(map(str, block_shape)))
+                (out_path, out_key, tmp_folder,
+                 os.path.join(tmp_folder, '1_input_%i.npy' % job_id),
+                 ' '.join(map(str, block_shape)))
             if use_bsub:
                 log_file = 'logs/log_watershed_step4_%i.log' % job_id
                 err_file = 'error_logs/err_watershed_step4_%i.err' % job_id
@@ -181,7 +181,7 @@ def make_master_job(n_jobs, executable, script_file):
 def make_batch_jobs(aff_path_xy, key_xy, aff_path_z, key_z,
                     out_path, out_key, tmp_folder,
                     block_shape, chunks, n_jobs, executable,
-                    eta=5, n_threads_ufd=1, use_bsub=True):
+                    eta=15, n_threads_ufd=1, use_bsub=True):
 
     assert isinstance(eta, (int, list, tuple))
     if isinstance(eta, (list, tuple)):
@@ -207,7 +207,7 @@ def make_batch_jobs(aff_path_xy, key_xy, aff_path_z, key_z,
     make_batch_jobs_step2(out_path, out_key, tmp_folder, block_shape,  n_jobs,
                           executable, use_bsub=use_bsub, eta=eta_[1])
 
-    make_batch_jobs_step3(tmp_folder, block_shape,  n_jobs, executable,
+    make_batch_jobs_step3(tmp_folder, n_jobs, executable,
                           use_bsub=use_bsub, eta=eta_[2], n_threads=n_threads_ufd)
 
     make_batch_jobs_step4(out_path, out_key, tmp_folder, block_shape, n_jobs, executable,

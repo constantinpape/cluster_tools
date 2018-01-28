@@ -1,3 +1,5 @@
+#! /usr/bin/python
+
 import os
 import argparse
 import time
@@ -141,7 +143,8 @@ def watershed_step1(aff_path_xy, key_xy, aff_path_z, key_z, out_path, key_out,
                                           ds_xy, ds_z, ds_out,
                                           halo, threshold_cc,
                                           threshold_dt, sigma_seeds,
-                                          tmp_folder) for block_id in range(block_list)]
+                                          tmp_folder) for block_id in block_list]
+    overlap_ids = [ids for res in overlap_ids for ids in res]
     job_id = int(os.path.split(block_file)[1].split('_')[2][:-4])
     np.save(os.path.join(tmp_folder, '1_output_ovlps_%i.npy' % job_id), overlap_ids)
 

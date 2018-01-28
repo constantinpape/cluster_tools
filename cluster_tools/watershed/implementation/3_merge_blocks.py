@@ -1,3 +1,5 @@
+#! /usr/bin/python
+
 import os
 import time
 import argparse
@@ -43,7 +45,7 @@ def merge_blocks(ovlp_ids, tmp_folder, offsets, ovlp_threshold):
 
 def watershed_step3(input_file, tmp_folder, ovlp_threshold=.9):
     t0 = time.time()
-    overlap_ids = np.load(input_file).squeeze()
+    overlap_ids = np.load(input_file)
     offsets = np.load(os.path.join(tmp_folder, 'offsets.npy'))
     results = [merge_blocks(ovlp_ids, tmp_folder, offsets, ovlp_threshold) for ovlp_ids in overlap_ids]
     node_assignment = np.concatenate([res for res in results if res is not None], axis=0)
@@ -56,7 +58,7 @@ def watershed_step3(input_file, tmp_folder, ovlp_threshold=.9):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_arguments("input_file", type=str)
-    parser.add_arguments("tmp_folder", type=str)
-    args = parser.add_arguments()
+    parser.add_argument("input_file", type=str)
+    parser.add_argument("tmp_folder", type=str)
+    args = parser.parse_args()
     watershed_step3(args.input_file, args.tmp_folder)

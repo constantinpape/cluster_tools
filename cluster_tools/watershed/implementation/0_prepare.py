@@ -1,3 +1,5 @@
+#! /usr/bin/python
+
 import os
 import argparse
 from math import ceil
@@ -12,6 +14,7 @@ def blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder):
                                     roiEnd=list(shape),
                                     blockShape=block_shape)
     n_blocks = blocking.numberOfBlocks
+    assert n_jobs <= n_blocks, "%i, %i" % (n_jobs, n_blocks)
     chunk_size = int(ceil(float(n_blocks) / n_jobs))
     block_list = list(range(n_blocks))
     for idx, i in enumerate(range(0, len(block_list), chunk_size)):
@@ -25,7 +28,8 @@ def prepare(aff_path_xy, key_xy,
             tmp_folder, n_jobs):
     assert os.path.exists(aff_path_xy)
     assert os.path.exists(aff_path_z)
-    assert all(block % chunk == 0 for chunk, block in zip(out_chunks, out_blocks))
+    assert all(bs % cs == 0 for bs, cs in zip(out_blocks, out_chunks)), \
+        "Block shape is not a multiple of chunk shape: %s %s" % (str(out_blocks), str(out_chunks))
     ds_xy = z5py.File(aff_path_xy)[key_xy]
     ds_z = z5py.File(aff_path_z)[key_z]
 
@@ -65,5 +69,5 @@ if __name__ == '__main__':
     prepare(args.aff_path_xy, args.key_xy,
             args.aff_path_z, args.key_z,
             args.out_path, args.out_key,
-            tuple(args.block_shape), tuple(args.chunks),
+            tuple(args.chunks), tuple(args.block_shape),
             args.tmp_folder, args.n_jobs)
