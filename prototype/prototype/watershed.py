@@ -67,7 +67,7 @@ def watershed(aff_path_xy, key_xy, aff_path_z, key_z, out_path, key_out,
 
         # TODO figure out the thresholds
         # generate seeds from distance transform in 2d
-        thresholded_dt = (affs_xy < threshold_cc).astype('uint32')
+        thresholded_dt = (affs_xy < threshold_dt).astype('uint32')
         seeds_dt = np.zeros_like(thresholded_dt, dtype='uint32')
         offset_z = 0
         for z in range(seeds_dt.shape[0]):
