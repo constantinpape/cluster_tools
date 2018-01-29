@@ -12,10 +12,9 @@ import h5py
 # from cremi_tools.viewer.volumina import view
 
 
-# TODO correct thresholds
 def watershed(aff_path_xy, key_xy, aff_path_z, key_z, out_path, key_out,
               out_chunks, out_blocks, tmp_folder, halo=[5, 50, 50],
-              threshold_cc=.95, threshold_dt=.1, sigma_seeds=1.):
+              threshold_cc=.95, threshold_dt=.8, sigma_seeds=1.):
     assert os.path.exists(aff_path_xy)
     assert os.path.exists(aff_path_z)
     assert all(block % chunk == 0 for chunk, block in zip(out_chunks, out_blocks))
@@ -57,7 +56,6 @@ def watershed(aff_path_xy, key_xy, aff_path_z, key_z, out_path, key_out,
         # affs_z += affs_xy
         # affs_z /= 2.
 
-        # TODO figure out the thresholds
         # generate seeds from thresholded connected components
         thresholded = affs_z > threshold_cc
         # TODO to be more conservative, we could filter again by 2d connected components
@@ -65,7 +63,6 @@ def watershed(aff_path_xy, key_xy, aff_path_z, key_z, out_path, key_out,
         seeds = vigra.analysis.labelVolumeWithBackground(thresholded.view('uint8'))
         seed_offset = seeds.max() + 1
 
-        # TODO figure out the thresholds
         # generate seeds from distance transform in 2d
         thresholded_dt = (affs_xy < threshold_dt).astype('uint32')
         seeds_dt = np.zeros_like(thresholded_dt, dtype='uint32')
@@ -91,8 +88,8 @@ def watershed(aff_path_xy, key_xy, aff_path_z, key_z, out_path, key_out,
         for z in range(ws.shape[0]):
             ws[z] = vigra.analysis.watershedsNew(affs_xy[z], seeds=seeds[z])[0]
 
-        # TODO Filter tiny components
-        size_filter = 5
+        # filter tiny components
+        size_filter = 25
         ids, sizes = np.unique(ws, return_counts=True)
         mask = np.ma.masked_array(ws, np.in1d(ws, ids[sizes < size_filter])).mask
         ws[mask] = 0
@@ -149,7 +146,6 @@ def watershed(aff_path_xy, key_xy, aff_path_z, key_z, out_path, key_out,
     ovlp_threshold = .9
 
     def merge_blocks(ovlp_ids):
-        print(ovlp_ids)
         id_a, id_b = ovlp_ids
         path_a = os.path.join(tmp_folder, 'block_%i_%i.h5' % (id_a, id_b))
         path_b = os.path.join(tmp_folder, 'block_%i_%i.h5' % (id_b, id_a))

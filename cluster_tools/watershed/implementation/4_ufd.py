@@ -11,10 +11,8 @@ def watershed_step4(tmp_folder, n_jobs):
     t0 = time.time()
     node_assignment = np.concatenate([np.load(os.path.join(tmp_folder, '3_output_assignments_%i.npy' % job_id))
                                      for job_id in range(n_jobs)], axis=0)
-    print("!!!!")
-    print(node_assignment.shape)
-    print("!!!!")
-    max_id = np.load(os.path.join(tmp_folder, 'max_id.npy'))
+    max_id = int(np.load(os.path.join(tmp_folder, 'max_id.npy')))
+
     ufd = nifty.ufd.ufd(max_id + 1)
     ufd.merge(node_assignment)
     node_labeling = ufd.elementLabeling()

@@ -14,7 +14,7 @@ def assign_node_ids(block_id, blocking, ds_out, node_labeling, offsets):
     subvol = ds_out[bb]
     offset = offsets[block_id]
     subvol += offset
-    ds_out[bb] = nifty.tools.take(node_labeling, subvol)
+    ds_out[bb] = nifty.tools.take(node_labeling, subvol).astype(subvol.dtype)
 
 
 def watershed_step5(out_path, out_key, tmp_folder, input_file, block_shape):
