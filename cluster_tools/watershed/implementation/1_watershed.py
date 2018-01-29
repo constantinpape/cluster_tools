@@ -35,13 +35,12 @@ def seeds_from_distance_transform(affs, threshold, sigma):
     return seeds, seeds.max() + 1
 
 
-def run_watershed(hmap, seeds, size_filter=5):
+def run_watershed(hmap, seeds, size_filter=25):
     # run watersheds in 2d
     ws = np.zeros_like(seeds, dtype='uint32')
     for z in range(ws.shape[0]):
         ws[z] = vigra.analysis.watershedsNew(hmap[z], seeds=seeds[z])[0]
     # Filter tiny components
-    size_filter = 5
     ids, sizes = np.unique(ws, return_counts=True)
     mask = np.ma.masked_array(ws, np.in1d(ws, ids[sizes < size_filter])).mask
     ws[mask] = 0
@@ -127,7 +126,7 @@ def single_block_watershed(block_id, blocking,
 # check again hat distance ransform thresholds make sense
 def watershed_step1(aff_path_xy, key_xy, aff_path_z, key_z, out_path, key_out,
                     out_blocks, tmp_folder, block_file, halo=[5, 50, 50],
-                    threshold_cc=.95, threshold_dt=.1, sigma_seeds=1.):
+                    threshold_cc=.95, threshold_dt=.5, sigma_seeds=1.):
 
     t0 = time.time()
     ds_xy = z5py.File(aff_path_xy)[key_xy]

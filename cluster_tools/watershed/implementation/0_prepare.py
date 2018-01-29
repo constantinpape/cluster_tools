@@ -19,6 +19,7 @@ def blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder):
     block_list = list(range(n_blocks))
     for idx, i in enumerate(range(0, len(block_list), chunk_size)):
         np.save(os.path.join(tmp_folder, '1_input_%i.npy' % idx), block_list[i:i + chunk_size])
+    assert idx == n_jobs - 1, "Not enough inputs created: %i / %i" % (idx, n_jobs - 1)
 
 
 def prepare(aff_path_xy, key_xy,
@@ -49,6 +50,7 @@ def prepare(aff_path_xy, key_xy,
                                       compression='gzip')
 
     blocks_to_jobs(shape, out_blocks, n_jobs, tmp_folder)
+    print("Success")
 
 
 if __name__ == '__main__':

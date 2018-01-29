@@ -44,6 +44,7 @@ def make_batch_jobs_step1(aff_path_xy, key_xy, aff_path_z, key_z, out_path, out_
                  ' '.join(map(str, block_shape)),
                  ' '.join(map(str, chunks)),
                  str(n_jobs)))
+        # TODO we need to check for success here !
 
         for job_id in range(n_jobs):
             command = './1_watershed.py %s %s %s %s %s %s --tmp_folder %s --block_shape %s --block_file %s' % \
