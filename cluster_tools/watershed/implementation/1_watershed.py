@@ -10,6 +10,10 @@ import z5py
 import nifty
 
 
+# TODO TODO
+# watershed with masking: here or in extra workflow ?
+
+
 def seeds_from_connected_components(affs, threshold):
     # generate seeds from thresholded connected components
     thresholded = affs > threshold
