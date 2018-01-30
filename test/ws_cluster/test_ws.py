@@ -2,15 +2,15 @@ import sys
 sys.path.append('../..')
 from cluster_tools.watershed import make_batch_jobs
 
-AFF_PATH = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cremi_warped/n5/cremi_warped_sampleA+_predictions.n5'
+AFF_PATH = '/home/papec/Work/neurodata_hdd/ntwrk_papec/cluster_test_data/affs.n5'
 KEY_XY = 'affs_xy'
-KEY_Z = 'averaged_0_1_2_3_4_5_6_7_8_9'
-OUT_PATH = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cremi_warped/n5/cremi_warped_sampleA+_watersheds.n5'
-OUT_KEY = 'seed_averaged_affinities'
-TMP_FOLDER = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cluster_test_data/tmp_files'
+KEY_Z = 'affs_z'
+OUT_PATH = '/home/papec/Work/neurodata_hdd/ntwrk_papec/cluster_test_data/ws.n5'
+OUT_KEY = 'data'
+TMP_FOLDER = '/home/papec/Work/neurodata_hdd/ntwrk_papec/cluster_test_data/tmp_files'
 BLOCK_SHAPE = (25, 256, 256)
 CHUNKS = (25, 256, 256)
-EXECUTABLE = '/groups/saalfeld/home/papec/Work/software/conda/miniconda3/envs/production/bin/python'
+EXECUTABLE = '/home/papec/Work/software/conda/miniconda2/envs/production/bin/python'
 
 
 def jobs_for_cluster_test(n_jobs):

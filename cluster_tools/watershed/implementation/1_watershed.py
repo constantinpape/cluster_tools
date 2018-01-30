@@ -4,6 +4,7 @@ import os
 import argparse
 import time
 import numpy as np
+import h5py
 
 import vigra
 import z5py
@@ -49,7 +50,7 @@ def run_watershed(hmap, seeds, size_filter=25):
     return ws, max_id
 
 
-def find_overlaps(block_id, blocking, ws, inner_block, outer_block, halo, tmp_folder):
+def find_overlaps(block_id, blocking, ws, inner_block, outer_block, local_block, halo, tmp_folder):
     # serialize the overlaps
     overlap_ids = []
     for ii in range(6):
@@ -68,13 +69,11 @@ def find_overlaps(block_id, blocking, ws, inner_block, outer_block, halo, tmp_fo
             ovlp_path = os.path.join(tmp_folder, 'block_%i_%i.h5' % (block_id, neighbor_id))
             vigra.writeHDF5(overlap, ovlp_path, 'data', compression='gzip')
 
-            # overlap coords, only need this for debugging
-            # overlap_coords = tuple((outer_block.begin[i], outer_block.end[i]) if i != axis else
-            #                        (outer_block.begin[i], inner_block.begin[i] + halo[i]) if to_lower else
-            #                        (inner_block.end[i] - halo[i], outer_block.end[i]) for i in range(3))
-
-            # with h5py.File(ovlp_path) as f:
-            #     f['data'].attrs['coords'] = overlap_coords
+            with h5py.File(ovlp_path) as f:
+                attrs = f['data'].attrs
+                attrs['overlap_dimension'] = axis
+                attrs['overlap_begin'] = tuple(local_block.begin[i] for i in range(3))
+                attrs['overlap_end'] = tuple(local_block.end[i] for i in range(3))
 
             # we only return the overlap ids, if the block id is smaller than the neighbor id,
             # to keep the pairs unique
@@ -115,7 +114,8 @@ def single_block_watershed(block_id, blocking,
     ds_out[inner_bb] = ws[local_bb].astype('uint64')
 
     overlap_ids = find_overlaps(block_id, blocking, ws,
-                                inner_block, outer_block, halo, tmp_folder)
+                                inner_block, outer_block, local_block,
+                                halo, tmp_folder)
 
     # TODO serialize the max ids
     np.save(os.path.join(tmp_folder, '1_output_maxid_%i.npy' % block_id), max_id + 1)

@@ -1,7 +1,7 @@
 import sys
+import numpy as np
 from cremi_tools.viewer.volumina import view
 import z5py
-import numpy as np
 
 sys.path.append('..')
 from prototype import watershed
@@ -29,13 +29,14 @@ def make_testdata():
 
 def view_result():
     raw = z5py.File('./raw.n5')['data'][:]
-    ws = z5py.File('./ws.n5')['data'][:]
+    # ws = z5py.File('./ws.n5')['data'][:]
+    ws = z5py.File('/home/papec/mnt/papec/Work/neurodata_hdd/cluster_test_data/ws.n5')['data'][:]
     affs = z5py.File('./affs.n5')['affs_xy'][:]
     view([raw, affs, ws])
 
 
 def test_ws():
-    aff_path = './affs.n5'
+    aff_path = '/home/papec/Work/neurodata_hdd/ntwrk_papec/cremi_warped/gp_tf_predictions_iter_400000/cremi_warped_sampleA+_predictions.n5'
     key_xy = 'affs_xy'
     key_z = 'affs_z'
     out_path = './ws.n5'
@@ -44,6 +45,17 @@ def test_ws():
               out_chunks=(10, 128, 128), out_blocks=(20, 256, 256), tmp_folder='./tmp')
 
 
+def view_cluster_result(bb):
+    raw = z5py.File('/home/papec/mnt/papec/Work/neurodata_hdd/cremi_warped/n5/cremi_warped_sampleA+.n5')['data'][bb]
+    ws_z = z5py.File('/home/papec/mnt/papec/Work/neurodata_hdd/cremi_warped/n5/cremi_warped_sampleA+_watersheds.n5')['seed_z_affinities'][bb]
+    ws_av = z5py.File('/home/papec/mnt/papec/Work/neurodata_hdd/cremi_warped/n5/cremi_warped_sampleA+_watersheds.n5')['seed_averaged_affinities'][bb]
+    bb = (slice(None),) + bb
+    affs = z5py.File('/home/papec/mnt/papec/Work/neurodata_hdd/cremi_warped/n5/cremi_warped_sampleA+_predictions.n5')['full_affs'][bb]
+    view([raw, affs.transpose((1, 2, 3, 0)), ws_z, ws_av])
+
+
 if __name__ == '__main__':
-    test_ws()
-    view_result()
+    # test_ws()
+    # view_result()
+    bb = np.s_[10:60, 1000:1512, 1000:1512]
+    view_cluster_result(bb)
