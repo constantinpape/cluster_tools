@@ -10,10 +10,6 @@ import z5py
 import nifty
 
 
-# TODO TODO
-# watershed with masking: here or in extra workflow ?
-
-
 def seeds_from_connected_components(affs, threshold):
     # generate seeds from thresholded connected components
     thresholded = affs > threshold
@@ -122,11 +118,10 @@ def single_block_watershed(block_id, blocking,
                                 inner_block, outer_block, halo, tmp_folder)
 
     # TODO serialize the max ids
-    np.save(os.path.join(tmp_folder, '1_output_maxid_%i.npy' % block_id), max_id)
+    np.save(os.path.join(tmp_folder, '1_output_maxid_%i.npy' % block_id), max_id + 1)
     return overlap_ids
 
 
-# FIXME thresholds were mixed in prototype experiments,
 # check again hat distance ransform thresholds make sense
 def watershed_step1(aff_path_xy, key_xy, aff_path_z, key_z, out_path, key_out,
                     out_blocks, tmp_folder, block_file, halo=[5, 50, 50],

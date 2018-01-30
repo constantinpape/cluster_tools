@@ -16,26 +16,29 @@ def merge_blocks(ovlp_ids, tmp_folder, offsets, ovlp_threshold):
     ovlp_a = vigra.readHDF5(path_a, 'data')
     ovlp_b = vigra.readHDF5(path_b, 'data')
     offset_a, offset_b = offsets[id_a], offsets[id_b]
-    ovlp_a += offset_a
-    ovlp_b += offset_b
 
     assert ovlp_a.shape == ovlp_b.shape, "%s, %s" % (str(ovlp_a.shape), str(ovlp_b.shape))
 
-    # measure all overlaps
     segments_a = np.unique(ovlp_a)
     overlaps_ab = ngt.overlap(ovlp_a, ovlp_b)
     overlaps_ba = ngt.overlap(ovlp_b, ovlp_a)
+
+    # find the ids ON the actual block boundary
+    boundary_mask = ''  # TODO
+    segments_a = np.unique(ovlp_a[boundary_mask])
+    segments_b = np.unique(ovlp_b[boundary_mask])
+
     node_assignment = []
     for seg_a in segments_a:
         ovlp_seg_a, counts_seg_a = overlaps_ab.overlapArraysNormalized(seg_a, sorted=True)
         seg_b = ovlp_seg_a[0]
         ovlp_seg_b, counts_seg_b = overlaps_ba.overlapArraysNormalized(seg_b, sorted=True)
-        if ovlp_seg_b[0] != seg_a:
+        if ovlp_seg_b[0] != seg_a or seg_b not in segments_b:
             continue
 
         ovlp_measure = (counts_seg_a[0] + counts_seg_b[0]) / 2.
         if ovlp_measure > ovlp_threshold:
-            node_assignment.append([seg_a, seg_b])
+            node_assignment.append([seg_a + offset_a, seg_b + offset_b])
 
     if node_assignment:
         return np.array(node_assignment, dtype='uint64')
