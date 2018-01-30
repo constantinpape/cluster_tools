@@ -5,7 +5,7 @@ from cluster_tools.masked_watershed import make_batch_jobs
 
 
 TMP_FOLDER = '/nrs/saalfeld/papec/cache/tmp_cremi_ws'
-BLOCK_SHAPE = (50, 512, 512)
+BLOCK_SHAPE = (25, 256, 256)
 CHUNKS = (25, 256, 256)
 EXECUTABLE = '/groups/saalfeld/home/papec/Work/software/conda/miniconda3/envs/production/bin/python'
 
