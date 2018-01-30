@@ -9,8 +9,10 @@ import numpy as np
 
 def masked_watershed_step4(tmp_folder, n_jobs):
     t0 = time.time()
-    node_assignment = np.concatenate([np.load(os.path.join(tmp_folder, '3_output_assignments_%i.npy' % job_id))
-                                     for job_id in range(n_jobs)], axis=0)
+    # load the node assignments and filter invalid assignments
+    node_assignment = [np.load(os.path.join(tmp_folder, '3_output_assignments_%i.npy' % job_id))
+                       for job_id in range(n_jobs)]
+    node_assignment = np.concatenate([assignment for assignment in node_assignment if assignment.size > 0], axis=0)
     max_id = int(np.load(os.path.join(tmp_folder, 'max_id.npy')))
 
     ufd = nifty.ufd.ufd(max_id + 1)

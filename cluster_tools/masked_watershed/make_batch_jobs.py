@@ -18,7 +18,8 @@ def make_executable(path):
     os.chmod(path, st.st_mode | stat.S_IEXEC)
 
 
-def make_batch_jobs_step1(aff_path_xy, key_xy, aff_path_z, key_z,
+def make_batch_jobs_step1(aff_path_xy, key_xy,
+                          aff_path_z, key_z,
                           mask_path, mask_key,
                           out_path, out_key, tmp_folder,
                           block_shape, chunks, n_jobs, executable,
@@ -185,6 +186,7 @@ def make_master_job(n_jobs, executable, script_file):
 
 
 def make_batch_jobs(aff_path_xy, key_xy, aff_path_z, key_z,
+                    mask_path, mask_key,
                     out_path, out_key, tmp_folder,
                     block_shape, chunks, n_jobs, executable,
                     eta=15, n_threads_ufd=1, use_bsub=True):
@@ -206,7 +208,10 @@ def make_batch_jobs(aff_path_xy, key_xy, aff_path_z, key_z,
         rmtree('logs')
     os.mkdir('logs')
 
-    make_batch_jobs_step1(aff_path_xy, key_xy, aff_path_z, key_z, out_path, out_key, tmp_folder,
+    make_batch_jobs_step1(aff_path_xy, key_xy,
+                          aff_path_z, key_z,
+                          mask_path, mask_key,
+                          out_path, out_key, tmp_folder,
                           block_shape, chunks, n_jobs, executable,
                           use_bsub=use_bsub, eta=eta_[0])
 
