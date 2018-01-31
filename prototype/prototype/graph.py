@@ -46,6 +46,7 @@ def compute_region_graph(labels_path, labels_key, blocks, graph_path):
     block_list = list(range(n_blocks))
     ndist.mergeSubgraphs(graph_path, 'sub_graphs/s1', "block_",
                          block_list, "graph")
+    ndist.mapEdgeIds(graph_path, 'graph', 'sub_graphs/s1', "block_", block_list)
 
 
 def load_graph(graph_path, graph_key):
