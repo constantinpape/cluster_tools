@@ -22,9 +22,16 @@ def blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder):
     assert idx == n_jobs - 1, "Not enough inputs created: %i / %i" % (idx, n_jobs - 1)
 
 
-def prepare(labels_path, labels_key, graph_path):
+def prepare(labels_path, labels_key, graph_path, n_jobs, tmp_folder, block_shape):
     assert os.path.exists(labels_path), labels_path
+    labels = z5py.File(labels_path)[labels_key]
+    shape = labels.shape
+    f_graph = z5py.File(graph_path, use_zarr_format=False)
+    f_graph.attrs['shape'] = shape
+
+    blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder)
 
 
 if __name__ == '__main__':
-    pass
+    parser = argparse.ArgumentParser()
+    parser.add_argument()

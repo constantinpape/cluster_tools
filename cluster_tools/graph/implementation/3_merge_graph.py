@@ -24,7 +24,8 @@ def graph_step3(graph_path, last_scale, initial_block_shape, n_threads):
                          input_key,
                          blockPrefix="block_",
                          blockIds=block_list,
-                         outKey=output_key)
+                         outKey=output_key,
+                         numberOfThreads=n_threads)
 
 
 if __name__ == '__main__':
