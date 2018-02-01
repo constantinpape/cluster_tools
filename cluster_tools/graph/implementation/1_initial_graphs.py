@@ -1,5 +1,7 @@
 #! /usr/bin/python
 
+import os
+import time
 import argparse
 import numpy as np
 
@@ -24,8 +26,8 @@ def extract_subgraph_from_roi(block_id, blocking, labels_path, labels_key, graph
 
 
 def graph_step1(labels_path, labels_key, graph_path, block_file, block_shape):
+    t0 = time.time()
     labels = z5py.File(labels_path)[labels_key]
-
     shape = labels.shape
     blocking = nifty.tools.blocking(roiBegin=[0, 0, 0],
                                     roiEnd=list(shape),
@@ -33,7 +35,11 @@ def graph_step1(labels_path, labels_key, graph_path, block_file, block_shape):
     block_list = np.load(block_file)
 
     for block_id in block_list:
-        extract_subgraph_from_roi(block_id, blocking, labels_path, labels_key)
+        extract_subgraph_from_roi(block_id, blocking, labels_path, labels_key, graph_path)
+
+    job_id = int(os.path.split(block_file)[1].split('_')[2][:-4])
+    print("Success job %i" % job_id)
+    print("In %f s" % (time.time() - t0,))
 
 
 if __name__ == '__main__':

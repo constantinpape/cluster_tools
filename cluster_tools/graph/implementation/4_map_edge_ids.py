@@ -1,6 +1,8 @@
 #! /usr/bin/python
 
 import argparse
+import time
+
 import nifty
 import nifty.distributed as ndist
 import z5py
@@ -8,6 +10,7 @@ import z5py
 
 def graph_step4(graph_path, scale, initial_block_shape, n_threads):
 
+    t0 = time.time()
     factor = 2**scale
     block_shape = [factor * bs for bs in initial_block_shape]
 
@@ -24,6 +27,9 @@ def graph_step4(graph_path, scale, initial_block_shape, n_threads):
                                  numberOfBlocks=blocking.numberOfBlocks,
                                  numberOfThreads=n_threads)
 
+    print("Success scale %i" % scale)
+    print("In %f s" % (time.time() - t0,))
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -33,5 +39,5 @@ if __name__ == '__main__':
     parser.add_argument("--n_threads", type=int)
     args = parser.parse_args()
 
-    graph_step4(args.graph_path, args.last_scale,
+    graph_step4(args.graph_path, args.scale,
                 list(args.initial_block_shape), args.n_threads)

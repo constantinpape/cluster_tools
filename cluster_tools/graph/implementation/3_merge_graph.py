@@ -1,6 +1,7 @@
 #! /usr/bin/python
 
 import argparse
+import time
 
 import z5py
 import nifty
@@ -8,6 +9,8 @@ import nifty.distributed as ndist
 
 
 def graph_step3(graph_path, last_scale, initial_block_shape, n_threads):
+
+    t0 = time.time()
     factor = 2**last_scale
     block_shape = [factor * bs for bs in initial_block_shape]
 
@@ -26,6 +29,8 @@ def graph_step3(graph_path, last_scale, initial_block_shape, n_threads):
                          blockIds=block_list,
                          outKey=output_key,
                          numberOfThreads=n_threads)
+    print("Success")
+    print("In %f s" % (time.time() - t0,))
 
 
 if __name__ == '__main__':

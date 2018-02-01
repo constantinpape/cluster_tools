@@ -18,7 +18,7 @@ def blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder, output_prefix):
     chunk_size = int(ceil(float(n_blocks) / n_jobs))
     block_list = list(range(n_blocks))
     for idx, i in enumerate(range(0, len(block_list), chunk_size)):
-        np.save(os.path.join(tmp_folder, '%s_%i.npy' % idx, (output_prefix)),
+        np.save(os.path.join(tmp_folder, '%s_%i.npy' % (output_prefix, idx)),
                 block_list[i:i + chunk_size])
     assert idx == n_jobs - 1, "Not enough inputs created: %i / %i" % (idx, n_jobs - 1)
 
@@ -30,11 +30,15 @@ def prepare(labels_path, labels_key, graph_path, n_jobs, n_scales, tmp_folder, b
     f_graph = z5py.File(graph_path, use_zarr_format=False)
     f_graph.attrs['shape'] = shape
 
+    if not os.path.exists(tmp_folder):
+        os.mkdir(tmp_folder)
+
     # make blocks to jobs for initial graphs
     blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder, '1_input')
 
     # make blocks to jobs for the additional scale levels (if any)
     if(n_scales == 1):
+        print("Success")
         return
 
     # we have 1-based indexing for scales!
@@ -43,6 +47,7 @@ def prepare(labels_path, labels_key, graph_path, n_jobs, n_scales, tmp_folder, b
         scale_shape = [bs*factor for bs in block_shape]
         scale_prefix = '2_input_s%i' % scale
         blocks_to_jobs(shape, scale_shape, n_jobs, tmp_folder, scale_prefix)
+    print("Success")
 
 
 if __name__ == '__main__':

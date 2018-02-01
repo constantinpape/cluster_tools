@@ -5,12 +5,12 @@ from shutil import copy, rmtree
 
 
 # https://stackoverflow.com/questions/39086/search-and-replace-a-line-in-a-file-in-python
-# def replace_shebang(file_path, shebang):
-#     for i, line in enumerate(fileinput.input(file_path, inplace=True)):
-#         if i == 0:
-#             print(shebang, end='')
-#         else:
-#             print(line, end='')
+def replace_shebang(file_path, shebang):
+    for i, line in enumerate(fileinput.input(file_path, inplace=True)):
+        if i == 0:
+            print(shebang, end='')
+        else:
+            print(line, end='')
 
 
 def make_executable(path):
@@ -32,9 +32,9 @@ def make_batch_jobs_step1(labels_path, labels_key, graph_path,
     replace_shebang('0_prepare.py', shebang)
     make_executable('0_prepare.py')
 
-    copy(os.path.join(file_dir, 'implementation/1_initial_graph.py'), cwd)
-    replace_shebang('1_initial_graph.py', shebang)
-    make_executable('1_initial_graph.py')
+    copy(os.path.join(file_dir, 'implementation/1_initial_graphs.py'), cwd)
+    replace_shebang('1_initial_graphs.py', shebang)
+    make_executable('1_initial_graphs.py')
 
     # def prepare(labels_path, labels_key, graph_path, n_jobs, tmp_folder, block_shape):
     with open(script_file, 'w') as f:
@@ -45,7 +45,7 @@ def make_batch_jobs_step1(labels_path, labels_key, graph_path,
         # TODO we need to check for success here !
 
         for job_id in range(n_jobs):
-            command = './1_initial_graph.py %s %s %s --block_file %s --block_shape %s' % \
+            command = './1_initial_graphs.py %s %s %s --block_file %s --block_shape %s' % \
                       (labels_path, labels_key, graph_path,
                        os.path.join(tmp_folder, '1_input_%i.npy' % job_id),
                        ' '.join(map(str, block_shape)))
@@ -110,7 +110,7 @@ def make_batch_jobs_step3(graph_path, n_scales, block_shape, n_threads, executab
 
     # def prepare(labels_path, labels_key, graph_path, n_jobs, tmp_folder, block_shape):
     with open(script_file, 'w') as f:
-        command = './3_merge_graph.py %s %s --initial_shape %s --n_threads %s' % \
+        command = './3_merge_graph.py %s %s --initial_block_shape %s --n_threads %s' % \
                   (graph_path, str(n_scales),
                    ' '.join(map(str, block_shape)), str(n_threads))
         if use_bsub:
@@ -139,7 +139,7 @@ def make_batch_jobs_step4(graph_path, n_scales, n_threads, block_shape, executab
     # def prepare(labels_path, labels_key, graph_path, n_jobs, tmp_folder, block_shape):
     with open(script_file, 'w') as f:
         for scale in range(1, n_scales + 1):
-            command = './4_map_edge_ids.py %s %s --initial_shape %s --n_threads %s' % \
+            command = './4_map_edge_ids.py %s %s --initial_block_shape %s --n_threads %s' % \
                       (graph_path, str(scale),
                        ' '.join(map(str, block_shape)), str(n_threads))
             if use_bsub:

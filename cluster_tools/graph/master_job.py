@@ -18,14 +18,15 @@ def master_job(n_jobs, n_scales):
         return
 
     # submit jobs 2 for scales 2:
-    for scale in range(2, n_scales + 1):
-        subprocess.call(['./jobs_step2_scale%i.sh' % scale])
-        # wait for jobs 2
-        failed_jobs = wait_and_check_multiple_jobs('graph_step2_scale%i' % scale, n_jobs)
-        if failed_jobs:
-            print("Step 2, scale %i failed for following jobs:" % scale)
-            print(failed_jobs)
-            return
+    if n_scales > 1:
+        for scale in range(2, n_scales + 1):
+            subprocess.call(['./jobs_step2_scale%i.sh' % scale])
+            # wait for jobs 2
+            failed_jobs = wait_and_check_multiple_jobs('graph_step2_scale%i' % scale, n_jobs)
+            if failed_jobs:
+                print("Step 2, scale %i failed for following jobs:" % scale)
+                print(failed_jobs)
+                return
 
     # submit jobs 3
     subprocess.call(['./jobs_step3.sh'])
