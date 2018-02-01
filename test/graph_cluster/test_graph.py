@@ -24,12 +24,12 @@ def jobs_for_cluster_test(n_jobs, n_scales):
                     BLOCK_SHAPE,
                     n_scales, n_jobs,
                     EXECUTABLE,
-                    use_bsub=False,
+                    use_bsub=True,
                     n_threads_merge=4,
                     eta=[5, 5, 5, 5])
 
 
 if __name__ == '__main__':
-    n_jobs = 16
+    n_jobs = 32
     n_scales = 2
     jobs_for_cluster_test(n_jobs, n_scales)

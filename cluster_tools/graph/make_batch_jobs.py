@@ -75,14 +75,15 @@ def make_batch_jobs_step2(graph_path, tmp_folder, block_shape, n_jobs, executabl
     make_executable('2_merge_graph_scales.py')
 
     def make_jobs_scale(scale, f):
+        f.write('#! /bin/bash\n')
         for job_id in range(n_jobs):
             command = './2_merge_graph_scales.py %s %s --block_file %s --initial_block_shape %s' % \
                       (graph_path, str(scale),
                        os.path.join(tmp_folder, '2_input_s%i_%i.npy' % (scale, job_id)),
                        ' '.join(map(str, block_shape)))
             if use_bsub:
-                log_file = 'logs/log_graph_step2_scale%i_%i.log' % (job_id, scale)
-                err_file = 'error_logs/err_graph_step2_scale%i_%i.err' % (job_id, scale)
+                log_file = 'logs/log_graph_step2_scale%i_%i.log' % (scale, job_id)
+                err_file = 'error_logs/err_graph_step2_scale%i_%i.err' % (scale, job_id)
                 f.write('bsub -J graph_step2_scale%i_%i -We %i -o %s -e %s \'%s\' \n' %
                         (scale, job_id, eta, log_file, err_file, command))
             else:
@@ -90,7 +91,7 @@ def make_batch_jobs_step2(graph_path, tmp_folder, block_shape, n_jobs, executabl
 
     # we have 1-based indexing for scales!
     for scale in range(2, n_scales + 1):
-        scale_file = script_file[:-3] + 'scale%i.sh' % scale
+        scale_file = script_file[:-3] + '_scale%i.sh' % scale
         with open(scale_file, 'w') as f:
             make_jobs_scale(scale, f)
         make_executable(scale_file)
@@ -110,6 +111,7 @@ def make_batch_jobs_step3(graph_path, n_scales, block_shape, n_threads, executab
 
     # def prepare(labels_path, labels_key, graph_path, n_jobs, tmp_folder, block_shape):
     with open(script_file, 'w') as f:
+        f.write('#! /bin/bash\n')
         command = './3_merge_graph.py %s %s --initial_block_shape %s --n_threads %s' % \
                   (graph_path, str(n_scales),
                    ' '.join(map(str, block_shape)), str(n_threads))
@@ -138,6 +140,7 @@ def make_batch_jobs_step4(graph_path, n_scales, n_threads, block_shape, executab
 
     # def prepare(labels_path, labels_key, graph_path, n_jobs, tmp_folder, block_shape):
     with open(script_file, 'w') as f:
+        f.write('#! /bin/bash\n')
         for scale in range(1, n_scales + 1):
             command = './4_map_edge_ids.py %s %s --initial_block_shape %s --n_threads %s' % \
                       (graph_path, str(scale),
