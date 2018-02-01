@@ -78,7 +78,7 @@ def make_batch_jobs_step2(graph_path, tmp_folder, block_shape, n_jobs, executabl
         for job_id in range(n_jobs):
             command = './2_merge_graph_scales.py %s %s --block_file %s --initial_block_shape %s' % \
                       (graph_path, str(scale),
-                       os.path.join(tmp_folder, '2_input_s%i_%i.npy' % (job_id, scale)),
+                       os.path.join(tmp_folder, '2_input_s%i_%i.npy' % (scale, job_id)),
                        ' '.join(map(str, block_shape)))
             if use_bsub:
                 log_file = 'logs/log_graph_step2_scale%i_%i.log' % (job_id, scale)
