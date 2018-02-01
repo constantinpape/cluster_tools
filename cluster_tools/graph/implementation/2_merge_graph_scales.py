@@ -1,3 +1,5 @@
+#! /usr/bin/python
+
 import argparse
 import numpy as np
 
@@ -27,7 +29,6 @@ def graph_step2(graph_path, scale, block_file, initial_block_shape):
     previous_block_shape = [previous_factor * bs for bs in initial_block_shape]
 
     f_graph = z5py.File(graph_path)
-    # TODO write shape attribute
     shape = f_graph.attrs['shape']
     blocking = nifty.tools.blocking(roiBegin=[0, 0, 0],
                                     roiEnd=list(shape),
