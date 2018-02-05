@@ -8,14 +8,16 @@ sys.path.append('..')
 from prototype import compute_region_graph, load_graph
 
 
+# TODO proper unit -test
 def test_graph():
-    seg_path = '/home/papec/Work/neurodata_hdd/ntwrk_papec/cluster_test_data/ws.n5'
+    # seg_path = '/home/papec/Work/neurodata_hdd/ntwrk_papec/cluster_test_data/ws_masked.n5'
+    seg_path = './testdata.n5'
     assert os.path.exists(seg_path)
-    seg_key = 'data'
+    seg_key = 'watershed'
     blocks = (25, 256, 256)
 
-    if os.path.exists('./graph.n5'):
-        rmtree('./graph.n5')
+    # if os.path.exists('./graph.n5'):
+    #     rmtree('./graph.n5')
 
     compute_region_graph(seg_path, seg_key, blocks, './graph.n5')
     nodes, edges = load_graph('./graph.n5', 'graph')
@@ -27,6 +29,8 @@ def test_graph():
     print("Passed!")
 
     # TODO check the sub-graph edge-ids !!
+
+    # TODO check the graph object
 
 
 if __name__ == '__main__':

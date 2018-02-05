@@ -12,16 +12,13 @@ import nifty.distributed as ndist
 
 def merge_subblocks(block_id, blocking, previous_blocking, graph_path, scale):
     block = blocking.getBlock(block_id)
-    input_key = 'sub_graphs/s%i' % (scale - 1,)
+    input_key = 'sub_graphs/s%i/block_' % (scale - 1,)
     output_key = 'sub_graphs/s%i/block_%i' % (scale, block_id)
-    # FIXME allow kwargs in nifty
-    # block_list = previous_blocking.getBlockIdsInBoundingBox(roiBegin=block.begin,
-    #                                                         roiEnd=block.end,
-    #                                                         blockHalo=[0, 0, 0])
-    block_list = previous_blocking.getBlockIdsInBoundingBox(block.begin, block.end, [0, 0, 0])
+    block_list = previous_blocking.getBlockIdsInBoundingBox(roiBegin=block.begin,
+                                                            roiEnd=block.end,
+                                                            blockHalo=[0, 0, 0])
     ndist.mergeSubgraphs(graph_path,
-                         input_key,
-                         blockPrefix="block_",
+                         blockPrefix=input_key,
                          blockIds=block_list.tolist(),
                          outKey=output_key)
 

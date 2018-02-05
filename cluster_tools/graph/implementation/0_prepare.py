@@ -41,8 +41,7 @@ def prepare(labels_path, labels_key, graph_path, n_jobs, n_scales, tmp_folder, b
         print("Success")
         return
 
-    # we have 1-based indexing for scales!
-    for scale in range(2, n_scales + 1):
+    for scale in range(1, n_scales):
         factor = 2**scale
         scale_shape = [bs*factor for bs in block_shape]
         scale_prefix = '2_input_s%i' % scale

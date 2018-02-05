@@ -18,8 +18,8 @@ def extract_subgraph_from_roi(block_id, blocking, labels_path, labels_key, graph
     # hence we use the outer-block only for the end coordinate
     begin = inner_block.begin
     end = outer_block.end
-    # TODO groups for different scale levels
-    block_key = 'sub_graphs/s1/block_%i' % block_id
+
+    block_key = 'sub_graphs/s0/block_%i' % block_id
     ndist.computeMergeableRegionGraph(labels_path, labels_key,
                                       begin, end,
                                       graph_path, block_key)

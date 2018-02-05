@@ -20,12 +20,11 @@ def graph_step3(graph_path, last_scale, initial_block_shape, n_threads):
                                     roiEnd=list(shape),
                                     blockShape=block_shape)
 
-    input_key = 'sub_graphs/s%i' % last_scale
+    block_prefix = 'sub_graphs/s%i/block_' % last_scale
     output_key = 'graph'
     block_list = list(range(blocking.numberOfBlocks))
     ndist.mergeSubgraphs(graph_path,
-                         input_key,
-                         blockPrefix="block_",
+                         blockPrefix=block_prefix,
                          blockIds=block_list,
                          outKey=output_key,
                          numberOfThreads=n_threads)

@@ -21,9 +21,9 @@ def graph_step4(graph_path, scale, initial_block_shape, n_threads):
                                     blockShape=block_shape)
     input_key = 'graph'
 
+    block_prefix = 'sub_graphs/s%s/block_' % scale
     ndist.mapEdgeIdsForAllBlocks(graph_path, input_key,
-                                 blockGroup='sub_graphs/s%s' % scale,
-                                 blockPrefix="block_",
+                                 blockPrefix=block_prefix,
                                  numberOfBlocks=blocking.numberOfBlocks,
                                  numberOfThreads=n_threads)
 

@@ -89,8 +89,7 @@ def make_batch_jobs_step2(graph_path, tmp_folder, block_shape, n_jobs, executabl
             else:
                 f.write(command + '\n')
 
-    # we have 1-based indexing for scales!
-    for scale in range(2, n_scales + 1):
+    for scale in range(1, n_scales):
         scale_file = script_file[:-3] + '_scale%i.sh' % scale
         with open(scale_file, 'w') as f:
             make_jobs_scale(scale, f)
@@ -141,7 +140,7 @@ def make_batch_jobs_step4(graph_path, n_scales, n_threads, block_shape, executab
     # def prepare(labels_path, labels_key, graph_path, n_jobs, tmp_folder, block_shape):
     with open(script_file, 'w') as f:
         f.write('#! /bin/bash\n')
-        for scale in range(1, n_scales + 1):
+        for scale in range(n_scales):
             command = './4_map_edge_ids.py %s %s --initial_block_shape %s --n_threads %s' % \
                       (graph_path, str(scale),
                        ' '.join(map(str, block_shape)), str(n_threads))
