@@ -127,7 +127,7 @@ class TestFeatures(unittest.TestCase):
         n_edges = z5py.File(self.graph_path)['graph'].attrs['numberOfEdges']
         chunk_size = min(2097152, n_edges)
         if 'features' not in ffeats:
-            ffeats.create_dataset('features', dtype='float32', shape=(n_edges, 10),
+            ffeats.create_dataset('features', dtype='float64', shape=(n_edges, 10),
                                   chunks=(chunk_size, 1), compression='gzip')
 
         graph_block_prefix = os.path.join(self.graph_path, 'sub_graphs', 's0', 'block_')
@@ -169,7 +169,7 @@ class TestFeatures(unittest.TestCase):
         n_edges = z5py.File(self.graph_path)['graph'].attrs['numberOfEdges']
         chunk_size = min(2097152, n_edges)
         if 'features' not in ffeats:
-            ffeats.create_dataset('features', dtype='float32', shape=(n_edges, 10),
+            ffeats.create_dataset('features', dtype='float64', shape=(n_edges, 10),
                                   chunks=(chunk_size, 1), compression='gzip')
 
         graph_block_prefix = os.path.join(self.graph_path, 'sub_graphs', 's0', 'block_')
