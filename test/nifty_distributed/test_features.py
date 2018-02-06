@@ -11,10 +11,15 @@ import nifty.distributed as ndist
 
 
 class TestRegionGraph(unittest.TestCase):
-    path = '/home/papec/Work/my_projects/cluster_tools/prototype/test/testdata.n5'
+    # path = '/home/papec/Work/my_projects/cluster_tools/prototype/test/testdata.n5'
+    path = '/home/papec/Work/neurodata_hdd/testdata.n5'
     labels_key = 'watershed'
     xy_key = 'affs_xy'
     full_key = 'full_affs'
+    offsets = [[-1, 0, 0], [0, -1, 0], [0, 0, -1],
+               [-2, 0, 0], [0, -3, 0], [0, 0, -3],
+               [-3, 0, 0], [0, -9, 0], [0, 0, -9],
+               [-4, 0, 0], [0, -27, 0], [0, 0, -27]]
 
     def load_graph(self, graph_path, graph_key):
         graph = ndist.loadAsUndirectedGraph(os.path.join(graph_path, graph_key))
@@ -55,7 +60,6 @@ class TestRegionGraph(unittest.TestCase):
                                      numberOfBlocks=n_blocks,
                                      numberOfThreads=8)
 
-    # TODO this needs to be setUpClass
     def setUp(self):
         assert os.path.exists(self.path)
         assert os.path.exists(os.path.join(self.path, self.labels_key))
@@ -75,27 +79,16 @@ class TestRegionGraph(unittest.TestCase):
 
     def check_features(self, feature_path, feature_key, graph_path, graph_key):
         if not os.path.exists(os.path.join(feature_path, feature_key)):
-            print("Skipping features", feature_path, feature_key)
             return
         graph = self.load_graph(graph_path, graph_key)
         features = z5py.File(feature_path)[feature_key][:]
         self.assertEqual(features.shape[0], graph.numberOfEdges)
         self.assertEqual(features.shape[1], 10)
+        self.assertTrue(np.isfinite(features).all())
 
         for ii in range(features.shape[1]):
-            isfinite = np.isfinite(features[:, ii])
-            if not isfinite.all():
-                print("Nan or inf in feature dim", ii)
-                print(np.sum(isfinite), '/', features.size)
-            self.assertTrue(isfinite.all())
-
             mean_feat = np.mean(features[:, ii])
             std_feat = np.std(features[:, ii])
-            if mean_feat == 0 or std_feat == 0:
-                # index 2 is the minimum, which could actually be 0
-                if ii == 2:
-                    continue
-                print("Feature %i has zero mean or variance" % ii)
             self.assertNotEqual(mean_feat, 0)
             self.assertNotEqual(std_feat, 0)
             # count feature should never be 0
@@ -110,15 +103,54 @@ class TestRegionGraph(unittest.TestCase):
         features_tmp = os.path.join(features_out, 'blocks')
 
         def extract_block(block_id):
-            print("Extracting block", block_id)
             ndist.extractBlockFeaturesFromBoundaryMaps(self.graph_path, 'sub_graphs/s0/block_',
                                                        self.path, self.xy_key,
                                                        self.path, self.labels_key,
                                                        [block_id], features_tmp)
 
         n_blocks = self.blocking.numberOfBlocks
-        # FIXME this tends to segfault when run with multiple threads !!!
-        # and it reliably fails if we don't do the print, wtf ?!
+        n_threads = 8
+        with futures.ThreadPoolExecutor(n_threads) as tp:
+            tasks = [tp.submit(extract_block, block_id) for block_id in range(n_blocks)]
+            [t.result() for t in tasks]
+
+        subgraph_path = os.path.join(self.graph_path, 'sub_graphs', 's0')
+        for block_id in range(n_blocks):
+            # TODO compare to nifty features
+            key = 'block_%i' % block_id
+            self.check_features(features_tmp, key, subgraph_path, key)
+
+        n_edges = z5py.File(self.graph_path)['graph'].attrs['numberOfEdges']
+        chunk_size = min(2097152, n_edges)
+        if 'features' not in ffeats:
+            ffeats.create_dataset('features', dtype='float32', shape=(n_edges, 10),
+                                  chunks=(chunk_size, 1), compression='gzip')
+
+        graph_block_prefix = os.path.join(self.graph_path, 'sub_graphs', 's0', 'block_')
+        features_tmp_prefix = os.path.join(features_out, 'blocks/block_')
+        edge_offset = 0
+        ndist.mergeFeatureBlocks(graph_block_prefix,
+                                 features_tmp_prefix,
+                                 os.path.join(features_out, 'features'),
+                                 n_blocks, edge_offset, n_edges,
+                                 numberOfThreads=n_threads)
+        self.check_features(features_out, 'features', self.graph_path, 'graph')
+
+    def test_affmap_features(self):
+        print("Test affmap features")
+        features_out = './tmpdir/features_affmap.n5'
+        ffeats = z5py.File(features_out, use_zarr_format=False)
+        ffeats.create_group('blocks')
+        features_tmp = os.path.join(features_out, 'blocks')
+
+        def extract_block(block_id):
+            ndist.extractBlockFeaturesFromAffinityMaps(self.graph_path, 'sub_graphs/s0/block_',
+                                                       self.path, self.full_key,
+                                                       self.path, self.labels_key,
+                                                       [block_id], features_tmp,
+                                                       self.offsets)
+
+        n_blocks = self.blocking.numberOfBlocks
         n_threads = 8
         with futures.ThreadPoolExecutor(n_threads) as tp:
             tasks = [tp.submit(extract_block, block_id) for block_id in range(n_blocks)]
