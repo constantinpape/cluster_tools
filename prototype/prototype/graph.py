@@ -18,7 +18,7 @@ def subgraphs_from_blocks(path, labels_key, blocks, graph_path):
     halo = [1, 1, 1]
 
     f_graph = z5py.File(graph_path, use_zarr_format=False)
-    f_graph.create_group('sub_graphs/s1')
+    f_graph.create_group('sub_graphs/s0')
 
     def extract_subgraph(block_id):
         print("Extracting subgraph", block_id, "/", blocking.numberOfBlocks)
@@ -29,7 +29,7 @@ def subgraphs_from_blocks(path, labels_key, blocks, graph_path):
         begin = inner_block.begin
         end = outer_block.end
         # TODO groups for different scale levels
-        block_key = 'sub_graphs/s1/block_%i' % block_id
+        block_key = 'sub_graphs/s0/block_%i' % block_id
         ndist.computeMergeableRegionGraph(path, labels_key,
                                           begin, end,
                                           graph_path, block_key)
@@ -44,9 +44,9 @@ def subgraphs_from_blocks(path, labels_key, blocks, graph_path):
 def compute_region_graph(labels_path, labels_key, blocks, graph_path):
     n_blocks = subgraphs_from_blocks(labels_path, labels_key, blocks, graph_path)
     block_list = list(range(n_blocks))
-    ndist.mergeSubgraphs(graph_path, 'sub_graphs/s1', "block_",
+    ndist.mergeSubgraphs(graph_path, 'sub_graphs/s0', "block_",
                          block_list, "graph")
-    ndist.mapEdgeIds(graph_path, 'graph', 'sub_graphs/s1', "block_", block_list)
+    ndist.mapEdgeIds(graph_path, 'graph', 'sub_graphs/s0', "block_", block_list)
 
 
 def load_graph(graph_path, graph_key):

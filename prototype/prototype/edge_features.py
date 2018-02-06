@@ -14,7 +14,7 @@ def extract_boundary_map_features(graph_path,
 
     def extract_block(block_id):
         print("Extracting features for block", block_id)
-        ndist.extractBlockFeaturesFromBoundaryMaps(graph_path, 'sub_graphs/s1/block_',
+        ndist.extractBlockFeaturesFromBoundaryMaps(graph_path, 'sub_graphs/s0/block_',
                                                    data_path, data_key,
                                                    labels_path, labels_key,
                                                    [block_id], features_out_tmp)
@@ -36,7 +36,7 @@ def merge_features(graph_path, n_blocks, features_out):
     if 'features' not in ffeats:
         ffeats.create_dataset('features', dtype='float32', shape=(n_edges, 10),
                               chunks=(chunk_size, 1), compression='gzip')
-    graph_block_prefix = os.path.join(graph_path, 'sub_graphs', 's1', 'block_')
+    graph_block_prefix = os.path.join(graph_path, 'sub_graphs', 's0', 'block_')
     n_threads = 8
     edge_offset = 0
     ndist.mergeFeatureBlocks(graph_block_prefix,

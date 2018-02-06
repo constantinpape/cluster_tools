@@ -22,9 +22,9 @@ class TestRegionGraph(unittest.TestCase):
         if not os.path.exists('tmpdir'):
             os.mkdir('tmpdir')
 
-    # def tearDown(self):
-    #     if os.path.exists('tmpdir'):
-    #         rmtree('tmpdir')
+    def tearDown(self):
+        if os.path.exists('tmpdir'):
+            rmtree('tmpdir')
 
     def load_graph(self, graph_path, graph_key):
         graph_ds = z5py.File(graph_path)[graph_key]
@@ -188,7 +188,7 @@ class TestRegionGraph(unittest.TestCase):
         self.map_edge_ids(graph_path, 0, block_shape, graph)
         self.map_edge_ids(graph_path, 1, block_shape, graph)
 
-    def _test_subgraph(self):
+    def test_subgraph(self):
         roi_begin = [0, 0, 0]
         roi_end = [50, 512, 512]
         bb = tuple(slice(rb, re) for rb, re in zip(roi_begin, roi_end))

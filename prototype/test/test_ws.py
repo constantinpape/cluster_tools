@@ -35,6 +35,17 @@ def make_testdata():
     ds_mask[:] = mask
 
 
+def extract_full_affs():
+    path = '/home/papec/Work/neurodata_hdd/ntwrk_papec/cremi_warped/sampleA+.n5'
+    f = z5py.File(path)
+    f_out = z5py.File('./testdata.n5', use_zarr_format=False)
+    bb = np.s_[:, :100, :1024, :1024]
+    affs = f['predictions/full_affs'][bb]
+    ds = f_out.create_dataset('full_affs', shape=affs.shape,
+                              dtype='float32', compression='gzip', chunks=(3, 25, 256, 256))
+    ds[:] = affs
+
+
 def view_result():
     from cremi_tools.viewer.volumina import view
     raw = z5py.File('./raw.n5')['data'][:]
@@ -65,7 +76,8 @@ def view_cluster_result(bb):
 
 
 if __name__ == '__main__':
-    make_testdata()
+    extract_full_affs()
+    # make_testdata()
     # test_ws()
     # view_result()
     # bb = np.s_[10:60, 1000:1512, 1000:1512]
