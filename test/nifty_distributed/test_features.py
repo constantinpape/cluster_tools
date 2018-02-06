@@ -6,13 +6,14 @@ import numpy as np
 
 import z5py
 import nifty
-import nifty.graph.rag as nrag
+# import nifty.graph.rag as nrag
 import nifty.distributed as ndist
 
 
-class TestRegionGraph(unittest.TestCase):
-    # path = '/home/papec/Work/my_projects/cluster_tools/prototype/test/testdata.n5'
-    path = '/home/papec/Work/neurodata_hdd/testdata.n5'
+class TestFeatures(unittest.TestCase):
+    path = '/home/papec/Work/my_projects/cluster_tools/prototype/test/testdata.n5'
+    # path = '/home/papec/Work/neurodata_hdd/testdata.n5'
+
     labels_key = 'watershed'
     xy_key = 'affs_xy'
     full_key = 'full_affs'
@@ -89,6 +90,9 @@ class TestRegionGraph(unittest.TestCase):
         for ii in range(features.shape[1]):
             mean_feat = np.mean(features[:, ii])
             std_feat = np.std(features[:, ii])
+            if mean_feat == 0 or std_feat == 0:
+                print("Feats are zero for feature-id", ii)
+                print(features.shape)
             self.assertNotEqual(mean_feat, 0)
             self.assertNotEqual(std_feat, 0)
             # count feature should never be 0
@@ -176,6 +180,8 @@ class TestRegionGraph(unittest.TestCase):
                                  os.path.join(features_out, 'features'),
                                  n_blocks, edge_offset, n_edges,
                                  numberOfThreads=n_threads)
+
+        print("Checking merged features")
         self.check_features(features_out, 'features', self.graph_path, 'graph')
 
 
