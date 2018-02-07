@@ -4,7 +4,7 @@ import numpy as np
 
 import z5py
 import nifty
-import cremitools.segmentation as cseg
+import cremi_tools.segmentation as cseg
 import nifty.distributed as ndist
 
 
@@ -16,8 +16,9 @@ def solve_subproblems_scalelevel(graph, block_prefix,
     def solve_subproblem(block_id):
         # load the nodes in this sub-block and map them
         # to our current node-labeling
-        block_path = os.path.join(block_prefix, block_id)
-        nodes, _ = ndist.loadNodes(block_path)
+        block_path = block_prefix + str(block_id)
+        assert os.path.exists(block_path), block_path
+        nodes = np.array(ndist.loadNodes(block_path), dtype='uint64')
         # TODO what is the most efficient here ? nifty.tools.take ?
         if node_labeling is not None:
             nodes = nifty.tools.take(node_labeling, nodes)
@@ -36,7 +37,9 @@ def solve_subproblems_scalelevel(graph, block_prefix,
         sub_uvs = sub_graph.uvIds()
         sub_edgeresult = sub_result[sub_uvs[:, 0]] != sub_result[sub_uvs[:, 1]]
 
+        # FIXME something goes wrong here
         assert len(sub_edgeresult) == len(inner_edges)
+        print(sub_edgeresult.shape, sub_edgeresult.dtype)
         cut_edge_ids = inner_edges[sub_edgeresult]
 
         return np.concatenate([cut_edge_ids, outer_edges])
@@ -101,26 +104,32 @@ def solve_global_problem(graph, costs, initial_nodes_labeling, agglomerator):
     return new_initial_nodes_labeling
 
 
-def multicut(graph_path, feature_path, initial_block_shape, n_scales):
+def multicut(labels_path, labels_key,
+             graph_path, graph_key,
+             feature_path,
+             out_path, out_key,
+             initial_block_shape, n_scales):
 
+    assert os.path.exists(feature_path), feature_path
     # load / make the inputs
-    graph = ndist.loadAsUndirectedGraph(graph_path)
-    costs = z5py.File(feature_path)['features'][:, 0]
-    edge_sizes = z5py.File(feature_path)['features'][:, 9]
+    graph = ndist.loadAsUndirectedGraph(os.path.join(graph_path, graph_key))
+    feature_ds = z5py.File(feature_path)['features']
+    costs = feature_ds[:, 0:1].squeeze()
+    edge_sizes = feature_ds[:, 8:9].squeeze()
 
     # find ignore edges
     ignore_edges = (graph.uvIds() == 0).any(axis=1)
 
     # set edge sizes of ignore edges to 1 (we don't want them to influence the weighting)
     edge_sizes[ignore_edges] = 1
-    costs = ndist.transform_probabilities_to_costs(costs, edge_sizes=edge_sizes)
+    costs = cseg.transform_probabilities_to_costs(costs, edge_sizes=edge_sizes)
 
     # set weights of ignore edges to be maximally repulsive
     costs[ignore_edges] = 5 * costs.min()
 
     initial_nodes_labeling = None
 
-    shape = z5py.File(graph_path).attrs['shape']
+    shape = z5py.File(graph_path)[graph_key].attrs['shape']
 
     agglomerator = cseg.Multicut('kernighan-lin')
 
@@ -131,6 +140,9 @@ def multicut(graph_path, feature_path, initial_block_shape, n_scales):
                                         roiEnd=list(shape),
                                         blockShape=block_shape)
         n_blocks = blocking.numberOfBlocks
+        if scale == 0:
+            n_initial_blocks = n_blocks
+
         block_prefix = os.path.join(graph_path, 'sub_graphs/s%i/block_' % scale)
         merge_edge_ids = solve_subproblems_scalelevel(graph, block_prefix,
                                                       costs, initial_nodes_labeling,
@@ -140,3 +152,9 @@ def multicut(graph_path, feature_path, initial_block_shape, n_scales):
 
     initial_nodes_labeling = solve_global_problem(graph, costs,
                                                   initial_nodes_labeling, agglomerator)
+
+    block_ids = list(range(n_initial_blocks))
+    ndist.nodeLabelingToPixels(os.path.join(labels_path, labels_key),
+                               os.path.join(out_path, out_key),
+                               initial_nodes_labeling, block_ids,
+                               block_shape)

@@ -67,12 +67,20 @@ def merge_subgraphs(graph_path, scale, initial_block_shape, shape):
     with futures.ThreadPoolExecutor(8) as tp:
         tasks = [tp.submit(merge_block, block_id) for block_id in range(blocking.numberOfBlocks)]
         [t.result() for t in tasks]
+    return blocking.numberOfBlocks
 
 
 def compute_region_graph(labels_path, labels_key, blocks, graph_path):
-    n_blocks, shape = subgraphs_from_blocks(labels_path, labels_key, blocks, graph_path)
-    block_list = list(range(n_blocks))
-    ndist.mergeSubgraphs(graph_path, 'sub_graphs/s0', "block_",
-                         block_list, "graph")
-    merge_subgraphs('./graph.n5', 1, blocks, shape)
-    ndist.mapEdgeIds(graph_path, 'graph', 'sub_graphs/s0', "block_", block_list)
+    n_blocks0, shape = subgraphs_from_blocks(labels_path, labels_key, blocks, graph_path)
+    n_blocks1 = merge_subgraphs('./graph.n5', 1, blocks, shape)
+
+    block_list0 = list(range(n_blocks0))
+    block_list1 = list(range(n_blocks1))
+
+    ndist.mergeSubgraphs(graph_path, 'sub_graphs/s1/block_',
+                         block_list1, "graph")
+
+    ndist.mapEdgeIds(graph_path, 'graph', 'sub_graphs/s0/block_', block_list0)
+    ndist.mapEdgeIds(graph_path, 'graph', 'sub_graphs/s1/block_', block_list1)
+
+    z5py.File('./graph.n5')['graph'].attrs['shape'] = shape

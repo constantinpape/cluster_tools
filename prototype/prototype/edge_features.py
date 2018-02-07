@@ -73,15 +73,17 @@ def features(graph_path, data_path, data_key,
     data_shape = z5py.File(data_path)[data_key].shape
     if offsets is None:
         assert len(data_shape) == 3
+        shape = z5py.File(data_path)[data_key].shape
     else:
         assert len(data_shape) == 4
+        shape = z5py.File(data_path)[data_key].shape[1:]
 
     block_shape = [25, 256, 256]
-    shape = z5py.File(data_path)[data_key].shape
     blocking = nifty.tools.blocking(roiBegin=[0, 0, 0],
                                     roiEnd=list(shape),
                                     blockShape=block_shape)
     n_blocks = blocking.numberOfBlocks
+
     if offsets is None:
         extract_boundary_map_features(graph_path, data_path, data_key,
                                       labels_path, labels_key, n_blocks, features_out)
