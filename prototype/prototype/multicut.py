@@ -4,7 +4,7 @@ import numpy as np
 
 import z5py
 import nifty
-import nifty.segmentation as nseg
+import cremitools.segmentation as cseg
 import nifty.distributed as ndist
 
 
@@ -101,18 +101,28 @@ def solve_global_problem(graph, costs, initial_nodes_labeling, agglomerator):
     return new_initial_nodes_labeling
 
 
-def multicut(graph_path, initial_block_shape, n_scales):
+def multicut(graph_path, feature_path, initial_block_shape, n_scales):
 
-    # TODO load / make the inputs
+    # load / make the inputs
     graph = ndist.loadAsUndirectedGraph(graph_path)
-    costs = z5py.File('./features.n5')['features'][:, 0]
-    edge_sizes = z5py.File('./features.n5')['features'][:, 9]
+    costs = z5py.File(feature_path)['features'][:, 0]
+    edge_sizes = z5py.File(feature_path)['features'][:, 9]
+
+    # find ignore edges
+    ignore_edges = (graph.uvIds() == 0).any(axis=1)
+
+    # set edge sizes of ignore edges to 1 (we don't want them to influence the weighting)
+    edge_sizes[ignore_edges] = 1
     costs = ndist.transform_probabilities_to_costs(costs, edge_sizes=edge_sizes)
+
+    # set weights of ignore edges to be maximally repulsive
+    costs[ignore_edges] = 5 * costs.min()
+
     initial_nodes_labeling = None
 
     shape = z5py.File(graph_path).attrs['shape']
 
-    agglomerator = nseg.Multicut('kernighan-lin')
+    agglomerator = cseg.Multicut('kernighan-lin')
 
     for scale in range(n_scales):
         factor = 2**scale

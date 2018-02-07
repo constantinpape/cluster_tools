@@ -37,21 +37,42 @@ def subgraphs_from_blocks(path, labels_key, blocks, graph_path):
     with futures.ThreadPoolExecutor(8) as tp:
         tasks = [tp.submit(extract_subgraph, block_id) for block_id in range(blocking.numberOfBlocks)]
         [t.result for t in tasks]
-    return blocking.numberOfBlocks
+    return blocking.numberOfBlocks, shape
 
 
-# only 1 level for now
+def merge_subgraphs(graph_path, scale, initial_block_shape, shape):
+    factor = 2**scale
+    previous_factor = 2**(scale - 1)
+    block_shape = [factor * bs for bs in initial_block_shape]
+    previous_block_shape = [previous_factor * bs for bs in initial_block_shape]
+
+    blocking = nifty.tools.blocking(roiBegin=[0, 0, 0],
+                                    roiEnd=list(shape),
+                                    blockShape=block_shape)
+    previous_blocking = nifty.tools.blocking(roiBegin=[0, 0, 0],
+                                             roiEnd=list(shape),
+                                             blockShape=previous_block_shape)
+
+    def merge_block(block_id):
+        block = blocking.getBlock(block_id)
+        output_key = 'sub_graphs/s%i/block_%i' % (scale, block_id)
+        block_list = previous_blocking.getBlockIdsInBoundingBox(roiBegin=block.begin,
+                                                                roiEnd=block.end,
+                                                                blockHalo=[0, 0, 0])
+        ndist.mergeSubgraphs(graph_path,
+                             blockPrefix="sub_graphs/s%i/block_" % (scale - 1),
+                             blockIds=block_list.tolist(),
+                             outKey=output_key)
+
+    with futures.ThreadPoolExecutor(8) as tp:
+        tasks = [tp.submit(merge_block, block_id) for block_id in range(blocking.numberOfBlocks)]
+        [t.result() for t in tasks]
+
+
 def compute_region_graph(labels_path, labels_key, blocks, graph_path):
-    n_blocks = subgraphs_from_blocks(labels_path, labels_key, blocks, graph_path)
+    n_blocks, shape = subgraphs_from_blocks(labels_path, labels_key, blocks, graph_path)
     block_list = list(range(n_blocks))
     ndist.mergeSubgraphs(graph_path, 'sub_graphs/s0', "block_",
                          block_list, "graph")
+    merge_subgraphs('./graph.n5', 1, blocks, shape)
     ndist.mapEdgeIds(graph_path, 'graph', 'sub_graphs/s0', "block_", block_list)
-
-
-def load_graph(graph_path, graph_key):
-    assert os.path.exists(graph_path)
-    f = z5py.File(graph_path)[graph_key]
-    nodes = f['nodes'][:]
-    edges = f['edges'][:]
-    return nodes, edges

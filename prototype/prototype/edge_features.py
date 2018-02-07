@@ -22,8 +22,25 @@ def extract_boundary_map_features(graph_path,
     with futures.ThreadPoolExecutor(8) as tp:
         tasks = [tp.submit(extract_block, block_id) for block_id in range(n_blocks)]
         [t.result() for t in tasks]
-    # for block_id in range(n_blocks):
-    #     extract_block(block_id)
+
+
+def extract_affinity_map_features(graph_path,
+                                  data_path, data_key,
+                                  labels_path, labels_key,
+                                  n_blocks, features_out, offsets):
+    features_out_tmp = os.path.join(features_out, 'blocks')
+
+    def extract_block(block_id):
+        print("Extracting features for block", block_id)
+        ndist.extractBlockFeaturesFromAffinityMaps(graph_path, 'sub_graphs/s0/block_',
+                                                   data_path, data_key,
+                                                   labels_path, labels_key,
+                                                   [block_id], features_out_tmp,
+                                                   offsets)
+        print("Done", block_id)
+    with futures.ThreadPoolExecutor(8) as tp:
+        tasks = [tp.submit(extract_block, block_id) for block_id in range(n_blocks)]
+        [t.result() for t in tasks]
 
 
 def merge_features(graph_path, n_blocks, features_out):
@@ -31,10 +48,10 @@ def merge_features(graph_path, n_blocks, features_out):
     n_edges = z5py.File(graph_path)['graph'].attrs['numberOfEdges']
     features_tmp_prefix = os.path.join(features_out, 'blocks/block_')
 
-    # chunk size = 128**3
-    chunk_size = min(2097152, n_edges)
+    # chunk size = 64**3
+    chunk_size = min(262144, n_edges)
     if 'features' not in ffeats:
-        ffeats.create_dataset('features', dtype='float32', shape=(n_edges, 10),
+        ffeats.create_dataset('features', dtype='float64', shape=(n_edges, 10),
                               chunks=(chunk_size, 1), compression='gzip')
     graph_block_prefix = os.path.join(graph_path, 'sub_graphs', 's0', 'block_')
     n_threads = 8
@@ -47,11 +64,17 @@ def merge_features(graph_path, n_blocks, features_out):
 
 
 def features(graph_path, data_path, data_key,
-             labels_path, labels_key, features_out):
+             labels_path, labels_key, features_out, offsets=None):
 
     ffeats = z5py.File(features_out, use_zarr_format=False)
     if 'blocks' not in ffeats:
         ffeats.create_group('blocks')
+
+    data_shape = z5py.File(data_path)[data_key].shape
+    if offsets is None:
+        assert len(data_shape) == 3
+    else:
+        assert len(data_shape) == 4
 
     block_shape = [25, 256, 256]
     shape = z5py.File(data_path)[data_key].shape
@@ -59,7 +82,11 @@ def features(graph_path, data_path, data_key,
                                     roiEnd=list(shape),
                                     blockShape=block_shape)
     n_blocks = blocking.numberOfBlocks
-    extract_boundary_map_features(graph_path, data_path, data_key,
-                                  labels_path, labels_key, n_blocks, features_out)
+    if offsets is None:
+        extract_boundary_map_features(graph_path, data_path, data_key,
+                                      labels_path, labels_key, n_blocks, features_out)
+    else:
+        extract_affinity_map_features(graph_path, data_path, data_key,
+                                      labels_path, labels_key, n_blocks, features_out, offsets)
 
     merge_features(graph_path, n_blocks, features_out)
