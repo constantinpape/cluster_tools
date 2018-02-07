@@ -2,6 +2,7 @@ import os
 from concurrent import futures
 import numpy as np
 
+import vigra
 import z5py
 import nifty
 import cremi_tools.segmentation as cseg
@@ -10,7 +11,7 @@ import nifty.distributed as ndist
 
 def solve_subproblems_scalelevel(graph, block_prefix,
                                  costs, node_labeling,
-                                 scale, n_blocks, agglomerator):
+                                 n_blocks, agglomerator):
 
     # we only return the edges that will be cut
     def solve_subproblem(block_id):
@@ -18,18 +19,20 @@ def solve_subproblems_scalelevel(graph, block_prefix,
         # to our current node-labeling
         block_path = block_prefix + str(block_id)
         assert os.path.exists(block_path), block_path
-        nodes = np.array(ndist.loadNodes(block_path), dtype='uint64')
+        nodes = ndist.loadNodes(block_path)
         # TODO what is the most efficient here ? nifty.tools.take ?
         if node_labeling is not None:
             nodes = nifty.tools.take(node_labeling, nodes)
             nodes = np.unique(nodes)
 
-        # TODO make this accecpt np array
+        # TODO can we do this without loading the whole graph ???
+        # TODO make this accecpt and return np array
         inner_edges, outer_edges, sub_graph = graph.extractSubgraphFromNodes(nodes.tolist())
+        inner_edges = np.array(inner_edges, dtype='int64')
+        outer_edges = np.array(outer_edges, dtype='int64')
 
         # we might only have a single node, but we still need to find the outer edges
         if len(nodes) <= 1:
-            # TODO cut the outer edges
             return outer_edges
 
         sub_costs = costs[inner_edges]
@@ -37,16 +40,15 @@ def solve_subproblems_scalelevel(graph, block_prefix,
         sub_uvs = sub_graph.uvIds()
         sub_edgeresult = sub_result[sub_uvs[:, 0]] != sub_result[sub_uvs[:, 1]]
 
-        # FIXME something goes wrong here
         assert len(sub_edgeresult) == len(inner_edges)
-        print(sub_edgeresult.shape, sub_edgeresult.dtype)
         cut_edge_ids = inner_edges[sub_edgeresult]
-
         return np.concatenate([cut_edge_ids, outer_edges])
 
     with futures.ThreadPoolExecutor(8) as tp:
         tasks = [tp.submit(solve_subproblem, block_id) for block_id in range(n_blocks)]
         cut_edge_ids = np.concatenate([t.result() for t in tasks])
+
+    # cut_edge_ids = np.concatenate([solve_subproblem(block_id) for block_id in range(n_blocks)])
 
     cut_edge_ids = np.unique(cut_edge_ids)
     merge_edges = np.ones(graph.numberOfEdges, dtype='bool')
@@ -55,51 +57,60 @@ def solve_subproblems_scalelevel(graph, block_prefix,
 
 
 # TODO implement different merging for costs (e.g. mean)
-# TODO compare this implementation with edge contraction graph to my mc_luigi implementation
 def reduce_scalelevel(graph, costs, merge_edge_ids, initial_nodes_labeling):
-    # build the edge contraction graph
-    contraction_graph = nifty.graph.edgeContractionGraph(graph,
-                                                         nifty.graph.EdgeContractionGraphCallback())
-    #
-    # TODO all this should be vectorized / parallelized if possible!
-    #
-    for merge_edge in merge_edge_ids:
-        contraction_graph.contractEdge(merge_edge)
+
+    # merge node pairs with ufd
+    ufd = nifty.ufd.ufd(graph.numberOfNodes)
+    uv_ids = graph.uvIds()
+    merge_pairs = uv_ids[merge_edge_ids]
+    ufd.merge(merge_pairs)
+
+    # get the node results and label them consecutively
+    node_labeling = ufd.elementLabeling()
+    node_labeling, max_new_id, _ = vigra.analysis.relabelConsecutive(node_labeling)
+    n_new_nodes = max_new_id + 1
 
     # get the labeling of initial nodes
-    new_initial_nodes_labeling = np.zeros(len(initial_nodes_labeling))
-    for node in range(graph.numberOfNodes):
-        new_node = contraction_graph.findRepresentativeNode(node)
-        initial_node = initial_nodes_labeling[node]
-        new_initial_nodes_labeling[initial_node] = new_node
+    if initial_nodes_labeling is None:
+        new_initial_nodes_labeling = node_labeling
+    else:
+        new_initial_nodes_labeling = np.zeros(len(initial_nodes_labeling), dtype='uint64')
+        # TODO vectorrize /  parallelize this
+        for node in range(graph.numberOfNodes):
+            new_node = node_labeling[node]
+            initial_node = initial_nodes_labeling[node]
+            new_initial_nodes_labeling[initial_node] = new_node
 
     # get new edge costs
-    new_costs = np.zeros(contraction_graph.numberOfEdges, dtype='float32')
-    # construct the cut edges from the merge edges
-    cut_edges = np.ones(graph.numberOfEdges, dtype='bool')
-    cut_edges[merge_edge_ids] = False
-    cut_edges = np.where(cut_edges)[0]
-    # TODO we want to be able to use different cost mergings here
-    for cut_edge in cut_edges:
-        new_edge = contraction_graph.findRepresentativeEdge(cut_edge)
-        new_costs[new_edge] += costs[cut_edge]
+    edge_mapping = nifty.tools.EdgeMapping(uv_ids, node_labeling, numberOfThreads=8)
+    new_uv_ids = edge_mapping.newUvIds()
+    # TODO we want different options for the mapping scheme here
+    # TODO should all be np.array based
+    new_costs = edge_mapping.mapEdgeValues(costs, numberOfThreads=8)
 
-    # this is a bit dumb, for the cluster we should serialize the contraction graph directly
-    new_graph = nifty.UndirectedGraph(contraction_graph.numberOfNodes)
-    new_graph.insertEdges(contraction_graph.uvIds())
+    print("Reduced graph from", graph.numberOfNodes, "to", n_new_nodes, "nodes;",
+          graph.numberOfEdges, "to", len(new_uv_ids), "edges.")
+
+    # TODO for the clustr version, we only need to serialize
+    # the new uv-ids and new number of nodes to serialize the graph
+    new_graph = nifty.graph.undirectedGraph(n_new_nodes)
+    new_graph.insertEdges(new_uv_ids)
     return new_graph, new_costs, new_initial_nodes_labeling
 
 
 def solve_global_problem(graph, costs, initial_nodes_labeling, agglomerator):
     node_labeling = agglomerator(graph, costs)
 
-    # TODO vectorize !
-    # get the labeling of initial nodes
-    new_initial_nodes_labeling = np.zeros(len(initial_nodes_labeling))
-    for node in range(graph.numberOfNodes):
-        new_node = node_labeling[node]
-        initial_node = initial_nodes_labeling[node]
-        new_initial_nodes_labeling[initial_node] = new_node
+    if initial_nodes_labeling is None:
+        new_initial_nodes_labeling = node_labeling
+    else:
+        # TODO vectorize !
+        # get the labeling of initial nodes
+        new_initial_nodes_labeling = np.zeros(len(initial_nodes_labeling))
+        for node in range(graph.numberOfNodes):
+            new_node = node_labeling[node]
+            initial_node = initial_nodes_labeling[node]
+            new_initial_nodes_labeling[initial_node] = new_node
 
     return new_initial_nodes_labeling
 
@@ -108,14 +119,18 @@ def multicut(labels_path, labels_key,
              graph_path, graph_key,
              feature_path,
              out_path, out_key,
-             initial_block_shape, n_scales):
+             initial_block_shape, n_scales,
+             weight_edges=True):
 
     assert os.path.exists(feature_path), feature_path
     # load / make the inputs
     graph = ndist.loadAsUndirectedGraph(os.path.join(graph_path, graph_key))
     feature_ds = z5py.File(feature_path)['features']
-    costs = feature_ds[:, 0:1].squeeze()
-    edge_sizes = feature_ds[:, 8:9].squeeze()
+    costs = 1. - feature_ds[:, 0:1].squeeze()
+    if weight_edges:
+        edge_sizes = feature_ds[:, 9:].squeeze()
+    else:
+        edge_sizes = None
 
     # find ignore edges
     ignore_edges = (graph.uvIds() == 0).any(axis=1)
@@ -140,21 +155,33 @@ def multicut(labels_path, labels_key,
                                         roiEnd=list(shape),
                                         blockShape=block_shape)
         n_blocks = blocking.numberOfBlocks
-        if scale == 0:
-            n_initial_blocks = n_blocks
 
         block_prefix = os.path.join(graph_path, 'sub_graphs/s%i/block_' % scale)
+        print("Solving sub-problems for scale", scale)
         merge_edge_ids = solve_subproblems_scalelevel(graph, block_prefix,
                                                       costs, initial_nodes_labeling,
-                                                      scale, n_blocks, agglomerator)
+                                                      n_blocks, agglomerator)
+        print("Merging sub-solutions for scale", scale)
         graph, costs, initial_nodes_labeling = reduce_scalelevel(graph, costs,
                                                                  merge_edge_ids, initial_nodes_labeling)
 
     initial_nodes_labeling = solve_global_problem(graph, costs,
                                                   initial_nodes_labeling, agglomerator)
 
+    out = z5py.File(out_path, use_zarr_format=False)
+    if out_key not in out:
+        out.create_dataset(out_key, dtype='uint64', shape=tuple(shape), chunks=tuple(initial_block_shape),
+                           compression='gzip')
+    else:
+        # TODO assertions
+        pass
+
+    blocking = nifty.tools.blocking(roiBegin=[0, 0, 0],
+                                    roiEnd=list(shape),
+                                    blockShape=initial_block_shape)
+    n_initial_blocks = blocking.numberOfBlocks
     block_ids = list(range(n_initial_blocks))
     ndist.nodeLabelingToPixels(os.path.join(labels_path, labels_key),
                                os.path.join(out_path, out_key),
                                initial_nodes_labeling, block_ids,
-                               block_shape)
+                               initial_block_shape)
