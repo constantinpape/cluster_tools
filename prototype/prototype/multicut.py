@@ -20,7 +20,7 @@ def solve_subproblems_scalelevel(graph, block_prefix,
         block_path = block_prefix + str(block_id)
         assert os.path.exists(block_path), block_path
         nodes = ndist.loadNodes(block_path)
-        # TODO what is the most efficient here ? nifty.tools.take ?
+
         if node_labeling is not None:
             nodes = nifty.tools.take(node_labeling, nodes)
             nodes = np.unique(nodes)
@@ -56,8 +56,16 @@ def solve_subproblems_scalelevel(graph, block_prefix,
     return np.where(merge_edges)[0]
 
 
-# TODO implement different merging for costs (e.g. mean)
-def reduce_scalelevel(graph, costs, merge_edge_ids, initial_nodes_labeling):
+# TODO vectorrize /  parallelize this
+def map_node_labeling(node_labeling, initial_nodes_labeling):
+    new_initial_nodes_labeling = np.zeros(len(initial_nodes_labeling), dtype='uint64')
+    for node, new_node in enumerate(node_labeling):
+        initial_nodes = np.where(initial_nodes_labeling == node)[0]
+        new_initial_nodes_labeling[initial_nodes] = new_node
+    return new_initial_nodes_labeling
+
+
+def reduce_scalelevel(graph, costs, merge_edge_ids, initial_nodes_labeling, cost_accumulation="sum"):
 
     # merge node pairs with ufd
     ufd = nifty.ufd.ufd(graph.numberOfNodes)
@@ -74,27 +82,14 @@ def reduce_scalelevel(graph, costs, merge_edge_ids, initial_nodes_labeling):
     if initial_nodes_labeling is None:
         new_initial_nodes_labeling = node_labeling
     else:
-        new_initial_nodes_labeling = np.zeros(len(initial_nodes_labeling), dtype='uint64')
-        # TODO vectorrize /  parallelize this
-        for node in range(graph.numberOfNodes):
-            new_node = node_labeling[node]
-            initial_node = initial_nodes_labeling[node]
-            new_initial_nodes_labeling[initial_node] = new_node
+        new_initial_nodes_labeling = map_node_labeling(node_labeling, initial_nodes_labeling)
 
     # get new edge costs
     edge_mapping = nifty.tools.EdgeMapping(uv_ids, node_labeling, numberOfThreads=8)
     new_uv_ids = edge_mapping.newUvIds()
-    # TODO we want different options for the mapping scheme here
-    # TODO should all be np.array based
-    new_costs = edge_mapping.mapEdgeValues(costs, numberOfThreads=8)
+
+    new_costs = edge_mapping.mapEdgeValues(costs, cost_accumulation, numberOfThreads=8)
     assert len(new_uv_ids) == len(new_costs)
-
-    assert (np.unique(new_uv_ids) == np.arange(n_new_nodes)).all()
-    print(new_uv_ids[:10])
-    print(new_uv_ids[-10:])
-
-    print(costs.min(), costs.max())
-    print(new_costs.min(), new_costs.max())
 
     print("Reduced graph from", graph.numberOfNodes, "to", n_new_nodes, "nodes;",
           graph.numberOfEdges, "to", len(new_uv_ids), "edges.")
@@ -109,16 +104,11 @@ def reduce_scalelevel(graph, costs, merge_edge_ids, initial_nodes_labeling):
 def solve_global_problem(graph, costs, initial_nodes_labeling, agglomerator):
     node_labeling = agglomerator(graph, costs)
 
+    # get the labeling of initial nodes
     if initial_nodes_labeling is None:
         new_initial_nodes_labeling = node_labeling
     else:
-        # TODO vectorize !
-        # get the labeling of initial nodes
-        new_initial_nodes_labeling = np.zeros(len(initial_nodes_labeling))
-        for node in range(graph.numberOfNodes):
-            new_node = node_labeling[node]
-            initial_node = initial_nodes_labeling[node]
-            new_initial_nodes_labeling[initial_node] = new_node
+        new_initial_nodes_labeling = map_node_labeling(node_labeling, initial_nodes_labeling)
 
     return new_initial_nodes_labeling
 
@@ -151,9 +141,7 @@ def multicut(labels_path, labels_key,
     costs[ignore_edges] = 5 * costs.min()
 
     initial_nodes_labeling = None
-
     shape = z5py.File(graph_path)[graph_key].attrs['shape']
-
     agglomerator = cseg.Multicut('kernighan-lin')
 
     for scale in range(n_scales):
