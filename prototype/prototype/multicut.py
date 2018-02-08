@@ -56,16 +56,9 @@ def solve_subproblems_scalelevel(graph, block_prefix,
     return np.where(merge_edges)[0]
 
 
-# TODO vectorrize /  parallelize this
-def map_node_labeling(node_labeling, initial_nodes_labeling):
-    new_initial_nodes_labeling = np.zeros(len(initial_nodes_labeling), dtype='uint64')
-    for node, new_node in enumerate(node_labeling):
-        initial_nodes = np.where(initial_nodes_labeling == node)[0]
-        new_initial_nodes_labeling[initial_nodes] = new_node
-    return new_initial_nodes_labeling
-
-
-def reduce_scalelevel(graph, costs, merge_edge_ids, initial_nodes_labeling, cost_accumulation="sum"):
+# actually, we don't even need the graph here, just the uv-ids and number of nodes
+# this will allow us to skip graph construction on the cluster nodes :)
+def reduce_scalelevel(graph, costs, merge_edge_ids, initial_node_labeling, cost_accumulation="sum"):
 
     # merge node pairs with ufd
     ufd = nifty.ufd.ufd(graph.numberOfNodes)
@@ -79,10 +72,12 @@ def reduce_scalelevel(graph, costs, merge_edge_ids, initial_nodes_labeling, cost
     n_new_nodes = max_new_id + 1
 
     # get the labeling of initial nodes
-    if initial_nodes_labeling is None:
-        new_initial_nodes_labeling = node_labeling
+    if initial_node_labeling is None:
+        new_initial_node_labeling = node_labeling
     else:
-        new_initial_nodes_labeling = map_node_labeling(node_labeling, initial_nodes_labeling)
+        # should this ever become a bottleneck, we can parallelize this in nifty
+        # but for now this would really be premature optimization
+        new_initial_node_labeling = node_labeling[initial_node_labeling]
 
     # get new edge costs
     edge_mapping = nifty.tools.EdgeMapping(uv_ids, node_labeling, numberOfThreads=8)
@@ -98,19 +93,21 @@ def reduce_scalelevel(graph, costs, merge_edge_ids, initial_nodes_labeling, cost
     # the new uv-ids and new number of nodes to serialize the graph
     new_graph = nifty.graph.undirectedGraph(n_new_nodes)
     new_graph.insertEdges(new_uv_ids)
-    return new_graph, new_costs, new_initial_nodes_labeling
+    return new_graph, new_costs, new_initial_node_labeling
 
 
-def solve_global_problem(graph, costs, initial_nodes_labeling, agglomerator):
+def solve_global_problem(graph, costs, initial_node_labeling, agglomerator):
     node_labeling = agglomerator(graph, costs)
 
     # get the labeling of initial nodes
-    if initial_nodes_labeling is None:
-        new_initial_nodes_labeling = node_labeling
+    if initial_node_labeling is None:
+        new_initial_node_labeling = node_labeling
     else:
-        new_initial_nodes_labeling = map_node_labeling(node_labeling, initial_nodes_labeling)
+        # should this ever become a bottleneck, we can parallelize this in nifty
+        # but for now this would really be premature optimization
+        new_initial_node_labeling = node_labeling[initial_node_labeling]
 
-    return new_initial_nodes_labeling
+    return new_initial_node_labeling
 
 
 def multicut(labels_path, labels_key,
@@ -140,7 +137,7 @@ def multicut(labels_path, labels_key,
     # set weights of ignore edges to be maximally repulsive
     costs[ignore_edges] = 5 * costs.min()
 
-    initial_nodes_labeling = None
+    initial_node_labeling = None
     shape = z5py.File(graph_path)[graph_key].attrs['shape']
     agglomerator = cseg.Multicut('kernighan-lin')
 
@@ -155,15 +152,15 @@ def multicut(labels_path, labels_key,
         block_prefix = os.path.join(graph_path, 'sub_graphs/s%i/block_' % scale)
         print("Solving sub-problems for scale", scale)
         merge_edge_ids = solve_subproblems_scalelevel(graph, block_prefix,
-                                                      costs, initial_nodes_labeling,
+                                                      costs, initial_node_labeling,
                                                       n_blocks, agglomerator)
         print("Merging sub-solutions for scale", scale)
-        graph, costs, initial_nodes_labeling = reduce_scalelevel(graph, costs,
-                                                                 merge_edge_ids,
-                                                                 initial_nodes_labeling)
+        graph, costs, initial_node_labeling = reduce_scalelevel(graph, costs,
+                                                                merge_edge_ids,
+                                                                initial_node_labeling)
 
-    initial_nodes_labeling = solve_global_problem(graph, costs,
-                                                  initial_nodes_labeling, agglomerator)
+    initial_node_labeling = solve_global_problem(graph, costs,
+                                                 initial_node_labeling, agglomerator)
 
     out = z5py.File(out_path, use_zarr_format=False)
     if out_key not in out:
@@ -181,5 +178,5 @@ def multicut(labels_path, labels_key,
     block_ids = list(range(n_initial_blocks))
     ndist.nodeLabelingToPixels(os.path.join(labels_path, labels_key),
                                os.path.join(out_path, out_key),
-                               initial_nodes_labeling, block_ids,
+                               initial_node_labeling, block_ids,
                                initial_block_shape)
