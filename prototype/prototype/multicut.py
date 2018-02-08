@@ -87,6 +87,14 @@ def reduce_scalelevel(graph, costs, merge_edge_ids, initial_nodes_labeling):
     # TODO we want different options for the mapping scheme here
     # TODO should all be np.array based
     new_costs = edge_mapping.mapEdgeValues(costs, numberOfThreads=8)
+    assert len(new_uv_ids) == len(new_costs)
+
+    assert (np.unique(new_uv_ids) == np.arange(n_new_nodes)).all()
+    print(new_uv_ids[:10])
+    print(new_uv_ids[-10:])
+
+    print(costs.min(), costs.max())
+    print(new_costs.min(), new_costs.max())
 
     print("Reduced graph from", graph.numberOfNodes, "to", n_new_nodes, "nodes;",
           graph.numberOfEdges, "to", len(new_uv_ids), "edges.")
@@ -163,14 +171,16 @@ def multicut(labels_path, labels_key,
                                                       n_blocks, agglomerator)
         print("Merging sub-solutions for scale", scale)
         graph, costs, initial_nodes_labeling = reduce_scalelevel(graph, costs,
-                                                                 merge_edge_ids, initial_nodes_labeling)
+                                                                 merge_edge_ids,
+                                                                 initial_nodes_labeling)
 
     initial_nodes_labeling = solve_global_problem(graph, costs,
                                                   initial_nodes_labeling, agglomerator)
 
     out = z5py.File(out_path, use_zarr_format=False)
     if out_key not in out:
-        out.create_dataset(out_key, dtype='uint64', shape=tuple(shape), chunks=tuple(initial_block_shape),
+        out.create_dataset(out_key, dtype='uint64', shape=tuple(shape),
+                           chunks=tuple(initial_block_shape),
                            compression='gzip')
     else:
         # TODO assertions

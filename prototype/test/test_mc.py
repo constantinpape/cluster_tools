@@ -18,13 +18,13 @@ def view_mc():
     f = z5py.File(path)
     raw = f['raw'][:]
     ws = f['watershed'][:]
-    affs = f['affs_z'][:]
+    # affs = f['affs_z'][:]
     mc = f['multicut'][:]
 
-    view([raw, affs, ws, mc])
-    #view([raw, ws, mc])
+    # view([raw, affs, ws, mc])
+    view([raw, ws, mc])
 
 
 if __name__ == '__main__':
-    test_mc(0)
+    test_mc(1)
     view_mc()
