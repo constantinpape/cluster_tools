@@ -18,7 +18,7 @@ def make_executable(path):
     os.chmod(path, st.st_mode | stat.S_IEXEC)
 
 
-def make_batch_jobs_step1(aff_path_xy, key_xy, aff_path_z, key_z, out_path, out_key, tmp_folder,
+def make_batch_jobs_step1(aff_path, aff_key, out_path, out_key, tmp_folder,
                           block_shape, chunks, n_jobs, executable,
                           script_file='jobs_step1.sh', use_bsub=True, eta=5):
 
@@ -38,8 +38,8 @@ def make_batch_jobs_step1(aff_path_xy, key_xy, aff_path_z, key_z, out_path, out_
 
     with open(script_file, 'w') as f:
         f.write('#! /bin/bash\n')
-        f.write('./0_prepare.py %s %s %s %s %s %s --tmp_folder %s --block_shape %s --chunks %s --n_jobs %s\n' %
-                (aff_path_xy, key_xy, aff_path_z, key_z,
+        f.write('./0_prepare.py %s %s %s %s --tmp_folder %s --block_shape %s --chunks %s --n_jobs %s\n' %
+                (aff_path, aff_key,
                  out_path, out_key, tmp_folder,
                  ' '.join(map(str, block_shape)),
                  ' '.join(map(str, chunks)),
@@ -47,8 +47,8 @@ def make_batch_jobs_step1(aff_path_xy, key_xy, aff_path_z, key_z, out_path, out_
         # TODO we need to check for success here !
 
         for job_id in range(n_jobs):
-            command = './1_watershed.py %s %s %s %s %s %s --tmp_folder %s --block_shape %s --block_file %s' % \
-                      (aff_path_xy, key_xy, aff_path_z, key_z, out_path, out_key, tmp_folder,
+            command = './1_watershed.py %s %s %s %s --tmp_folder %s --block_shape %s --block_file %s' % \
+                      (aff_path, aff_key, out_path, out_key, tmp_folder,
                        ' '.join(map(str, block_shape)),
                        os.path.join(tmp_folder, '1_input_%i.npy' % job_id))
             if use_bsub:
@@ -179,7 +179,7 @@ def make_master_job(n_jobs, executable, script_file):
     make_executable(script_file)
 
 
-def make_batch_jobs(aff_path_xy, key_xy, aff_path_z, key_z,
+def make_batch_jobs(aff_path, aff_key,
                     out_path, out_key, tmp_folder,
                     block_shape, chunks, n_jobs, executable,
                     eta=15, n_threads_ufd=1, use_bsub=True):
@@ -201,7 +201,7 @@ def make_batch_jobs(aff_path_xy, key_xy, aff_path_z, key_z,
         rmtree('logs')
     os.mkdir('logs')
 
-    make_batch_jobs_step1(aff_path_xy, key_xy, aff_path_z, key_z, out_path, out_key, tmp_folder,
+    make_batch_jobs_step1(aff_path, aff_key, out_path, out_key, tmp_folder,
                           block_shape, chunks, n_jobs, executable,
                           use_bsub=use_bsub, eta=eta_[0])
 

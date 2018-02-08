@@ -4,7 +4,7 @@ import fileinput
 from shutil import copy, rmtree
 
 
-# https://stackoverflow.com/questions/39086/search-and-replace-a-line-in-a-file-in-python
+https://stackoverflow.com/questions/39086/search-and-replace-a-line-in-a-file-in-python
 def replace_shebang(file_path, shebang):
     for i, line in enumerate(fileinput.input(file_path, inplace=True)):
         if i == 0:
@@ -18,8 +18,7 @@ def make_executable(path):
     os.chmod(path, st.st_mode | stat.S_IEXEC)
 
 
-def make_batch_jobs_step1(aff_path_xy, key_xy,
-                          aff_path_z, key_z,
+def make_batch_jobs_step1(aff_path, aff_key,
                           mask_path, mask_key,
                           out_path, out_key, tmp_folder,
                           block_shape, chunks, n_jobs, executable,
@@ -41,8 +40,8 @@ def make_batch_jobs_step1(aff_path_xy, key_xy,
 
     with open(script_file, 'w') as f:
         f.write('#! /bin/bash\n')
-        f.write('./0_prepare.py %s %s %s %s %s %s %s %s --tmp_folder %s --block_shape %s --chunks %s --n_jobs %s\n' %
-                (aff_path_xy, key_xy, aff_path_z, key_z,
+        f.write('./0_prepare.py %s %s %s %s %s %s --tmp_folder %s --block_shape %s --chunks %s --n_jobs %s\n' %
+                (aff_path, aff_key,
                  mask_path, mask_key,
                  out_path, out_key, tmp_folder,
                  ' '.join(map(str, block_shape)),
@@ -51,8 +50,8 @@ def make_batch_jobs_step1(aff_path_xy, key_xy,
         # TODO we need to check for success here !
 
         for job_id in range(n_jobs):
-            command = './1_watershed.py %s %s %s %s %s %s %s %s --tmp_folder %s --block_shape %s --block_file %s' % \
-                      (aff_path_xy, key_xy, aff_path_z, key_z,
+            command = './1_watershed.py %s %s %s %s %s %s --tmp_folder %s --block_shape %s --block_file %s' % \
+                      (aff_path, aff_key,
                        mask_path, mask_key,
                        out_path, out_key, tmp_folder,
                        ' '.join(map(str, block_shape)),
@@ -185,7 +184,7 @@ def make_master_job(n_jobs, executable, script_file):
     make_executable(script_file)
 
 
-def make_batch_jobs(aff_path_xy, key_xy, aff_path_z, key_z,
+def make_batch_jobs(aff_path, aff_key,
                     mask_path, mask_key,
                     out_path, out_key, tmp_folder,
                     block_shape, chunks, n_jobs, executable,
@@ -208,8 +207,7 @@ def make_batch_jobs(aff_path_xy, key_xy, aff_path_z, key_z,
         rmtree('logs')
     os.mkdir('logs')
 
-    make_batch_jobs_step1(aff_path_xy, key_xy,
-                          aff_path_z, key_z,
+    make_batch_jobs_step1(aff_path, aff_key,
                           mask_path, mask_key,
                           out_path, out_key, tmp_folder,
                           block_shape, chunks, n_jobs, executable,

@@ -22,20 +22,16 @@ def blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder):
     assert idx == n_jobs - 1, "Not enough inputs created: %i / %i" % (idx, n_jobs - 1)
 
 
-def prepare(aff_path_xy, key_xy,
-            aff_path_z, key_z,
+def prepare(aff_path, aff_key,
             out_path, key_out,
             out_chunks, out_blocks,
             tmp_folder, n_jobs):
-    assert os.path.exists(aff_path_xy)
-    assert os.path.exists(aff_path_z)
+    assert os.path.exists(aff_path)
     assert all(bs % cs == 0 for bs, cs in zip(out_blocks, out_chunks)), \
         "Block shape is not a multiple of chunk shape: %s %s" % (str(out_blocks), str(out_chunks))
-    ds_xy = z5py.File(aff_path_xy)[key_xy]
-    ds_z = z5py.File(aff_path_z)[key_z]
+    ds_affs = z5py.File(aff_path)[aff_key]
 
-    shape = ds_xy.shape
-    assert ds_z.shape == shape
+    shape = ds_affs.shape[1:]
 
     if not os.path.exists(tmp_folder):
         os.mkdir(tmp_folder)
@@ -55,10 +51,8 @@ def prepare(aff_path_xy, key_xy,
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("aff_path_xy", type=str)
-    parser.add_argument("key_xy", type=str)
-    parser.add_argument("aff_path_z", type=str)
-    parser.add_argument("key_z", type=str)
+    parser.add_argument("aff_path", type=str)
+    parser.add_argument("aff_key", type=str)
 
     parser.add_argument("out_path", type=str)
     parser.add_argument("out_key", type=str)
@@ -68,8 +62,7 @@ if __name__ == '__main__':
     parser.add_argument("--n_jobs", type=int)
 
     args = parser.parse_args()
-    prepare(args.aff_path_xy, args.key_xy,
-            args.aff_path_z, args.key_z,
+    prepare(args.aff_path, args.aff_key,
             args.out_path, args.out_key,
             tuple(args.chunks), tuple(args.block_shape),
             args.tmp_folder, args.n_jobs)
