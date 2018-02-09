@@ -25,11 +25,13 @@ def solve_subproblems_scalelevel(graph, block_prefix,
             nodes = nifty.tools.take(node_labeling, nodes)
             nodes = np.unique(nodes)
 
-        # TODO can we do this without loading the whole graph ???
-        # TODO make this accecpt and return np array
-        inner_edges, outer_edges, sub_graph = graph.extractSubgraphFromNodes(nodes.tolist())
-        inner_edges = np.array(inner_edges, dtype='int64')
-        outer_edges = np.array(outer_edges, dtype='int64')
+        # TODO for this, we still need to map the graph to the new node and edge labeling
+        # TODO we could just extract the graph locally with ndist
+        # the only issue with this is that we store the node 2 block list as n5 which could wack the file system ...
+        # if we change this storage to hdf5, everything should be fine
+        # inner_edges, outer_edges, sub_graph = ndist.extractSubgraphFromNodes(nodes,
+        #     nodeStoragePrefix, graphBlockPrefix)
+        inner_edges, outer_edges, sub_graph = graph.extractSubgraphFromNodes(nodes)
 
         # we might only have a single node, but we still need to find the outer edges
         if len(nodes) <= 1:
@@ -118,6 +120,7 @@ def multicut(labels_path, labels_key,
              weight_edges=True):
 
     assert os.path.exists(feature_path), feature_path
+
     # load / make the inputs
     graph = ndist.loadAsUndirectedGraph(os.path.join(graph_path, graph_key))
     feature_ds = z5py.File(feature_path)['features']
@@ -137,8 +140,22 @@ def multicut(labels_path, labels_key,
     # set weights of ignore edges to be maximally repulsive
     costs[ignore_edges] = 5 * costs.min()
 
-    initial_node_labeling = None
+    # get the number of initial blocks
     shape = z5py.File(graph_path)[graph_key].attrs['shape']
+    blocking = nifty.tools.blocking(roiBegin=[0, 0, 0],
+                                    roiEnd=list(shape),
+                                    blockShape=initial_block_shape)
+    n_initial_blocks = blocking.numberOfBlocks
+
+    # TODO We need this once local graph extraction with mapping is working
+    # # get node to blpck assignments
+    # n_nodes = z5py.File(graph_path)[graph_key].attrs['numberOfNodes']
+    # z5py.File('./nodes_to_blocks.n5', use_zarr_format=False)
+    # ndist.nodesToBlocks(os.path.join(graph_path, 'sub_graphs/s0/block_'),
+    #                     os.path.join('./nodes_to_blocks.n5', 'node_'),
+    #                     n_initial_blocks, n_nodes, 8)
+
+    initial_node_labeling = None
     agglomerator = cseg.Multicut('kernighan-lin')
 
     for scale in range(n_scales):
@@ -171,10 +188,6 @@ def multicut(labels_path, labels_key,
         # TODO assertions
         pass
 
-    blocking = nifty.tools.blocking(roiBegin=[0, 0, 0],
-                                    roiEnd=list(shape),
-                                    blockShape=initial_block_shape)
-    n_initial_blocks = blocking.numberOfBlocks
     block_ids = list(range(n_initial_blocks))
     ndist.nodeLabelingToPixels(os.path.join(labels_path, labels_key),
                                os.path.join(out_path, out_key),
