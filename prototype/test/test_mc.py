@@ -26,5 +26,5 @@ def view_mc():
 
 
 if __name__ == '__main__':
-    test_mc(2)
+    test_mc(1)
     view_mc()
