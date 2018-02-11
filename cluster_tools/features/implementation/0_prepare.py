@@ -1,5 +1,6 @@
 #! /usr/bin/python
 
+import json
 import os
 import argparse
 from math import ceil
@@ -36,6 +37,17 @@ def edges_to_jobs2(n_edges, chunk_size, n_jobs, tmp_folder, n_blocks):
         edge_end = min((job_id + 1) * chunks_per_job * chunk_size, n_edges)
         np.save(os.path.join(tmp_folder, "2_input_%i.npy" % job_id),
                 np.array([edge_begin, edge_end, n_blocks], dtype='uint32'))
+
+
+# TODO support others than default offsets
+def make_offset_file(tmp_folder):
+    offset_file = os.path.join(tmp_folder, 'offsets.json')
+    default_offsets = [[-1, 0, 0], [0, -1, 0], [0, 0, -1],
+                       [-2, 0, 0], [0, -3, 0], [0, 0, -3],
+                       [-3, 0, 0], [0, -9, 0], [0, 0, -9],
+                       [-4, 0, 0], [0, -27, 0], [0, 0, -27]]
+    with open(offset_file, 'w') as f:
+        json.dump(default_offsets, f)
 
 
 def prepare(graph_path, graph_key, out_path, out_key, block_shape,

@@ -29,8 +29,8 @@ if __name__ == '__main__':
     parser.add_argument("features_tmp_prefix", type=str)
     parser.add_argument("out_path", type=str)
     parser.add_argument("out_key", type=str)
-    parser.add_argument("input_file", type=str)
-    parser.add_argument("n_threads", type=str)
+    parser.add_argument("--input_file", type=str)
+    parser.add_argument("--n_threads", type=str)
     args = parser.parse_args()
 
     features_step2(args.graph_block_prefix, args.features_tmp_prefix,
