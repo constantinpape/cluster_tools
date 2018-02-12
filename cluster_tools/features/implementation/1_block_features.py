@@ -9,7 +9,7 @@ import numpy as np
 import nifty.distributed as ndist
 
 
-def features_step1(graph_path, sub_graph_prefix,
+def features_step1(sub_graph_prefix,
                    data_path, data_key,
                    labels_path, labels_key,
                    offset_file, block_file,
@@ -21,16 +21,17 @@ def features_step1(graph_path, sub_graph_prefix,
         offsets = json.load(f)
 
     if offsets is None:
-        ndist.extractBlockFeaturesFromBoundaryMaps(graph_path, sub_graph_prefix,
+        ndist.extractBlockFeaturesFromBoundaryMaps(sub_graph_prefix,
                                                    data_path, data_key,
                                                    labels_path, labels_key,
                                                    block_list, os.path.join(out_path, 'blocks'))
     else:
-        ndist.extractBlockFeaturesFromAffinityMaps(graph_path, sub_graph_prefix,
+        ndist.extractBlockFeaturesFromAffinityMaps(sub_graph_prefix,
                                                    data_path, data_key,
                                                    labels_path, labels_key,
-                                                   block_list, offsets,
-                                                   os.path.join(out_path, 'blocks'))
+                                                   block_list,
+                                                   os.path.join(out_path, 'blocks'),
+                                                   offsets)
 
     job_id = int(os.path.split(block_file)[1].split('_')[2][:-4])
     print("Success job %i" % job_id)
@@ -39,18 +40,17 @@ def features_step1(graph_path, sub_graph_prefix,
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("graph_path", type=str)
     parser.add_argument("sub_graph_prefix", type=str)
     parser.add_argument("data_path", type=str)
     parser.add_argument("data_key", type=str)
     parser.add_argument("labels_path", type=str)
     parser.add_argument("labels_key", type=str)
-    parser.add_argument("offset_file", type=str)
-    parser.add_argument("block_file", type=str)
-    parser.add_argument("out_path", type=str)
+    parser.add_argument("--offset_file", type=str)
+    parser.add_argument("--block_file", type=str)
+    parser.add_argument("--out_path", type=str)
     args = parser.parse_args()
 
-    features_step1(args.graph_path, args.sub_graph_prefix,
+    features_step1(args.sub_graph_prefix,
                    args.data_path, args.data_key,
                    args.labels_path, args.labels_key,
                    args.offset_file, args.block_file,

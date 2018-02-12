@@ -37,7 +37,6 @@ def make_batch_jobs_step1(graph_path, graph_key, out_path, out_key,
     replace_shebang('1_block_features.py', shebang)
     make_executable('1_block_features.py')
 
-    # def prepare(labels_path, labels_key, graph_path, n_jobs, tmp_folder, block_shape):
     with open(script_file, 'w') as f:
         f.write('#! /bin/bash\n')
         f.write('./0_prepare.py %s %s %s %s --block_shape %s --n_jobs1 %s --n_jobs2 %s --tmp_folder %s \n' %
@@ -48,8 +47,8 @@ def make_batch_jobs_step1(graph_path, graph_key, out_path, out_key,
 
         subgraph_prefix = os.path.join(graph_path, "sub_graphs/s0/block_")
         for job_id in range(n_jobs1):
-            command = './1_block_features.py %s %s %s %s %s %s --offset_file %s --block_file %s --out_path %s' % \
-                      (graph_path, subgraph_prefix, data_path, data_key, labels_path, labels_key,
+            command = './1_block_features.py %s %s %s %s %s --offset_file %s --block_file %s --out_path %s' % \
+                      (subgraph_prefix, data_path, data_key, labels_path, labels_key,
                        os.path.join(tmp_folder, 'offsets.json'),
                        os.path.join(tmp_folder, '1_input_%i.npy' % job_id),
                        out_path)
@@ -124,11 +123,11 @@ def make_batch_jobs(graph_path, graph_key, out_path, out_key,
 
     assert isinstance(eta, (int, list, tuple))
     if isinstance(eta, (list, tuple)):
-        assert len(eta) == 4
+        assert len(eta) == 2
         assert all(isinstance(ee, int) for ee in eta)
         eta_ = eta
     else:
-        eta_ = (eta,) * 4
+        eta_ = (eta,) * 2
 
     # clean logs
     if os.path.exists('error_logs'):

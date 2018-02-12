@@ -52,9 +52,11 @@ def make_offset_file(tmp_folder):
 
 def prepare(graph_path, graph_key, out_path, out_key, block_shape,
             n_jobs1, n_jobs2, tmp_folder):
-    ds_graph = z5py.File(graph_path)[graph_key]
+    assert os.path.exists(graph_path), graph_path
+    f_graph = z5py.File(graph_path, use_zarr_format=False)
+    shape = f_graph.attrs['shape']
+    ds_graph = f_graph[graph_key]
     n_edges = ds_graph.attrs['numberOfEdges']
-    shape = ds_graph.attrs['shape']
 
     f = z5py.File(out_path, use_zarr_format=False)
     if 'blocks' not in f:
@@ -62,6 +64,11 @@ def prepare(graph_path, graph_key, out_path, out_key, block_shape,
 
     # chunk size = 64**3
     chunk_size = min(262144, n_edges)
+
+    if not os.path.exists(tmp_folder):
+        os.mkdir(tmp_folder)
+
+    make_offset_file(tmp_folder)
 
     if out_key in f:
         ds = f[out_key]
