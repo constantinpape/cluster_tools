@@ -1,6 +1,7 @@
 #! /usr/bin/python
 
 import os
+import vigra
 import time
 import argparse
 import nifty
@@ -25,6 +26,9 @@ def masked_watershed_step4(tmp_folder, n_jobs):
         assert len(labeled) == 1, "More than one node mapped to ignore label"
         node_labeling[node_labeling == 0] = zero_label
         node_labeling[0] = 0
+
+    vigra.analysis.relabelConsecutive(node_labeling, keep_zeros=True, start_label=1,
+                                      out=node_labeling)
 
     np.save(os.path.join(tmp_folder, 'node_labeling.npy'), node_labeling)
     print("Success")
