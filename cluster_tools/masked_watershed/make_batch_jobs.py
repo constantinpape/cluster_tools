@@ -105,7 +105,7 @@ def make_batch_jobs_step2(out_path, out_key, tmp_folder,
     make_executable(script_file)
 
 
-def make_batch_jobs_step3(tmp_folder, n_jobs, executable,
+def make_batch_jobs_step3(out_path, out_key, tmp_folder, n_jobs, executable,
                           script_file='jobs_step3.sh', use_bsub=True, eta=5, n_threads=1):
 
     # copy the relevant files
@@ -120,7 +120,7 @@ def make_batch_jobs_step3(tmp_folder, n_jobs, executable,
 
     with open(script_file, 'w') as f:
         f.write('#! /bin/bash\n')
-        command = './4_ufd.py %s %s' % (tmp_folder, str(n_jobs))
+        command = './4_ufd.py %s %s %s %s' % (out_path, out_key, tmp_folder, str(n_jobs))
         if use_bsub:
             log_file = 'logs/log_masked_watershed_step3.log'
             err_file = 'error_logs/err_masked_watershed_step3.err'
@@ -216,7 +216,7 @@ def make_batch_jobs(aff_path, aff_key,
     make_batch_jobs_step2(out_path, out_key, tmp_folder, block_shape,  n_jobs,
                           executable, use_bsub=use_bsub, eta=eta_[1])
 
-    make_batch_jobs_step3(tmp_folder, n_jobs, executable,
+    make_batch_jobs_step3(out_path, out_key, tmp_folder, n_jobs, executable,
                           use_bsub=use_bsub, eta=eta_[2], n_threads=n_threads_ufd)
 
     make_batch_jobs_step4(out_path, out_key, tmp_folder, block_shape, n_jobs, executable,

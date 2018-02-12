@@ -31,6 +31,7 @@ def masked_watershed_step5(out_path, out_key, tmp_folder, input_file, block_shap
     [assign_node_ids(block_id, blocking, ds_out, node_labeling, offsets)
      for block_id in block_ids]
     job_id = int(os.path.split(input_file)[1].split('_')[2][:-4])
+
     print("Success job %i" % job_id)
     print("In %f s" % (time.time() - t0,))
 
