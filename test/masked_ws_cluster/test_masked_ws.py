@@ -2,14 +2,11 @@ import sys
 sys.path.append('../..')
 from cluster_tools.masked_watershed import make_batch_jobs
 
-AFF_PATH = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cluster_test_data/affs_masked.n5'
-KEY_XY = 'affs_xy'
-KEY_Z = 'affs_z'
-MASK_PATH = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cluster_test_data/mask.n5'
-MASK_KEY = 'data'
+PATH = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cluster_test_data/testdata.n5'
+AFF_KEY = 'full_affs'
+MASK_KEY = 'mask'
 
-OUT_PATH = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cluster_test_data/ws_masked.n5'
-OUT_KEY = 'data'
+OUT_KEY = 'watershed'
 TMP_FOLDER = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cluster_test_data/tmp_files_ws_masked'
 BLOCK_SHAPE = (25, 256, 256)
 CHUNKS = (25, 256, 256)
@@ -17,17 +14,16 @@ EXECUTABLE = '/groups/saalfeld/home/papec/Work/software/conda/miniconda3/envs/pr
 
 
 def jobs_for_cluster_test(n_jobs):
-    make_batch_jobs(AFF_PATH, KEY_XY,
-                    AFF_PATH, KEY_Z,
-                    MASK_PATH, MASK_KEY,
-                    OUT_PATH, OUT_KEY,
+    make_batch_jobs(PATH, AFF_KEY,
+                    PATH, MASK_KEY,
+                    PATH, OUT_KEY,
                     TMP_FOLDER, BLOCK_SHAPE,
                     CHUNKS, n_jobs, EXECUTABLE,
                     use_bsub=True,
-                    n_threads_ufd=1,
-                    eta=[15, 15, 15, 15])
+                    n_threads_ufd=2,
+                    eta=[5, 5, 5, 5])
 
 
 if __name__ == '__main__':
-    n_jobs = 4
+    n_jobs = 32
     jobs_for_cluster_test(n_jobs)

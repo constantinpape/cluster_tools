@@ -4,14 +4,11 @@ import sys
 sys.path.append('../..')
 from cluster_tools.graph import make_batch_jobs
 
-# LABELS_PATH = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cluster_test_data/ws.n5'
-LABELS_PATH = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cremi_warped/sampleA+.n5'
+LABELS_PATH = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cluster_test_data/ws.n5'
 
-# LABELS_KEY = 'data'
-LABELS_KEY = 'watersheds/ws_seeded_z'
+LABELS_KEY = 'watershed'
 
-# GRAPH_PATH = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cluster_test_data/graph.n5'
-GRAPH_PATH = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cluster_test_data/graph_A+.n5'
+GRAPH_PATH = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cluster_test_data/graph.n5'
 
 TMP_FOLDER = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cluster_test_data/tmp_files_graph'
 BLOCK_SHAPE = (25, 256, 256)

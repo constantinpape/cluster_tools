@@ -59,19 +59,27 @@ def single_block_watershed(block_id, blocking,
     local_bb = tuple(slice(b, e) for b, e in zip(local_block.begin, local_block.end))
 
     # load affinties and mask
+    # t_load = time.time()
     aff_bb = (slice(None),) + outer_bb
     affs = ds_affs[aff_bb]
     mask = ds_mask[outer_bb].astype('bool')
+    # print("Load data in:", time.time() - t_load)
 
     # run masked watershed
+    # t_ws = time.time()
     ws, max_id = segmenter(affs, mask)
+    # print("Run watershed in:", time.time() - t_ws)
 
     # save watershed in the inner (non-overlapping) block
+    # t_save = time.time()
     ds_out[inner_bb] = ws[local_bb].astype('uint64')
+    # print("Save watershed in:", time.time() - t_save)
 
+    # t_ovlp = time.time()
     overlap_ids = find_overlaps(block_id, blocking, ws,
                                 inner_block, outer_block, local_block,
                                 halo, tmp_folder)
+    # print("Find overlaps in:", time.time() - t_ovlp)
 
     # serialize the max ids
     np.save(os.path.join(tmp_folder, '1_output_maxid_%i.npy' % block_id), max_id + 1)
@@ -85,7 +93,7 @@ def masked_watershed_step1(aff_path, aff_key,
                            out_path, key_out,
                            out_blocks, tmp_folder,
                            block_file, halo=[5, 50, 50],
-                           threshold_cc=.95, threshold_dt=.5,
+                           threshold_cc=.1, threshold_dt=.25,
                            sigma_seeds=2., invert_input=True):
 
     t0 = time.time()
