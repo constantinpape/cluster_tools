@@ -1,5 +1,6 @@
 #! /usr/bin/python
 
+import time
 import argparse
 import subprocess
 from wait_and_check import wait_and_check_single_job, wait_and_check_multiple_jobs
@@ -8,6 +9,8 @@ from wait_and_check import wait_and_check_multiple_jobnames
 
 # TODO retrial for failed jobs
 def master_job(n_jobs, n_scales):
+
+    t_tot = time.time()
     # submit jobs 1
     subprocess.call(['./jobs_step1.sh'])
     # wait for jobs 1
@@ -45,6 +48,9 @@ def master_job(n_jobs, n_scales):
         print("Step 4 failed for following jobs:")
         print(failed_jobs)
         return
+
+    t_tot = time.time() - t_tot
+    print("All jobs finished successfully in %f s" % t_tot)
 
 
 if __name__ == '__main__':

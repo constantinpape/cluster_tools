@@ -112,7 +112,7 @@ def make_batch_jobs_step3(graph_path, n_scales, block_shape, n_threads, executab
     with open(script_file, 'w') as f:
         f.write('#! /bin/bash\n')
         command = './3_merge_graph.py %s %s --initial_block_shape %s --n_threads %s' % \
-                  (graph_path, str(n_scales),
+                  (graph_path, str(n_scales - 1),
                    ' '.join(map(str, block_shape)), str(n_threads))
         if use_bsub:
             log_file = 'logs/log_graph_step3.log'

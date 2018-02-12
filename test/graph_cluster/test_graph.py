@@ -1,10 +1,8 @@
-import os
-from shutil import rmtree
 import sys
 sys.path.append('../..')
 from cluster_tools.graph import make_batch_jobs
 
-LABELS_PATH = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cluster_test_data/ws.n5'
+LABELS_PATH = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cluster_test_data/testdata.n5'
 
 LABELS_KEY = 'watershed'
 
@@ -27,6 +25,6 @@ def jobs_for_cluster_test(n_jobs, n_scales):
 
 
 if __name__ == '__main__':
-    n_jobs = 32
+    n_jobs = 8
     n_scales = 2
     jobs_for_cluster_test(n_jobs, n_scales)
