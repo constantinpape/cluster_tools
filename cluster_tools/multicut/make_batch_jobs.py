@@ -57,7 +57,7 @@ def make_batch_jobs_step1(graph_path, graph_key, features_path, features_key,
 # generate jobs for all necessary scale levels
 def make_batch_jobs_step2(graph_path, tmp_folder, n_scales,
                           agglomerator_key, n_threads,
-                          n_jobs, executable,
+                          n_jobs, block_shape, executable,
                           script_file='jobs_step2.sh',
                           use_bsub=True, eta=5):
 
@@ -93,23 +93,22 @@ def make_batch_jobs_step2(graph_path, tmp_folder, n_scales,
             else:
                 f.write(command + '\n')
 
-    # def make_jobs_reduce(scale, f):
-    #     f.write('#! /bin/bash\n')
-    #     block_prefix = os.path.join(graph_path, 'sub_graphs', 's%i' % scale, 'block_')
-    #     node_storage = os.path.join(tmp_folder, 'nodes_to_blocks.n5', 's%i' % scale)
-    #     for job_id in range(n_jobs):
-    #         command = './1a_solve_subproblems.py %s %s %s --tmp_folder %s --agglomerator_key %s --block_file %s' % \
-    #                   (block_prefix, node_storage, str(scale),
-    #                    tmp_folder,
-    #                    '_'.join(agglomerator_key),
-    #                    os.path.join(tmp_folder, '2_input_s%i_%i.npy' % (scale, job_id)))
-    #         if use_bsub:
-    #             log_file = 'logs/log_multicut_step2_scale%i_%i.log' % (scale, job_id)
-    #             err_file = 'error_logs/err_multicut_step2_scale%i_%i.err' % (scale, job_id)
-    #             f.write('bsub -J multicut_step2_scale%i_%i -We %i -o %s -e %s \'%s\' \n' %
-    #                     (scale, job_id, eta, log_file, err_file, command))
-    #         else:
-    #             f.write(command + '\n')
+    def make_jobs_reduce(scale, f):
+        f.write('#! /bin/bash\n')
+        node_storage = os.path.join(tmp_folder, 'nodes_to_blocks.n5')
+        command = './1b_reduce_problem.py %s %s %s --tmp_folder %s --n_jobs %s --initial_block_shape %s --n_threads %s --cost_accumulation %s' % \
+                  (graph_path, node_storage, str(scale),
+                   tmp_folder, str(n_jobs),
+                   ' '.join(map(str, block_shape)),
+                   str(n_threads),
+                   'sum' if agglomerator_key[0] == 'multicut' else 'mean')
+        if use_bsub:
+            log_file = 'logs/log_multicut_step2_scale%i.log' % scale
+            err_file = 'error_logs/err_multicut_step2_scale%i.err' % scale
+            f.write('bsub -n %i -J multicut_step2_scale%i -We %i -o %s -e %s \'%s\' \n' %
+                    (n_threads, scale, eta, log_file, err_file, command))
+        else:
+            f.write(command + '\n')
 
     for scale in range(n_scales):
         subproblem_file = script_file[:-3] + 'subproblem_scale%i.sh' % scale
@@ -121,7 +120,6 @@ def make_batch_jobs_step2(graph_path, tmp_folder, n_scales,
         with open(reduce_file, 'w') as f:
             make_jobs_reduce(scale, f)
         make_executable(reduce_file)
-
 
 
 def make_batch_jobs(graph_path, graph_key, features_path, features_key,
@@ -154,3 +152,7 @@ def make_batch_jobs(graph_path, graph_key, features_path, features_key,
                           use_mc_costs=1 if agglomerator_key[0] == 'multicut' else 0,
                           executable=executable,
                           use_bsub=use_bsub, eta=eta_[0])
+    make_batch_jobs_step2(graph_path, tmp_folder, n_scales,
+                          agglomerator_key, n_threads,
+                          n_jobs, block_shape, executable,
+                          use_bsub=use_bsub, eta=eta_[1])

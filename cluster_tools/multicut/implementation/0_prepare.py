@@ -64,13 +64,18 @@ def make_costs(features_path, features_key, ds_graph, tmp_folder,
         costs[ignore_edges] = 1.
 
     # write the costs
-    costs_out_path = os.path.join(tmp_folder, 'costs.n5')
+    costs_out_path = os.path.join(tmp_folder, 'problem.n5')
     f_costs = z5py.File(costs_out_path, use_zarr_format=False)
     cost_shape = (len(costs),)
     if 's0' not in f_costs:
-        ds = f_costs.create_dataset('s0', dtype='float32', shape=cost_shape, chunks=cost_shape)
+        g = f_costs.create_group('s0')
     else:
-        ds = f_costs['s0']
+        g = f_costs['s0']
+
+    if 'costs' not in g:
+        ds = g.create_dataset('costs', dtype='float32', shape=cost_shape, chunks=cost_shape)
+    else:
+        ds = g['costs']
         assert ds.shape == cost_shape
     ds[:] = costs.astype('float32')
 

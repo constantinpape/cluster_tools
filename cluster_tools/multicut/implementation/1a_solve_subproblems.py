@@ -11,7 +11,7 @@ import cremi_tools.segmentation as cseg
 import nifty.distributed as ndist
 
 # TODO support more agglomerators
-AGGLOMERATORS = {"multicut_kl", cseg.multicut("kernighan-lin")}
+AGGLOMERATORS = {"multicut_kl": cseg.Multicut("kernighan-lin")}
 
 
 def solve_block_subproblem(block_id, block_prefix, node_storage_prefix, costs, agglomerator):
@@ -45,7 +45,7 @@ def solve_block_subproblem(block_id, block_prefix, node_storage_prefix, costs, a
     return np.concatenate([cut_edge_ids, outer_edges])
 
 
-def multicut_step2(block_prefix,
+def multicut_step1(block_prefix,
                    node_storage,
                    scale,
                    tmp_folder,
@@ -54,12 +54,12 @@ def multicut_step2(block_prefix,
 
     t0 = time.time()
     agglomerator = AGGLOMERATORS[agglomerator_key]
-    costs = z5py.File(os.path.join(tmp_folder, 'costs.n5'), use_zarr_format=False)['s%i' % scale]
+    costs = z5py.File(os.path.join(tmp_folder, 'costs.n5'), use_zarr_format=False)['s%i' % scale][:]
 
     # TODO change to h5py
-    n_blocks = z5py.File(node_storage)['s%i' % scale].attrs["numberOfBlocks"]
+    n_blocks = z5py.File(node_storage).attrs["numberOfBlocks"]
 
-    node_storage_prefix = os.path.join(node_storage, 's%i' % scale, 'node_')
+    node_storage_prefix = os.path.join(node_storage, 'node_')
     cut_edge_ids = np.concatenate([solve_block_subproblem(block_id,
                                                           block_prefix,
                                                           node_storage_prefix,
@@ -68,8 +68,8 @@ def multicut_step2(block_prefix,
                                    for block_id in range(n_blocks)])
     cut_edge_ids = np.unique(cut_edge_ids)
 
-    job_id = int(os.path.split(block_file)[1].split('_')[2][:-4])
-    np.save(os.path.join(tmp_folder, '1_output_%i.npy' % job_id),
+    job_id = int(os.path.split(block_file)[1].split('_')[3][:-4])
+    np.save(os.path.join(tmp_folder, '1_output_s%i_%i.npy' % (scale, job_id)),
             cut_edge_ids)
 
     print("Success job %i" % job_id)
@@ -86,6 +86,7 @@ if __name__ == '__main__':
     parser.add_argument("--block_file", type=str)
     args = parser.parse_args()
 
-    multicut_step2(args.block_prefix, args.node_storage,
-                   args.scale, args.agglomerator_key,
+    multicut_step1(args.block_prefix, args.node_storage,
+                   args.scale, args.tmp_folder,
+                   args.agglomerator_key,
                    args.block_file)
