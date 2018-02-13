@@ -13,22 +13,16 @@ AGGLOMERATORS = {"multicut_kl": cseg.Multicut("kernighan-lin")}
 
 
 # TODO multithreaded
-def multicut_step2(graph_path, out_path, node_labeling_key,
+def multicut_step2(out_path, node_labeling_key,
                    n_scales, tmp_folder, agglomerator_key):
     t0 = time.time()
-    last_scale = n_scales - 1
+    last_scale = n_scales
     agglomerator = AGGLOMERATORS[agglomerator_key]
 
-    if last_scale == 0:
-        f_graph = z5py.File(os.path.join(graph_path, 'graph'), use_zarr_format=False)
-        initial_node_labeling = None
-        n_nodes = f_graph.attrs['numberOfNodes']
-        uv_ids = f_graph['edges'][:]
-    else:
-        f_problem = z5py.File(os.path.join(tmp_folder, 'problem.n5/s%i' % last_scale))
-        n_nodes = f_problem.attrs['numberOfNodes']
-        uv_ids = f_problem['uvIds'][:]
-        initial_node_labeling = f_problem['nodeLabeling'][:]
+    f_problem = z5py.File(os.path.join(tmp_folder, 'problem.n5/s%i' % last_scale))
+    n_nodes = f_problem.attrs['numberOfNodes']
+    uv_ids = f_problem['uvIds'][:]
+    initial_node_labeling = f_problem['nodeLabeling'][:]
     n_edges = len(uv_ids)
 
     # get the costs
@@ -59,7 +53,6 @@ def multicut_step2(graph_path, out_path, node_labeling_key,
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("graph_path", type=str)
     parser.add_argument("out_path", type=str)
     parser.add_argument("node_labeling_key", type=str)
     parser.add_argument("n_scales", type=int)
@@ -68,7 +61,7 @@ if __name__ == '__main__':
     # parser.add_argument("--n_threads", type=int)
     args = parser.parse_args()
 
-    multicut_step2(args.graph_path, args.out_path,
+    multicut_step2(args.out_path,
                    args.node_labeling_key,
                    args.n_scales,
                    args.tmp_folder, args.agglomerator_key)

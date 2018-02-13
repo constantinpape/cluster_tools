@@ -14,7 +14,7 @@ import nifty.distributed as ndist
 AGGLOMERATORS = {"multicut_kl": cseg.Multicut("kernighan-lin")}
 
 
-def solve_block_subproblem(block_id, block_prefix, node_storage_prefix, costs, agglomerator):
+def solve_block_subproblem(block_id, block_prefix, node_storage, costs, agglomerator):
     # load the nodes in this sub-block and map them
     # to our current node-labeling
     block_path = block_prefix + str(block_id)
@@ -25,7 +25,7 @@ def solve_block_subproblem(block_id, block_prefix, node_storage_prefix, costs, a
     # the issue with this is that we store the node 2 block list as n5 which could wack the file system ...
     # if we change this storage to hdf5, everything should be fine
     inner_edges, outer_edges, sub_uvs = ndist.extractSubgraphFromNodes(nodes,
-                                                                       node_storage_prefix,
+                                                                       node_storage,
                                                                        block_prefix)
     # we might only have a single node, but we still need to find the outer edges
     if len(nodes) <= 1:
@@ -58,10 +58,9 @@ def multicut_step1(block_prefix,
 
     block_ids = np.load(block_file)
 
-    node_storage_prefix = os.path.join(node_storage, 'node_')
     cut_edge_ids = np.concatenate([solve_block_subproblem(block_id,
                                                           block_prefix,
-                                                          node_storage_prefix,
+                                                          node_storage,
                                                           costs,
                                                           agglomerator)
                                    for block_id in block_ids])

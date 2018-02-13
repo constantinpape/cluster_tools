@@ -21,8 +21,8 @@ def make_executable(path):
 def make_batch_jobs_step1(labels_path, labels_key,
                           out_path, out_key,
                           node_labeling_path, node_labeling_key,
-                          tmp_folder,
-                          block_shape, n_jobs, executable,
+                          tmp_folder, block_shape, chunks,
+                          n_jobs, executable,
                           script_file='jobs_step1.sh', use_bsub=True, eta=5):
 
     # copy the relevant files
@@ -41,10 +41,11 @@ def make_batch_jobs_step1(labels_path, labels_key,
 
     with open(script_file, 'w') as f:
         f.write('#! /bin/bash\n')
-        f.write('./0_prepare.py %s %s %s %s --tmp_folder %s --block_shape %s --n_jobs %s\n' %
+        f.write('./0_prepare.py %s %s %s %s --tmp_folder %s --block_shape %s --chunks %s --n_jobs %s\n' %
                 (labels_path, labels_key,
                  out_path, out_key, tmp_folder,
                  ' '.join(map(str, block_shape)),
+                 ' '.join(map(str, chunks)),
                  str(n_jobs)))
         # TODO we need to check for success here !
 
@@ -69,7 +70,7 @@ def make_batch_jobs_step1(labels_path, labels_key,
 def make_batch_jobs(labels_path, labels_key,
                     out_path, out_key,
                     node_labeling_path, node_labeling_key,
-                    tmp_folder, block_shape,
+                    tmp_folder, block_shape, chunks,
                     n_jobs, executable,
                     eta=5, use_bsub=True):
 
@@ -87,5 +88,5 @@ def make_batch_jobs(labels_path, labels_key,
     make_batch_jobs_step1(labels_path, labels_key,
                           out_path, out_key,
                           node_labeling_path, node_labeling_key,
-                          tmp_folder, block_shape, n_jobs, executable,
+                          tmp_folder, block_shape, chunks, n_jobs, executable,
                           use_bsub=use_bsub, eta=eta)

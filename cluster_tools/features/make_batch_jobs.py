@@ -6,11 +6,11 @@ from shutil import copy, rmtree
 
 # https://stackoverflow.com/questions/39086/search-and-replace-a-line-in-a-file-in-python
 def replace_shebang(file_path, shebang):
-   for i, line in enumerate(fileinput.input(file_path, inplace=True)):
-       if i == 0:
-           print(shebang, end='')
-       else:
-           print(line, end='')
+    for i, line in enumerate(fileinput.input(file_path, inplace=True)):
+        if i == 0:
+            print(shebang, end='')
+        else:
+            print(line, end='')
 
 
 def make_executable(path):
@@ -119,7 +119,7 @@ def make_batch_jobs(graph_path, graph_key, out_path, out_key,
                     data_path, data_key, labels_path, labels_key,
                     tmp_folder, block_shape, n_jobs1, n_jobs2,
                     n_threads2, executable,
-                    n_threads_merge=1, eta=5, use_bsub=True):
+                    eta=5, use_bsub=True):
 
     assert isinstance(eta, (int, list, tuple))
     if isinstance(eta, (list, tuple)):

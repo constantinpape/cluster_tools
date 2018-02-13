@@ -118,23 +118,21 @@ def prepare(graph_path, graph_key,
         blocks_to_jobs(shape, scale_shape, n_jobs, tmp_folder, scale_prefix)
 
     # get node to block assignment for scale level 0 and the oversegmentaton nodes
-    node_out = os.path.join(tmp_folder, 'nodes_to_blocks.n5')
-    f_nodes = z5py.File(node_out, use_zarr_format=False)
-    if 's0' not in f_nodes:
-        f_nodes.create_group('s0')
+    node_out = os.path.join(tmp_folder, 'nodes_to_blocks')
 
     blocking = nifty.tools.blocking(roiBegin=[0, 0, 0],
                                     roiEnd=list(shape),
                                     blockShape=initial_block_shape)
     n_initial_blocks = blocking.numberOfBlocks
-    # TODO switch to h5py ...
-    f_nodes['s0'].attrs['numberOfBlocks'] = n_initial_blocks
 
-    # ndist.nodesToBlocks(os.path.join(graph_path, 'sub_graphs/s0/block_'),
-    #                     os.path.join(node_out, 's0', 'node_'),
-    #                     numberOfBlocks=n_initial_blocks,
-    #                     numberOfNodes=n_nodes,
-    #                     numberOfThreads=n_threads)
+    if not os.path.exists(node_out):
+        os.mkdir(node_out)
+    ndist.nodesToBlocks(os.path.join(graph_path, 'sub_graphs/s0/block_'),
+                        os.path.join(node_out, 's0.h5'),
+                        numberOfBlocks=n_initial_blocks,
+                        numberOfNodes=n_nodes,
+                        # numberOfThreads=n_threads)
+                        numberOfThreads=1)
 
     t0 = time.time() - t0
     print("Success")

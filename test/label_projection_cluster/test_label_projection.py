@@ -18,12 +18,12 @@ def jobs_for_cluster_test(n_jobs):
                     PATH, OUT_KEY,
                     PATH, LABELING_KEY,
                     TMP_FOLDER,
-                    BLOCK_SHAPE, n_jobs,
+                    BLOCK_SHAPE, BLOCK_SHAPE, n_jobs,
                     executable=EXECUTABLE,
-                    use_bsub=True,
+                    use_bsub=False,
                     eta=5)
 
 
 if __name__ == '__main__':
-    n_jobs = 32
+    n_jobs = 8
     jobs_for_cluster_test(n_jobs)

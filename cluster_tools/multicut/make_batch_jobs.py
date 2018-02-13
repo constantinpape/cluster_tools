@@ -80,7 +80,7 @@ def make_batch_jobs_step2(graph_path, tmp_folder, n_scales,
             block_prefix = os.path.join(graph_path, 'sub_graphs', 's%i' % scale, 'block_')
         else:
             block_prefix = os.path.join(graph_path, 'merged_graphs', 's%i' % scale, 'block_')
-        node_storage = os.path.join(tmp_folder, 'nodes_to_blocks.n5', 's%i' % scale)
+        node_storage = os.path.join(tmp_folder, 'nodes_to_blocks', 's%i.h5' % scale)
         for job_id in range(n_jobs):
             command = './1a_solve_subproblems.py %s %s %s --tmp_folder %s --agglomerator_key %s --block_file %s' % \
                       (block_prefix, node_storage, str(scale),
@@ -97,7 +97,7 @@ def make_batch_jobs_step2(graph_path, tmp_folder, n_scales,
 
     def make_jobs_reduce(scale, f):
         f.write('#! /bin/bash\n')
-        node_storage = os.path.join(tmp_folder, 'nodes_to_blocks.n5')
+        node_storage = os.path.join(tmp_folder, 'nodes_to_blocks')
         command = './1b_reduce_problem.py %s %s %s --tmp_folder %s --n_jobs %s --initial_block_shape %s --n_threads %s --cost_accumulation %s' % \
                   (graph_path, node_storage, str(scale),
                    tmp_folder, str(n_jobs),
@@ -124,7 +124,7 @@ def make_batch_jobs_step2(graph_path, tmp_folder, n_scales,
         make_executable(reduce_file)
 
 
-def make_batch_jobs_step3(graph_path, out_path, node_labeling_key,
+def make_batch_jobs_step3(out_path, node_labeling_key,
                           n_scales, tmp_folder,
                           n_threads, agglomerator_key, executable,
                           script_file='jobs_step3.sh', use_bsub=True, eta=5):
@@ -141,8 +141,8 @@ def make_batch_jobs_step3(graph_path, out_path, node_labeling_key,
 
     with open(script_file, 'w') as f:
         f.write('#! /bin/bash\n')
-        command = './2_solve_global.py %s %s %s %s --tmp_folder %s --agglomerator_key %s\n' %\
-                  (graph_path, out_path, node_labeling_key,
+        command = './2_solve_global.py %s %s %s --tmp_folder %s --agglomerator_key %s\n' %\
+                  (out_path, node_labeling_key,
                    str(n_scales),
                    tmp_folder, '_'.join(agglomerator_key))
 
@@ -210,7 +210,7 @@ def make_batch_jobs(graph_path, graph_key, features_path, features_key,
                           agglomerator_key, n_threads,
                           n_jobs, block_shape, executable,
                           use_bsub=use_bsub, eta=eta_[1])
-    make_batch_jobs_step3(graph_path, out_path, node_out_key,
+    make_batch_jobs_step3(out_path, node_out_key,
                           n_scales, tmp_folder,
                           n_threads, agglomerator_key, executable,
                           use_bsub=use_bsub, eta=eta_[2])

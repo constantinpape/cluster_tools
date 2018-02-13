@@ -73,10 +73,6 @@ def multicut_step1(graph_path, node_storage, scale,
 
     # map the new graph (= node labeling and corresponding edges)
     # to the next scale level
-    f_nodes = z5py.File(node_storage, use_zarr_format=False)
-    if 's%i' % (scale + 1,) not in f_nodes:
-        f_nodes.create_group('s%i' % (scale + 1,))
-    node_out_prefix = os.path.join(node_storage, 's%i' % (scale + 1,), 'node_')
 
     f_graph = z5py.File(graph_path, use_zarr_format=False)
     f_graph.create_group('merged_graphs/s%i' % scale)
@@ -94,18 +90,13 @@ def multicut_step1(graph_path, node_storage, scale,
     new_block_shape = [new_factor * bs for bs in initial_block_shape]
 
     edge_labeling = edge_mapping.edgeMapping()
+
     ndist.serializeMergedGraph(block_in_prefix, shape,
                                block_shape, new_block_shape,
                                n_new_nodes,
                                node_labeling, edge_labeling,
-                               node_out_prefix, block_out_prefix, n_threads)
-
-    blocking = nifty.tools.blocking(roiBegin=[0, 0, 0],
-                                    roiEnd=list(shape),
-                                    blockShape=new_block_shape)
-    n_new_blocks = blocking.numberOfBlocks
-    # TODO switch to h5py ...
-    f_nodes['s%i' % (scale + 1,)].attrs['numberOfBlocks'] = n_new_blocks
+                               os.path.join(node_storage, 's%i.h5' % (scale + 1,)),
+                               block_out_prefix, n_threads)
 
     # serialize all results for the next scale
     problem_out_file = os.path.join(tmp_folder, 'problem.n5')
