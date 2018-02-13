@@ -29,12 +29,12 @@ def multicut_step1(graph_path, node_storage, scale,
         f_problem = z5py.File(os.path.join(tmp_folder, 'problem.n5/s%i' % scale))
         n_nodes = f_problem.attrs['numberOfNodes']
         uv_ids = f_problem['uvIds'][:]
-        initial_node_labeling = f_problem['nodeLabeling']
+        initial_node_labeling = f_problem['nodeLabeling'][:]
     n_edges = len(uv_ids)
 
     # get the costs
     costs = z5py.File(os.path.join(tmp_folder, 'problem.n5/s%i' % scale),
-                      use_zarr_format=False)['costs']
+                      use_zarr_format=False)['costs'][:]
     assert len(costs) == n_edges, "%i, %i" (len(costs), n_edges)
 
     # load the cut-edge ids from the prev. jobs and make merge edge ids
@@ -65,17 +65,10 @@ def multicut_step1(graph_path, node_storage, scale,
         new_initial_node_labeling = node_labeling[initial_node_labeling]
 
     # get new edge costs
-    print("EdgeMapping !!!")
     edge_mapping = nifty.tools.EdgeMapping(uv_ids, node_labeling, numberOfThreads=n_threads)
-    print("EdgeMapping done !!!")
-    print("EdgeMapping UVids !!!")
     new_uv_ids = edge_mapping.newUvIds()
-    print("EdgeMapping UVids done !!!")
 
-    print("EdgeMapping costs !!!")
-    print(len(costs), n_edges)
     new_costs = edge_mapping.mapEdgeValues(costs, cost_accumulation, numberOfThreads=n_threads)
-    print("EdgeMapping costs done !!!")
     assert len(new_uv_ids) == len(new_costs)
 
     # map the new graph (= node labeling and corresponding edges)
@@ -92,7 +85,7 @@ def multicut_step1(graph_path, node_storage, scale,
     else:
         block_in_prefix = os.path.join(graph_path, 'merged_graphs', 's%i' % scale, 'block_')
 
-    block_out_prefix = os.path.join('merged_graphs', 's%i' % (scale + 1,), 'block_')
+    block_out_prefix = os.path.join(graph_path, 'merged_graphs', 's%i' % (scale + 1,), 'block_')
 
     factor = 2**scale
     block_shape = [factor * bs for bs in initial_block_shape]
@@ -101,13 +94,11 @@ def multicut_step1(graph_path, node_storage, scale,
     new_block_shape = [new_factor * bs for bs in initial_block_shape]
 
     edge_labeling = edge_mapping.edgeMapping()
-    print("Here !!!")
     ndist.serializeMergedGraph(block_in_prefix, shape,
                                block_shape, new_block_shape,
                                n_new_nodes,
                                node_labeling, edge_labeling,
                                node_out_prefix, block_out_prefix, n_threads)
-    print("Done !!!")
 
     blocking = nifty.tools.blocking(roiBegin=[0, 0, 0],
                                     roiEnd=list(shape),

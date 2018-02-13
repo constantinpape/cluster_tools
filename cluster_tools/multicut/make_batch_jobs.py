@@ -34,7 +34,6 @@ def make_batch_jobs_step1(graph_path, graph_key, features_path, features_key,
     replace_shebang('0_prepare.py', shebang)
     make_executable('0_prepare.py')
 
-    # def prepare(labels_path, labels_key, graph_path, n_jobs, tmp_folder, block_shape):
     with open(script_file, 'w') as f:
         f.write('#! /bin/bash\n')
         command = './0_prepare.py %s %s %s %s --initial_block_shape %s --n_scales %s --tmp_folder %s --n_jobs %s --n_threads %s --use_mc_costs %s\n' %\
@@ -77,7 +76,10 @@ def make_batch_jobs_step2(graph_path, tmp_folder, n_scales,
 
     def make_jobs_subproblem(scale, f):
         f.write('#! /bin/bash\n')
-        block_prefix = os.path.join(graph_path, 'sub_graphs', 's%i' % scale, 'block_')
+        if scale == 0:
+            block_prefix = os.path.join(graph_path, 'sub_graphs', 's%i' % scale, 'block_')
+        else:
+            block_prefix = os.path.join(graph_path, 'merged_graphs', 's%i' % scale, 'block_')
         node_storage = os.path.join(tmp_folder, 'nodes_to_blocks.n5', 's%i' % scale)
         for job_id in range(n_jobs):
             command = './1a_solve_subproblems.py %s %s %s --tmp_folder %s --agglomerator_key %s --block_file %s' % \
@@ -122,14 +124,66 @@ def make_batch_jobs_step2(graph_path, tmp_folder, n_scales,
         make_executable(reduce_file)
 
 
+def make_batch_jobs_step3(graph_path, out_path, node_labeling_key,
+                          n_scales, tmp_folder,
+                          n_threads, agglomerator_key, executable,
+                          script_file='jobs_step3.sh', use_bsub=True, eta=5):
+
+    # copy the relevant files
+    file_dir = os.path.dirname(os.path.abspath(__file__))
+    cwd = os.getcwd()
+    assert os.path.exists(executable), "Could not find python at %s" % executable
+    shebang = '#! %s' % executable
+
+    copy(os.path.join(file_dir, 'implementation/2_solve_global.py'), cwd)
+    replace_shebang('2_solve_global.py', shebang)
+    make_executable('2_solve_global.py')
+
+    with open(script_file, 'w') as f:
+        f.write('#! /bin/bash\n')
+        command = './2_solve_global.py %s %s %s %s --tmp_folder %s --agglomerator_key %s\n' %\
+                  (graph_path, out_path, node_labeling_key,
+                   str(n_scales),
+                   tmp_folder, '_'.join(agglomerator_key))
+
+        if use_bsub:
+            log_file = 'logs/log_multicut_step3.log'
+            err_file = 'error_logs/err_multicut_step3.err'
+            f.write('bsub -n %i -J multicut_step3 -We %i -o %s -e %s \'%s\' \n' %
+                    (n_threads, eta, log_file, err_file, command))
+        else:
+            f.write(command + '\n')
+
+    make_executable(script_file)
+
+
+def make_master_job(n_jobs, n_scales, executable, script_file):
+    file_dir = os.path.dirname(os.path.abspath(__file__))
+    cwd = os.getcwd()
+    assert os.path.exists(executable), "Could not find python at %s" % executable
+    shebang = '#! %s' % executable
+
+    copy(os.path.join(file_dir, 'master_job.py'), cwd)
+    replace_shebang('master_job.py', shebang)
+    make_executable('master_job.py')
+
+    parent_dir = os.path.abspath(os.path.join(file_dir, os.pardir))
+    copy(os.path.join(parent_dir, 'wait_and_check.py'), cwd)
+
+    with open(script_file, 'w') as f:
+        f.write('./master_job.py %i %i\n' % (n_jobs, n_scales))
+    make_executable(script_file)
+
+
 def make_batch_jobs(graph_path, graph_key, features_path, features_key,
+                    out_path, node_out_key,
                     block_shape, n_scales, tmp_folder, n_jobs, executable,
                     agglomerator_key=('multicut', 'kl'),
                     n_threads=1, eta=5, use_bsub=True):
 
     assert isinstance(agglomerator_key, tuple), agglomerator_key
 
-    n_steps = 2
+    n_steps = 3
     assert isinstance(eta, (int, list, tuple))
     if isinstance(eta, (list, tuple)):
         assert len(eta) == n_steps
@@ -156,3 +210,9 @@ def make_batch_jobs(graph_path, graph_key, features_path, features_key,
                           agglomerator_key, n_threads,
                           n_jobs, block_shape, executable,
                           use_bsub=use_bsub, eta=eta_[1])
+    make_batch_jobs_step3(graph_path, out_path, node_out_key,
+                          n_scales, tmp_folder,
+                          n_threads, agglomerator_key, executable,
+                          use_bsub=use_bsub, eta=eta_[2])
+
+    make_master_job(n_jobs, n_scales, executable, 'master.sh')

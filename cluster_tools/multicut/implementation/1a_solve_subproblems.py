@@ -54,10 +54,9 @@ def multicut_step1(block_prefix,
 
     t0 = time.time()
     agglomerator = AGGLOMERATORS[agglomerator_key]
-    costs = z5py.File(os.path.join(tmp_folder, 'costs.n5'), use_zarr_format=False)['s%i' % scale][:]
+    costs = z5py.File(os.path.join(tmp_folder, 'problem.n5/s%i' % scale), use_zarr_format=False)['costs'][:]
 
-    # TODO change to h5py
-    n_blocks = z5py.File(node_storage).attrs["numberOfBlocks"]
+    block_ids = np.load(block_file)
 
     node_storage_prefix = os.path.join(node_storage, 'node_')
     cut_edge_ids = np.concatenate([solve_block_subproblem(block_id,
@@ -65,7 +64,7 @@ def multicut_step1(block_prefix,
                                                           node_storage_prefix,
                                                           costs,
                                                           agglomerator)
-                                   for block_id in range(n_blocks)])
+                                   for block_id in block_ids])
     cut_edge_ids = np.unique(cut_edge_ids)
 
     job_id = int(os.path.split(block_file)[1].split('_')[3][:-4])
