@@ -15,8 +15,7 @@ def master_job(n_jobs, n_scales):
     # wait for jobs 1
     failed_jobs = wait_and_check_single_job('multicut_step1', n_jobs)
     if failed_jobs:
-        print("Step 1 failed for following jobs:")
-        print(failed_jobs)
+        print("Step 1 failed")
         return
 
     # submit jobs 2 for

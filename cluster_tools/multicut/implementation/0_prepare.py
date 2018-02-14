@@ -3,7 +3,6 @@
 import time
 import os
 import argparse
-from math import ceil
 import numpy as np
 
 import z5py
@@ -17,15 +16,13 @@ def blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder, output_prefix):
                                     roiEnd=list(shape),
                                     blockShape=block_shape)
     n_blocks = blocking.numberOfBlocks
+    assert n_jobs <= n_blocks, "%i, %i" % (n_jobs, n_blocks)
 
     # assign blocks to jobs
-    assert n_jobs <= n_blocks, "%i, %i" % (n_jobs, n_blocks)
-    chunk_size = int(ceil(float(n_blocks) / n_jobs))
     block_list = list(range(n_blocks))
-    for idx, i in enumerate(range(0, len(block_list), chunk_size)):
-        np.save(os.path.join(tmp_folder, '%s_%i.npy' % (output_prefix, idx)),
-                block_list[i:i + chunk_size])
-    assert idx == n_jobs - 1, "Not enough inputs created: %i / %i" % (idx, n_jobs - 1)
+    for job_id in range(n_jobs):
+        np.save(os.path.join(tmp_folder, '%s_%i.npy' % (output_prefix, job_id)),
+                block_list[job_id::n_jobs])
     return n_blocks
 
 
@@ -96,26 +93,32 @@ def prepare(graph_path, graph_key,
     assert os.path.exists(features_path), features_path
 
     # load number of nodes and the shape
+    t1 = time.time()
     f_graph = z5py.File(graph_path)
     shape = f_graph.attrs['shape']
     ds_graph = f_graph[graph_key]
     n_nodes = ds_graph.attrs['numberOfNodes']
+    print("Loading graph in", time.time() - t1)
 
     # make tmp folder
     if not os.path.exists(tmp_folder):
         os.mkdir(tmp_folder)
 
     # make edge costs
+    t2 = time.time()
     make_costs(features_path, features_key, ds_graph, tmp_folder,
                costs_for_multicut, beta, weighting_exponent,
                weight_edges, n_threads)
+    print("Making costs in", time.time() - t2)
 
+    t3 = time.time()
     # block mappings for next steps
     for scale in range(n_scales):
         factor = 2**scale
         scale_shape = [bs*factor for bs in initial_block_shape]
         scale_prefix = '2_input_s%i' % scale
         blocks_to_jobs(shape, scale_shape, n_jobs, tmp_folder, scale_prefix)
+    print("Making jobs in", time.time() - t3)
 
     # get node to block assignment for scale level 0 and the oversegmentaton nodes
     node_out = os.path.join(tmp_folder, 'nodes_to_blocks')
@@ -127,12 +130,13 @@ def prepare(graph_path, graph_key,
 
     if not os.path.exists(node_out):
         os.mkdir(node_out)
+    t4 = time.time()
     ndist.nodesToBlocks(os.path.join(graph_path, 'sub_graphs/s0/block_'),
                         os.path.join(node_out, 's0.h5'),
                         numberOfBlocks=n_initial_blocks,
                         numberOfNodes=n_nodes,
-                        # numberOfThreads=n_threads)
-                        numberOfThreads=1)
+                        numberOfThreads=n_threads)
+    print("Making nodes to blocks in", time.time() - t4)
 
     t0 = time.time() - t0
     print("Success")

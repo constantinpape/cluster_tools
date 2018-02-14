@@ -2,7 +2,6 @@
 
 import os
 import argparse
-from math import ceil
 import numpy as np
 
 import z5py
@@ -15,11 +14,11 @@ def blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder):
                                     blockShape=block_shape)
     n_blocks = blocking.numberOfBlocks
     assert n_jobs <= n_blocks, "%i, %i" % (n_jobs, n_blocks)
-    chunk_size = int(ceil(float(n_blocks) / n_jobs))
+
     block_list = list(range(n_blocks))
-    for idx, i in enumerate(range(0, len(block_list), chunk_size)):
-        np.save(os.path.join(tmp_folder, '1_input_%i.npy' % idx), block_list[i:i + chunk_size])
-    assert idx == n_jobs - 1, "Not enough inputs created: %i / %i" % (idx, n_jobs - 1)
+    for job_id in range(n_jobs):
+        np.save(os.path.join(tmp_folder, '1_input_%i.npy' % job_id),
+                block_list[job_id::n_jobs])
 
 
 def prepare(labels_path, labels_key,

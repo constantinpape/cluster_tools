@@ -8,6 +8,8 @@ def wait_for_jobs(user, max_wait_time=None):
     while True:
         time.sleep(5)
         n_running = subprocess.check_output(['bjobs | grep %s | wc -l' % user], shell=True).decode()
+        print(n_running)
+        print(subprocess.check_output(['bjobs | grep %s' % user], shell=True).decode())
         n_running = int(n_running.strip('\n'))
         if n_running == 0:
             break
