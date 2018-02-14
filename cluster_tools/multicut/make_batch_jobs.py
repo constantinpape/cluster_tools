@@ -80,12 +80,13 @@ def make_batch_jobs_step2(graph_path, tmp_folder, n_scales,
             block_prefix = os.path.join(graph_path, 'sub_graphs', 's%i' % scale, 'block_')
         else:
             block_prefix = os.path.join(graph_path, 'merged_graphs', 's%i' % scale, 'block_')
-        node_storage = os.path.join(tmp_folder, 'nodes_to_blocks', 's%i.h5' % scale)
+
         for job_id in range(n_jobs):
-            command = './1a_solve_subproblems.py %s %s %s --tmp_folder %s --agglomerator_key %s --block_file %s' % \
-                      (block_prefix, node_storage, str(scale),
+            command = './1a_solve_subproblems.py %s %s %s --tmp_folder %s --agglomerator_key %s --initial_block_shape %s --block_file %s' % \
+                      (graph_path, block_prefix, str(scale),
                        tmp_folder,
                        '_'.join(agglomerator_key),
+                       ' '.join(map(str, block_shape)),
                        os.path.join(tmp_folder, '2_input_s%i_%i.npy' % (scale, job_id)))
             if use_bsub:
                 log_file = 'logs/log_multicut_step2_scale%i_%i.log' % (scale, job_id)
@@ -97,9 +98,8 @@ def make_batch_jobs_step2(graph_path, tmp_folder, n_scales,
 
     def make_jobs_reduce(scale, f):
         f.write('#! /bin/bash\n')
-        node_storage = os.path.join(tmp_folder, 'nodes_to_blocks')
-        command = './1b_reduce_problem.py %s %s %s --tmp_folder %s --n_jobs %s --initial_block_shape %s --n_threads %s --cost_accumulation %s' % \
-                  (graph_path, node_storage, str(scale),
+        command = './1b_reduce_problem.py %s %s --tmp_folder %s --n_jobs %s --initial_block_shape %s --n_threads %s --cost_accumulation %s' % \
+                  (graph_path, str(scale),
                    tmp_folder, str(n_jobs),
                    ' '.join(map(str, block_shape)),
                    str(n_threads),

@@ -14,19 +14,19 @@ import nifty.distributed as ndist
 AGGLOMERATORS = {"multicut_kl": cseg.Multicut("kernighan-lin")}
 
 
-def solve_block_subproblem(block_id, block_prefix, node_storage, costs, agglomerator):
+def solve_block_subproblem(block_id, block_prefix, costs, agglomerator, shape, block_shape):
     # load the nodes in this sub-block and map them
     # to our current node-labeling
     block_path = block_prefix + str(block_id)
     assert os.path.exists(block_path), block_path
     nodes = ndist.loadNodes(block_path)
 
-    # TODO we extract the graph locally with ndist
-    # the issue with this is that we store the node 2 block list as n5 which could wack the file system ...
-    # if we change this storage to hdf5, everything should be fine
+    # extract the local subgraph
     inner_edges, outer_edges, sub_uvs = ndist.extractSubgraphFromNodes(nodes,
-                                                                       node_storage,
-                                                                       block_prefix)
+                                                                       block_prefix,
+                                                                       shape,
+                                                                       block_shape,
+                                                                       block_id)
     # we might only have a single node, but we still need to find the outer edges
     if len(nodes) <= 1:
         return outer_edges
@@ -45,11 +45,12 @@ def solve_block_subproblem(block_id, block_prefix, node_storage, costs, agglomer
     return np.concatenate([cut_edge_ids, outer_edges])
 
 
-def multicut_step1(block_prefix,
-                   node_storage,
+def multicut_step1(graph_path,
+                   block_prefix,
                    scale,
                    tmp_folder,
                    agglomerator_key,
+                   initial_block_shape,
                    block_file):
 
     t0 = time.time()
@@ -58,11 +59,16 @@ def multicut_step1(block_prefix,
 
     block_ids = np.load(block_file)
 
+    shape = z5py.File(graph_path).attrs['shape']
+    factor = 2**scale
+    block_shape = [factor * bs for bs in initial_block_shape]
+
     cut_edge_ids = np.concatenate([solve_block_subproblem(block_id,
                                                           block_prefix,
-                                                          node_storage,
                                                           costs,
-                                                          agglomerator)
+                                                          agglomerator,
+                                                          shape,
+                                                          block_shape)
                                    for block_id in block_ids])
     cut_edge_ids = np.unique(cut_edge_ids)
 
@@ -76,15 +82,18 @@ def multicut_step1(block_prefix,
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument("graph_path", type=str)
     parser.add_argument("block_prefix", type=str)
-    parser.add_argument("node_storage", type=str)
     parser.add_argument("scale", type=int)
     parser.add_argument("--tmp_folder", type=str)
     parser.add_argument("--agglomerator_key", type=str)
+    parser.add_argument("--initial_block_shape", type=int, nargs=3)
     parser.add_argument("--block_file", type=str)
     args = parser.parse_args()
 
-    multicut_step1(args.block_prefix, args.node_storage,
+    multicut_step1(args.graph_path,
+                   args.block_prefix,
                    args.scale, args.tmp_folder,
                    args.agglomerator_key,
+                   args.initial_block_shape,
                    args.block_file)

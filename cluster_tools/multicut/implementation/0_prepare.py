@@ -8,7 +8,6 @@ import numpy as np
 import z5py
 import nifty
 import cremi_tools.segmentation as cseg
-import nifty.distributed as ndist
 
 
 def blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder, output_prefix):
@@ -93,50 +92,25 @@ def prepare(graph_path, graph_key,
     assert os.path.exists(features_path), features_path
 
     # load number of nodes and the shape
-    t1 = time.time()
     f_graph = z5py.File(graph_path)
     shape = f_graph.attrs['shape']
     ds_graph = f_graph[graph_key]
-    n_nodes = ds_graph.attrs['numberOfNodes']
-    print("Loading graph in", time.time() - t1)
 
     # make tmp folder
     if not os.path.exists(tmp_folder):
         os.mkdir(tmp_folder)
 
     # make edge costs
-    t2 = time.time()
     make_costs(features_path, features_key, ds_graph, tmp_folder,
                costs_for_multicut, beta, weighting_exponent,
                weight_edges, n_threads)
-    print("Making costs in", time.time() - t2)
 
-    t3 = time.time()
     # block mappings for next steps
     for scale in range(n_scales):
         factor = 2**scale
         scale_shape = [bs*factor for bs in initial_block_shape]
         scale_prefix = '2_input_s%i' % scale
         blocks_to_jobs(shape, scale_shape, n_jobs, tmp_folder, scale_prefix)
-    print("Making jobs in", time.time() - t3)
-
-    # get node to block assignment for scale level 0 and the oversegmentaton nodes
-    node_out = os.path.join(tmp_folder, 'nodes_to_blocks')
-
-    blocking = nifty.tools.blocking(roiBegin=[0, 0, 0],
-                                    roiEnd=list(shape),
-                                    blockShape=initial_block_shape)
-    n_initial_blocks = blocking.numberOfBlocks
-
-    if not os.path.exists(node_out):
-        os.mkdir(node_out)
-    t4 = time.time()
-    ndist.nodesToBlocks(os.path.join(graph_path, 'sub_graphs/s0/block_'),
-                        os.path.join(node_out, 's0.h5'),
-                        numberOfBlocks=n_initial_blocks,
-                        numberOfNodes=n_nodes,
-                        numberOfThreads=n_threads)
-    print("Making nodes to blocks in", time.time() - t4)
 
     t0 = time.time() - t0
     print("Success")

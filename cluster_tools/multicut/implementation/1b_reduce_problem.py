@@ -12,7 +12,7 @@ import nifty.distributed as ndist
 
 
 # TODO de-spaghettify !!!
-def multicut_step1(graph_path, node_storage, scale,
+def multicut_step1(graph_path, scale,
                    tmp_folder, n_jobs,
                    initial_block_shape, n_threads,
                    cost_accumulation="sum"):
@@ -95,7 +95,6 @@ def multicut_step1(graph_path, node_storage, scale,
                                block_shape, new_block_shape,
                                n_new_nodes,
                                node_labeling, edge_labeling,
-                               os.path.join(node_storage, 's%i.h5' % (scale + 1,)),
                                block_out_prefix, n_threads)
 
     # serialize all results for the next scale
@@ -141,7 +140,6 @@ def multicut_step1(graph_path, node_storage, scale,
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("graph_path", type=str)
-    parser.add_argument("node_storage", type=str)
     parser.add_argument("scale", type=int)
     parser.add_argument("--tmp_folder", type=str)
     parser.add_argument("--n_jobs", type=int)
@@ -150,7 +148,7 @@ if __name__ == '__main__':
     parser.add_argument("--cost_accumulation", type=str)
     args = parser.parse_args()
 
-    multicut_step1(args.graph_path, args.node_storage,
+    multicut_step1(args.graph_path,
                    args.scale, args.tmp_folder,
                    args.n_jobs, args.initial_block_shape,
                    args.n_threads, args.cost_accumulation)
