@@ -22,7 +22,7 @@ def master_job(n_jobs):
     # submit jobs 2
     subprocess.call(['./jobs_step2.sh'])
     # wait for jobs 2
-    failed_jobs = wait_and_check_single_job('relabel_step2', n_jobs)
+    failed_jobs = wait_and_check_single_job('relabel_step2')
     if failed_jobs:
         print("Step 2 failed for following jobs:")
         return
@@ -30,7 +30,7 @@ def master_job(n_jobs):
     # submit jobs 3
     subprocess.call(['./jobs_step3.sh'])
     # wait for jobs 3
-    failed_jobs = wait_and_check_multiple_jobs('relabel_step3')
+    failed_jobs = wait_and_check_multiple_jobs('relabel_step3', n_jobs)
     if failed_jobs:
         print("Step 3 failed for following jobs")
         print(failed_jobs)
