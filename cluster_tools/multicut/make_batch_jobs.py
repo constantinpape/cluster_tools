@@ -34,6 +34,9 @@ def make_batch_jobs_step1(graph_path, graph_key, features_path, features_key,
     replace_shebang('0_prepare.py', shebang)
     make_executable('0_prepare.py')
 
+    # FIXME for some reason, the log of this file is not properly read...
+    use_bsub = False
+
     with open(script_file, 'w') as f:
         f.write('#! /bin/bash\n')
         command = './0_prepare.py %s %s %s %s --initial_block_shape %s --n_scales %s --tmp_folder %s --n_jobs %s --n_threads %s --use_mc_costs %s\n' %\
@@ -45,8 +48,11 @@ def make_batch_jobs_step1(graph_path, graph_key, features_path, features_key,
         if use_bsub:
             log_file = 'logs/log_multicut_step1.log'
             err_file = 'error_logs/err_multicut_step1.err'
-            f.write('bsub -n %i -J multicut_step1 -We %i -o %s -e %s \'%s\' \n' %
-                    (n_threads, eta, log_file, err_file, command))
+            # For now we don't gain anything by multi-threading
+            # f.write('bsub -n %i -J multicut_step1 -We %i -o %s -e %s \'%s\' \n' %
+            #         (n_threads, eta, log_file, err_file, command))
+            f.write('bsub -J multicut_step1 -We %i -o %s -e %s \'%s\' \n' %
+                    (eta, log_file, err_file, command))
         else:
             f.write(command + '\n')
 

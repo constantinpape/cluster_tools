@@ -23,6 +23,11 @@ def label_projection_step1(labels_path, labels_key,
                                block_shape)
 
     job_id = int(os.path.split(block_file)[1].split('_')[2][:-4])
+    # the zeroth job writes the max-id to the out dataset attributes
+    if job_id == 0:
+        max_id = int(node_labeling.max())
+        z5py.File(out_path)[out_key].attrs['maxId'] = max_id
+
     print("Success job %i" % job_id)
     print("In %f s" % (time.time() - t0,))
 

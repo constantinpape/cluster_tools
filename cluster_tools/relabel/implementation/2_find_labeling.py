@@ -32,7 +32,8 @@ def relabel_step2(labels_path, labels_key, tmp_folder, block_shape, n_threads=1)
     labeling[uniques] = relabeled
 
     np.save(os.path.join(tmp_folder, '2_output.npy'), labeling)
-    ds_labels.attrs['maxId'] = int(labeling.max())
+    max_id = int(labeling.max())
+    ds_labels.attrs['maxId'] = max_id
 
     print("Success")
 

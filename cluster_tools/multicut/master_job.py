@@ -12,11 +12,12 @@ def master_job(n_jobs, n_scales):
     t_tot = time.time()
     # submit jobs 1
     subprocess.call(['./jobs_step1.sh'])
-    # wait for jobs 1
-    failed_jobs = wait_and_check_single_job('multicut_step1', n_jobs)
-    if failed_jobs:
-        print("Step 1 failed")
-        return
+    # FIXME
+    # # wait for jobs 1
+    # failed_jobs = wait_and_check_single_job('multicut_step1', n_jobs)
+    # if failed_jobs:
+    #     print("Step 1 failed")
+    #     return
 
     # submit jobs 2 for
     for scale in range(n_scales):

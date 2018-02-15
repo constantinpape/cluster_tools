@@ -6,34 +6,49 @@ import argparse
 import numpy as np
 
 import z5py
-import nifty
 import cremi_tools.segmentation as cseg
+from nifty.graph import undirectedGraph
 import nifty.distributed as ndist
 
 # TODO support more agglomerators
 AGGLOMERATORS = {"multicut_kl": cseg.Multicut("kernighan-lin")}
 
 
-def solve_block_subproblem(block_id, block_prefix, costs, agglomerator, shape, block_shape):
+def solve_block_subproblem(block_id, graph, block_prefix, costs, agglomerator, shape, block_shape):
     # load the nodes in this sub-block and map them
     # to our current node-labeling
     block_path = block_prefix + str(block_id)
     assert os.path.exists(block_path), block_path
     nodes = ndist.loadNodes(block_path)
 
-    # extract the local subgraph
-    inner_edges, outer_edges, sub_uvs = ndist.extractSubgraphFromNodes(nodes,
-                                                                       block_prefix,
-                                                                       shape,
-                                                                       block_shape,
-                                                                       block_id)
-    # we might only have a single node, but we still need to find the outer edges
-    if len(nodes) <= 1:
+    # # the ignore label (== 0) spans a lot of blocks, hence it would slow down our
+    # # subgraph extraction, which looks at all the blocks containing the node,
+    # # enormously, so we skip it
+    # # we make sure that these are cut later
+    # if nodes[0] == 0:
+    #     nodes = nodes[1:]
+
+    # # if we have no nodes left after, we return none
+    # if len(nodes) == 0:
+    #     return None
+
+    # # extract the local subgraph
+    # inner_edges, outer_edges, sub_uvs = ndist.extractSubgraphFromNodes(nodes,
+    #                                                                    block_prefix,
+    #                                                                    shape,
+    #                                                                    block_shape,
+    #                                                                    block_id)
+    inner_edges, outer_edges, sub_uvs = graph.extractSubgraphFromNodes(nodes)
+
+    # if we had only a single node (i.e. no edge, return the outer edges)
+    if len(nodes) == 1:
         return outer_edges
+
     assert len(sub_uvs) == len(inner_edges)
+    assert len(sub_uvs) > 0, str(block_id)
 
     n_local_nodes = int(sub_uvs.max() + 1)
-    sub_graph = nifty.graph.undirectedGraph(n_local_nodes)
+    sub_graph = undirectedGraph(n_local_nodes)
     sub_graph.insertEdges(sub_uvs)
 
     sub_costs = costs[inner_edges]
@@ -63,13 +78,20 @@ def multicut_step1(graph_path,
     factor = 2**scale
     block_shape = [factor * bs for bs in initial_block_shape]
 
-    cut_edge_ids = np.concatenate([solve_block_subproblem(block_id,
-                                                          block_prefix,
-                                                          costs,
-                                                          agglomerator,
-                                                          shape,
-                                                          block_shape)
-                                   for block_id in block_ids])
+    # FIXME we need to change the graph path to the merged graph (and make this for the highest level)
+    # for higher scale levels
+    graph = ndist.Graph(os.path.join(graph_path, 'graph'))
+
+    results = [solve_block_subproblem(block_id,
+                                      graph,
+                                      block_prefix,
+                                      costs,
+                                      agglomerator,
+                                      shape,
+                                      block_shape)
+               for block_id in block_ids]
+
+    cut_edge_ids = np.concatenate([res for res in results if res is not None])
     cut_edge_ids = np.unique(cut_edge_ids)
 
     job_id = int(os.path.split(block_file)[1].split('_')[3][:-4])

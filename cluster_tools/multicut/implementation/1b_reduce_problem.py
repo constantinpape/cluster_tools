@@ -5,9 +5,11 @@ import os
 import argparse
 import numpy as np
 
-import vigra
+from vigra.analysis import relabelConsecutive
 import z5py
-import nifty
+# we don't want to pull in big packges we don't need
+import nifty.tools as nt
+import nifty.ufd as nufd
 import nifty.distributed as ndist
 
 
@@ -38,22 +40,31 @@ def multicut_step1(graph_path, scale,
     assert len(costs) == n_edges, "%i, %i" (len(costs), n_edges)
 
     # load the cut-edge ids from the prev. jobs and make merge edge ids
-    merge_edges = np.ones(n_edges, dtype='bool')
     # TODO we could parallelize this
     cut_edge_ids = np.concatenate([np.load(os.path.join(tmp_folder,
                                                         '1_output_s%i_%i.npy' % (scale, job_id)))
                                    for job_id in range(n_jobs)])
     cut_edge_ids = np.unique(cut_edge_ids)
+
+    # print("Number of cut edges:", len(cut_edge_ids))
+    # print("                   /", n_edges)
+
+    merge_edges = np.ones(n_edges, dtype='bool')
     merge_edges[cut_edge_ids] = False
 
+    # TODO make sure that zero stayes mapped to zero
+    # additionally, we make sure that all edges are cut
+    ignore_edges = (uv_ids == 0).any(axis=1)
+    merge_edges[ignore_edges] = False
+
     # merge node pairs with ufd
-    ufd = nifty.ufd.ufd(n_nodes)
+    ufd = nufd.ufd(n_nodes)
     merge_pairs = uv_ids[merge_edges]
     ufd.merge(merge_pairs)
 
     # get the node results and label them consecutively
     node_labeling = ufd.elementLabeling()
-    node_labeling, max_new_id, _ = vigra.analysis.relabelConsecutive(node_labeling)
+    node_labeling, max_new_id, _ = relabelConsecutive(node_labeling)
     n_new_nodes = max_new_id + 1
 
     # get the labeling of initial nodes
@@ -65,7 +76,7 @@ def multicut_step1(graph_path, scale,
         new_initial_node_labeling = node_labeling[initial_node_labeling]
 
     # get new edge costs
-    edge_mapping = nifty.tools.EdgeMapping(uv_ids, node_labeling, numberOfThreads=n_threads)
+    edge_mapping = nt.EdgeMapping(uv_ids, node_labeling, numberOfThreads=n_threads)
     new_uv_ids = edge_mapping.newUvIds()
 
     new_costs = edge_mapping.mapEdgeValues(costs, cost_accumulation, numberOfThreads=n_threads)
