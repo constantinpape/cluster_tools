@@ -19,15 +19,14 @@ def multicut_step2(out_path, node_labeling_key,
     last_scale = n_scales
     agglomerator = AGGLOMERATORS[agglomerator_key]
 
-    f_problem = z5py.File(os.path.join(tmp_folder, 'problem.n5/s%i' % last_scale))
-    n_nodes = f_problem.attrs['numberOfNodes']
-    uv_ids = f_problem['uvIds'][:]
-    initial_node_labeling = f_problem['nodeLabeling'][:]
+    f_graph = z5py.File(os.path.join(tmp_folder, 'merged_graph.n5/s%i' % last_scale))
+    n_nodes = f_graph.attrs['numberOfNodes']
+    uv_ids = f_graph['edges'][:]
+    initial_node_labeling = f_graph['nodeLabeling'][:]
     n_edges = len(uv_ids)
 
     # get the costs
-    costs = z5py.File(os.path.join(tmp_folder, 'problem.n5/s%i' % last_scale),
-                      use_zarr_format=False)['costs'][:]
+    costs = f_graph['costs'][:]
     assert len(costs) == n_edges, "%i, %i" (len(costs), n_edges)
 
     graph = nifty.graph.undirectedGraph(n_nodes)

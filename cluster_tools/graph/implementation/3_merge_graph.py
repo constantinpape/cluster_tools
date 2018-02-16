@@ -28,6 +28,7 @@ def graph_step3(graph_path, last_scale, initial_block_shape, n_threads):
                          blockIds=block_list,
                          outKey=output_key,
                          numberOfThreads=n_threads)
+    f_graph[output_key].attrs['shape'] = shape
     print("Success")
     print("In %f s" % (time.time() - t0,))
 

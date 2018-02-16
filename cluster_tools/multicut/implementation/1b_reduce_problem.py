@@ -13,32 +13,8 @@ import nifty.ufd as nufd
 import nifty.distributed as ndist
 
 
-# TODO de-spaghettify !!!
-def multicut_step1(graph_path, scale,
-                   tmp_folder, n_jobs,
-                   initial_block_shape, n_threads,
-                   cost_accumulation="sum"):
-    t0 = time.time()
-    # get the number of nodes and uv-ids at this scale level
-    # as well as the initial node labeling
-    shape = z5py.File(graph_path).attrs['shape']
-    if scale == 0:
-        f_graph = z5py.File(os.path.join(graph_path, 'graph'), use_zarr_format=False)
-        initial_node_labeling = None
-        n_nodes = f_graph.attrs['numberOfNodes']
-        uv_ids = f_graph['edges'][:]
-    else:
-        f_problem = z5py.File(os.path.join(tmp_folder, 'problem.n5/s%i' % scale))
-        n_nodes = f_problem.attrs['numberOfNodes']
-        uv_ids = f_problem['uvIds'][:]
-        initial_node_labeling = f_problem['nodeLabeling'][:]
+def merge_nodes(tmp_folder, scale, n_jobs, n_nodes, uv_ids, initial_node_labeling):
     n_edges = len(uv_ids)
-
-    # get the costs
-    costs = z5py.File(os.path.join(tmp_folder, 'problem.n5/s%i' % scale),
-                      use_zarr_format=False)['costs'][:]
-    assert len(costs) == n_edges, "%i, %i" (len(costs), n_edges)
-
     # load the cut-edge ids from the prev. jobs and make merge edge ids
     # TODO we could parallelize this
     cut_edge_ids = np.concatenate([np.load(os.path.join(tmp_folder,
@@ -46,8 +22,9 @@ def multicut_step1(graph_path, scale,
                                    for job_id in range(n_jobs)])
     cut_edge_ids = np.unique(cut_edge_ids)
 
-    # print("Number of cut edges:", len(cut_edge_ids))
-    # print("                   /", n_edges)
+    print("Number of cut edges:", len(cut_edge_ids))
+    print("                   /", n_edges)
+    assert len(cut_edge_ids) < n_edges, "%i = %i, does not reduce problem" % (len(cut_edge_ids), n_edges)
 
     merge_edges = np.ones(n_edges, dtype='bool')
     merge_edges[cut_edge_ids] = False
@@ -75,24 +52,38 @@ def multicut_step1(graph_path, scale,
         # but for now this would really be premature optimization
         new_initial_node_labeling = node_labeling[initial_node_labeling]
 
-    # get new edge costs
+    return n_new_nodes, node_labeling, new_initial_node_labeling
+
+
+def get_new_edges(uv_ids, node_labeling, costs, cost_accumulation, n_threads):
     edge_mapping = nt.EdgeMapping(uv_ids, node_labeling, numberOfThreads=n_threads)
     new_uv_ids = edge_mapping.newUvIds()
-
+    edge_labeling = edge_mapping.edgeMapping()
     new_costs = edge_mapping.mapEdgeValues(costs, cost_accumulation, numberOfThreads=n_threads)
     assert len(new_uv_ids) == len(new_costs)
+    assert len(edge_labeling) == len(uv_ids)
+    return new_uv_ids, edge_labeling, new_costs
 
-    # map the new graph (= node labeling and corresponding edges)
-    # to the next scale level
 
-    f_graph = z5py.File(graph_path, use_zarr_format=False)
-    f_graph.create_group('merged_graphs/s%i' % scale)
+def serialize_new_problem(graph_path, n_new_nodes, new_uv_ids,
+                          node_labeling, edge_labeling,
+                          new_costs, new_initial_node_labeling,
+                          shape, scale, initial_block_shape,
+                          tmp_folder, n_threads):
+
+    next_scale = scale + 1
+    merged_graph_path = os.path.join(tmp_folder, 'merged_graph.n5')
+    f_graph = z5py.File(merged_graph_path, use_zarr_format=False)
+    g_out = f_graph.create_group('s%i' % next_scale)
+    g_out.create_group('sub_graphs')
+
+    # TODO this should be handled by symlinks
     if scale == 0:
         block_in_prefix = os.path.join(graph_path, 'sub_graphs', 's%i' % scale, 'block_')
     else:
-        block_in_prefix = os.path.join(graph_path, 'merged_graphs', 's%i' % scale, 'block_')
+        block_in_prefix = os.path.join(tmp_folder, 'merged_graph.n5', 's%i' % scale, 'block_')
 
-    block_out_prefix = os.path.join(graph_path, 'merged_graphs', 's%i' % (scale + 1,), 'block_')
+    block_out_prefix = os.path.join(tmp_folder, 'merged_graph.n5', 's%i' % next_scale, 'sub_graphs', 'block_')
 
     factor = 2**scale
     block_shape = [factor * bs for bs in initial_block_shape]
@@ -100,47 +91,92 @@ def multicut_step1(graph_path, scale,
     new_factor = 2**(scale + 1)
     new_block_shape = [new_factor * bs for bs in initial_block_shape]
 
-    edge_labeling = edge_mapping.edgeMapping()
-
     ndist.serializeMergedGraph(block_in_prefix, shape,
                                block_shape, new_block_shape,
                                n_new_nodes,
                                node_labeling, edge_labeling,
                                block_out_prefix, n_threads)
 
-    # serialize all results for the next scale
-    problem_out_file = os.path.join(tmp_folder, 'problem.n5')
-    f_out = z5py.File(problem_out_file, use_zarr_format=False)
-
-    scale_key = 's%i' % (scale + 1,)
-    if scale_key not in f_out:
-        f_out.create_group(scale_key)
-    g_out = f_out[scale_key]
-    g_out.attrs['numberOfNodes'] = n_new_nodes
-
+    # serialize the full graph for the next scale level
     n_new_edges = len(new_uv_ids)
+    g_out.attrs['numberOfNodes'] = n_new_nodes
+    g_out.attrs['numberOfEdges'] = n_new_edges
+
     shape_edges = (n_new_edges, 2)
-    if 'uvIds' not in g_out:
-        ds_edges = g_out.create_dataset('uvIds', dtype='uint64', shape=shape_edges, chunks=shape_edges)
-    else:
-        ds_edges = g_out['uvIds']
-        assert ds_edges.shape == shape_edges
+    ds_edges = g_out.create_dataset('edges', dtype='uint64', shape=shape_edges, chunks=shape_edges)
     ds_edges[:] = new_uv_ids
 
-    shape_nodes = (len(new_initial_node_labeling),)
-    if 'nodeLabeling' not in g_out:
-        ds_nodes = g_out.create_dataset('nodeLabeling', dtype='uint64', shape=shape_nodes, chunks=shape_nodes)
-    else:
-        ds_nodes = g_out['nodeLabeling']
-        assert ds_nodes.shape == shape_nodes
-    ds_nodes[:] = new_initial_node_labeling
+    nodes = np.unique(new_uv_ids)
+    shape_nodes = (len(nodes),)
+    ds_nodes = g_out.create_dataset('nodes', dtype='uint64', shape=shape_nodes, chunks=shape_nodes)
+    ds_nodes[:] = nodes
 
+    # serialize the node labeling
+    shape_node_labeling = (len(new_initial_node_labeling),)
+    ds_node_labeling = g_out.create_dataset('nodeLabeling', dtype='uint64', shape=shape_node_labeling,
+                                            chunks=shape_node_labeling)
+    ds_node_labeling[:] = new_initial_node_labeling
+
+    # serialize the new costs
     shape_costs = (n_new_edges,)
     if 'costs' not in g_out:
         ds_costs = g_out.create_dataset('costs', dtype='float32', shape=shape_costs, chunks=shape_costs)
     else:
         ds_costs = g_out['costs']
     ds_costs[:] = new_costs
+
+    return n_new_edges
+
+
+def multicut_step1(graph_path, scale,
+                   tmp_folder, n_jobs,
+                   initial_block_shape, n_threads,
+                   cost_accumulation="sum"):
+    t0 = time.time()
+    # get the number of nodes and uv-ids at this scale level
+    # as well as the initial node labeling
+    shape = z5py.File(graph_path).attrs['shape']
+    if scale == 0:
+        f_graph = z5py.File(os.path.join(graph_path, 'graph'), use_zarr_format=False)
+        initial_node_labeling = None
+        n_nodes = f_graph.attrs['numberOfNodes']
+        uv_ids = f_graph['edges'][:]
+    else:
+        f_problem = z5py.File(os.path.join(tmp_folder, 'merged_graph.n5/s%i' % scale))
+        n_nodes = f_problem.attrs['numberOfNodes']
+        uv_ids = f_problem['uvIds'][:]
+        initial_node_labeling = f_problem['nodeLabeling'][:]
+    n_edges = len(uv_ids)
+
+    # get the costs
+    costs = z5py.File(os.path.join(tmp_folder, 'merged_graph.n5/s%i' % scale),
+                      use_zarr_format=False)['costs'][:]
+    assert len(costs) == n_edges, "%i, %i" (len(costs), n_edges)
+
+    # get the new node assignment
+    print("Merging nodes...")
+    n_new_nodes, node_labeling, new_initial_node_labeling = merge_nodes(tmp_folder,
+                                                                        scale,
+                                                                        n_jobs,
+                                                                        n_nodes,
+                                                                        uv_ids,
+                                                                        initial_node_labeling)
+    print("... done")
+
+    # get the new edge assignment
+    print("Merging edges...")
+    new_uv_ids, edge_labeling, new_costs = get_new_edges(uv_ids, node_labeling,
+                                                         costs, cost_accumulation, n_threads)
+    print("... done")
+
+    # serialize the input graph and costs for the next scale level
+    print("Serializing new graph...")
+    n_new_edges = serialize_new_problem(graph_path, n_new_nodes, new_uv_ids,
+                                        node_labeling, edge_labeling,
+                                        new_costs, new_initial_node_labeling,
+                                        shape, scale, initial_block_shape,
+                                        tmp_folder, n_threads)
+    print("... done")
 
     print("Success")
     print("In %f s" % (time.time() - t0,))

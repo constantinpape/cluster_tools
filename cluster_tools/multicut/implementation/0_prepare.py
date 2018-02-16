@@ -52,28 +52,40 @@ def make_costs(features_path, features_key, ds_graph, tmp_folder,
         costs = cseg.transform_probabilities_to_costs(costs, beta=beta,
                                                       edge_sizes=edge_sizes,
                                                       weighting_exponent=weighting_exponent)
-
     # set weights of ignore edges to be maximally repulsive
     if costs_for_multicut:
         costs[ignore_edges] = 5 * costs.min()
     else:
         costs[ignore_edges] = 1.
+    return costs
+
+
+def serialize_initial_problem(graph_path, tmp_folder, costs):
+
+    # make merged - graph n5 file
+    graph_out_path = os.path.join(tmp_folder, 'merged_graph.n5')
+    f_graph = z5py.File(graph_out_path, use_zarr_format=False)
+
+    # make scale 0 group
+    if 's0' not in f_graph:
+        g = f_graph.create_group('s0')
+    else:
+        g = f_graph['s0']
 
     # write the costs
-    costs_out_path = os.path.join(tmp_folder, 'problem.n5')
-    f_costs = z5py.File(costs_out_path, use_zarr_format=False)
     cost_shape = (len(costs),)
-    if 's0' not in f_costs:
-        g = f_costs.create_group('s0')
-    else:
-        g = f_costs['s0']
-
     if 'costs' not in g:
         ds = g.create_dataset('costs', dtype='float32', shape=cost_shape, chunks=cost_shape)
     else:
         ds = g['costs']
         assert ds.shape == cost_shape
     ds[:] = costs.astype('float32')
+
+    # FIXME this does not work, for some odd reason
+    # make symlinks to the normal, zero-level graph
+    # print("Symlink from", os.path.join(graph_path, 'graph'))
+    # print("to", os.path.join(graph_out_path, 's0', 'graph'))
+    # os.symlink(os.path.join(graph_path, 'graph'), os.path.join(graph_out_path, 's0', 'graph'))
 
 
 def prepare(graph_path, graph_key,
@@ -85,7 +97,7 @@ def prepare(graph_path, graph_key,
             n_threads,
             costs_for_multicut=True,
             beta=0.5,
-            weight_edges=True,
+            weight_edges=False,
             weighting_exponent=1.):
 
     t0 = time.time()
@@ -101,9 +113,11 @@ def prepare(graph_path, graph_key,
         os.mkdir(tmp_folder)
 
     # make edge costs
-    make_costs(features_path, features_key, ds_graph, tmp_folder,
-               costs_for_multicut, beta, weighting_exponent,
-               weight_edges, n_threads)
+    costs = make_costs(features_path, features_key, ds_graph, tmp_folder,
+                       costs_for_multicut, beta, weighting_exponent,
+                       weight_edges, n_threads)
+
+    serialize_initial_problem(graph_path, tmp_folder, costs)
 
     # block mappings for next steps
     for scale in range(n_scales):

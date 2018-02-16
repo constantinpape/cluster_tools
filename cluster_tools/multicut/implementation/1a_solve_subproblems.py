@@ -14,7 +14,14 @@ import nifty.distributed as ndist
 AGGLOMERATORS = {"multicut_kl": cseg.Multicut("kernighan-lin")}
 
 
-def solve_block_subproblem(block_id, graph, block_prefix, costs, agglomerator, shape, block_shape):
+def solve_block_subproblem(block_id,
+                           graph,
+                           block_prefix,
+                           costs,
+                           agglomerator,
+                           shape,
+                           block_shape,
+                           cut_outer_edges):
     # load the nodes in this sub-block and map them
     # to our current node-labeling
     block_path = block_prefix + str(block_id)
@@ -42,7 +49,7 @@ def solve_block_subproblem(block_id, graph, block_prefix, costs, agglomerator, s
 
     # if we had only a single node (i.e. no edge, return the outer edges)
     if len(nodes) == 1:
-        return outer_edges
+        return outer_edges if cut_outer_edges else None
 
     assert len(sub_uvs) == len(inner_edges)
     assert len(sub_uvs) > 0, str(block_id)
@@ -57,7 +64,14 @@ def solve_block_subproblem(block_id, graph, block_prefix, costs, agglomerator, s
 
     assert len(sub_edgeresult) == len(inner_edges)
     cut_edge_ids = inner_edges[sub_edgeresult]
-    return np.concatenate([cut_edge_ids, outer_edges])
+
+    # print("block", block_id, "number cut_edges:", len(cut_edge_ids))
+    # print("block", block_id, "number outer_edges:", len(outer_edges))
+
+    if cut_outer_edges:
+        cut_edge_ids = np.concatenate([cut_edge_ids, outer_edges])
+
+    return cut_edge_ids
 
 
 def multicut_step1(graph_path,
@@ -66,11 +80,13 @@ def multicut_step1(graph_path,
                    tmp_folder,
                    agglomerator_key,
                    initial_block_shape,
-                   block_file):
+                   block_file,
+                   cut_outer_edges=False):
 
     t0 = time.time()
     agglomerator = AGGLOMERATORS[agglomerator_key]
-    costs = z5py.File(os.path.join(tmp_folder, 'problem.n5/s%i' % scale), use_zarr_format=False)['costs'][:]
+    costs = z5py.File(os.path.join(tmp_folder, 'merged_graph.n5/s%i' % scale),
+                      use_zarr_format=False)['costs'][:]
 
     block_ids = np.load(block_file)
 
@@ -78,9 +94,12 @@ def multicut_step1(graph_path,
     factor = 2**scale
     block_shape = [factor * bs for bs in initial_block_shape]
 
-    # FIXME we need to change the graph path to the merged graph (and make this for the highest level)
-    # for higher scale levels
-    graph = ndist.Graph(os.path.join(graph_path, 'graph'))
+    # TODO we should have symlinks instead of the if else
+    if scale == 0:
+        graph_path_ = graph_path
+    else:
+        graph_path_ = os.path.join(tmp_folder, 'merged_graph.n5', 's%i' % scale)
+    graph = ndist.Graph(os.path.join(graph_path_, 'graph'))
 
     results = [solve_block_subproblem(block_id,
                                       graph,
@@ -88,7 +107,8 @@ def multicut_step1(graph_path,
                                       costs,
                                       agglomerator,
                                       shape,
-                                      block_shape)
+                                      block_shape,
+                                      cut_outer_edges)
                for block_id in block_ids]
 
     cut_edge_ids = np.concatenate([res for res in results if res is not None])
