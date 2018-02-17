@@ -2,11 +2,11 @@ import sys
 sys.path.append('../..')
 from cluster_tools.label_projection import make_batch_jobs
 
-PATH = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cluster_test_data/testdata.n5'
+PATH = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cluster_test_data/testdata1.n5'
 
-LABELS_KEY = 'watershed'
+LABELS_KEY = 'segmentations/watershed'
 LABELING_KEY = 'node_labeling_multicut'
-OUT_KEY = 'segmentation_multicut'
+OUT_KEY = 'segmentations/multicut'
 
 TMP_FOLDER = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cluster_test_data/tmp_files_labelprojection'
 BLOCK_SHAPE = (25, 256, 256)
@@ -20,10 +20,10 @@ def jobs_for_cluster_test(n_jobs):
                     TMP_FOLDER,
                     BLOCK_SHAPE, BLOCK_SHAPE, n_jobs,
                     executable=EXECUTABLE,
-                    use_bsub=False,
+                    use_bsub=True,
                     eta=5)
 
 
 if __name__ == '__main__':
-    n_jobs = 8
+    n_jobs = 16
     jobs_for_cluster_test(n_jobs)

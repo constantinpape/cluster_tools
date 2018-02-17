@@ -22,8 +22,8 @@ def merge_nodes(tmp_folder, scale, n_jobs, n_nodes, uv_ids, initial_node_labelin
                                    for job_id in range(n_jobs)])
     cut_edge_ids = np.unique(cut_edge_ids)
 
-    print("Number of cut edges:", len(cut_edge_ids))
-    print("                   /", n_edges)
+    # print("Number of cut edges:", len(cut_edge_ids))
+    # print("                   /", n_edges)
     assert len(cut_edge_ids) < n_edges, "%i = %i, does not reduce problem" % (len(cut_edge_ids), n_edges)
 
     merge_edges = np.ones(n_edges, dtype='bool')
@@ -154,29 +154,22 @@ def multicut_step1(graph_path, scale,
     assert len(costs) == n_edges, "%i, %i" (len(costs), n_edges)
 
     # get the new node assignment
-    print("Merging nodes...")
     n_new_nodes, node_labeling, new_initial_node_labeling = merge_nodes(tmp_folder,
                                                                         scale,
                                                                         n_jobs,
                                                                         n_nodes,
                                                                         uv_ids,
                                                                         initial_node_labeling)
-    print("... done")
-
     # get the new edge assignment
-    print("Merging edges...")
     new_uv_ids, edge_labeling, new_costs = get_new_edges(uv_ids, node_labeling,
                                                          costs, cost_accumulation, n_threads)
-    print("... done")
 
     # serialize the input graph and costs for the next scale level
-    print("Serializing new graph...")
     n_new_edges = serialize_new_problem(graph_path, n_new_nodes, new_uv_ids,
                                         node_labeling, edge_labeling,
                                         new_costs, new_initial_node_labeling,
                                         shape, scale, initial_block_shape,
                                         tmp_folder, n_threads)
-    print("... done")
 
     print("Success")
     print("In %f s" % (time.time() - t0,))
