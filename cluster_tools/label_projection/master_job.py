@@ -13,7 +13,7 @@ def master_job(n_jobs):
     # submit jobs 1
     subprocess.call(['./jobs_step1.sh'])
     # wait for jobs 1
-    failed_jobs = wait_and_check_multiple_jobs('label_project_step1', n_jobs)
+    failed_jobs = wait_and_check_multiple_jobs('project_labels_step1', n_jobs)
     if failed_jobs:
         print("Step 1 failed for following jobs:")
         print(failed_jobs)
