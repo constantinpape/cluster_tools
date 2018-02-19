@@ -23,6 +23,8 @@ def blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder, output_prefix):
     return n_blocks
 
 
+# FIXME this is a bit hacky, that's why we need to set `edge_end` to `n_edges` in the end
+# also, this may shift the load to the last job very unevenly
 def edges_to_jobs2(n_edges, chunk_size, n_jobs, tmp_folder, n_blocks):
     n_chunks = n_edges // chunk_size + 1 if chunk_size % n_edges != 0 else n_edges // chunk_size
     if n_jobs > n_chunks:
@@ -33,6 +35,8 @@ def edges_to_jobs2(n_edges, chunk_size, n_jobs, tmp_folder, n_blocks):
     for job_id in range(n_jobs):
         edge_begin = job_id * chunks_per_job * chunk_size
         edge_end = min((job_id + 1) * chunks_per_job * chunk_size, n_edges)
+        if job_id == n_jobs - 1:
+            edge_end = n_edges
         np.save(os.path.join(tmp_folder, "2_input_%i.npy" % job_id),
                 np.array([edge_begin, edge_end, n_blocks], dtype='uint32'))
 
