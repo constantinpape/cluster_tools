@@ -67,6 +67,24 @@ def make_batch_jobs_step1(labels_path, labels_key,
     make_executable(script_file)
 
 
+def make_master_job(n_jobs, executable, script_file):
+    file_dir = os.path.dirname(os.path.abspath(__file__))
+    cwd = os.getcwd()
+    assert os.path.exists(executable), "Could not find python at %s" % executable
+    shebang = '#! %s' % executable
+
+    copy(os.path.join(file_dir, 'master_job.py'), cwd)
+    replace_shebang('master_job.py', shebang)
+    make_executable('master_job.py')
+
+    parent_dir = os.path.abspath(os.path.join(file_dir, os.pardir))
+    copy(os.path.join(parent_dir, 'wait_and_check.py'), cwd)
+
+    with open(script_file, 'w') as f:
+        f.write('./master_job.py %i\n' % n_jobs)
+    make_executable(script_file)
+
+
 def make_batch_jobs(labels_path, labels_key,
                     out_path, out_key,
                     node_labeling_path, node_labeling_key,
@@ -90,3 +108,5 @@ def make_batch_jobs(labels_path, labels_key,
                           node_labeling_path, node_labeling_key,
                           tmp_folder, block_shape, chunks, n_jobs, executable,
                           use_bsub=use_bsub, eta=eta)
+
+    make_master_job(n_jobs, executable, 'master.sh')

@@ -23,12 +23,12 @@ def blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder):
 
 
 def prepare(mask_path, mask_key,
-            out_path, key_out,
-            out_chunks, out_blocks,
+            out_path, out_key,
+            chunks, block_shape,
             tmp_folder, n_jobs):
     assert os.path.exists(mask_path), mask_path
-    assert all(bs % cs == 0 for bs, cs in zip(out_blocks, out_chunks)), \
-        "Block shape is not a multiple of chunk shape: %s %s" % (str(out_blocks), str(out_chunks))
+    assert all(bs % cs == 0 for bs, cs in zip(block_shape, chunks)), \
+        "Block shape is not a multiple of chunk shape: %s %s" % (str(block_shape), str(chunks))
     ds_mask = z5py.File(mask_path)[mask_key]
     shape = ds_mask.shape
 
@@ -36,15 +36,15 @@ def prepare(mask_path, mask_key,
         os.mkdir(tmp_folder)
 
     f_out = z5py.File(out_path, use_zarr_format=False)
-    if key_out in f_out:
-        ds_out = f_out[key_out]
-        assert ds_out.chunks == out_chunks, "%s, %s" % (str(ds_out.chunks), str(out_chunks))
+    if out_key in f_out:
+        ds_out = f_out[out_key]
+        assert ds_out.chunks == chunks, "%s, %s" % (str(ds_out.chunks), str(chunks))
         assert ds_out.shape == shape
     else:
-        ds_out = f_out.create_dataset(key_out, shape=shape, chunks=out_chunks, dtype='uint8',
+        ds_out = f_out.create_dataset(out_key, shape=shape, chunks=chunks, dtype='uint8',
                                       compression='gzip', level=6)
 
-    blocks_to_jobs(shape, out_blocks, n_jobs, tmp_folder)
+    blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder)
     print("Success")
 
 
@@ -55,8 +55,8 @@ if __name__ == '__main__':
 
     parser.add_argument("out_path", type=str)
     parser.add_argument("out_key", type=str)
-    parser.add_argument("--block_shape", nargs=3, type=int)
     parser.add_argument("--chunks", nargs=3, type=int)
+    parser.add_argument("--block_shape", nargs=3, type=int)
     parser.add_argument("--tmp_folder", type=str)
     parser.add_argument("--n_jobs", type=int)
 
