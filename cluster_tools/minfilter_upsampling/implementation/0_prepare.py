@@ -25,12 +25,18 @@ def prepare(mask_path, mask_key,
             ds_mask_path, ds_mask_key,
             out_path, out_key,
             chunks, block_shape,
+            sampling_factor,
             tmp_folder, n_jobs):
     assert os.path.exists(mask_path), mask_path
     assert all(bs % cs == 0 for bs, cs in zip(block_shape, chunks)), \
         "Block shape is not a multiple of chunk shape: %s %s" % (str(block_shape), str(chunks))
     ds_mask = z5py.File(mask_path)[mask_key]
     shape = ds_mask.shape
+
+    ds_mask_ds = z5py.File(ds_mask_path)[ds_mask_key]
+    ds_shape = ds_mask.shape
+    shape_from_ds = tuple(sh // sf for sh in zip(shape, sampling_factor))
+    assert shape_from_ds == ds_shape, "%s, %s" % (str(shape_from_ds), str(ds_shape))
 
     if not os.path.exists(tmp_folder):
         os.mkdir(tmp_folder)

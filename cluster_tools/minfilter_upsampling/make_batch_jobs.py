@@ -19,9 +19,11 @@ def make_executable(path):
 
 
 def make_batch_jobs_step1(mask_path, mask_key,
+                          ds_mask_path, ds_mask_key,
                           out_path, out_key,
                           tmp_folder, chunks,
                           filter_shape, block_shape,
+                          sampling_factor,
                           n_jobs, executable,
                           script_file='jobs_step1.sh', use_bsub=True, eta=5):
 
@@ -41,24 +43,28 @@ def make_batch_jobs_step1(mask_path, mask_key,
 
     with open(script_file, 'w') as f:
         f.write('#! /bin/bash\n')
-        f.write('./0_prepare.py %s %s %s %s --tmp_folder %s --chunks %s --block_shape %s --n_jobs %s\n' %
+        f.write('./0_prepare.py %s %s %s %s %s %s --tmp_folder %s --chunks %s --block_shape %s --sampling_factor %s --n_jobs %s\n' %
                 (mask_path, mask_key,
+                 ds_mask_path, ds_mask_key,
                  out_path, out_key, tmp_folder,
                  ' '.join(map(str, chunks)),
                  ' '.join(map(str, block_shape)),
+                 ' '.join(map(str, sampling_factor)),
                  str(n_jobs)))
         # TODO we need to check for success here !
 
         for job_id in range(n_jobs):
-            command = './1_minfilter.py %s %s %s %s --filter_shape %s --block_shape %s --block_file %s' % \
+            command = './1_minfilter.py %s %s %s %s %s %s --filter_shape %s --block_shape %s --sampling_factor %s --block_file %s' % \
                       (mask_path, mask_key,
+                       ds_mask_path, ds_mask_key,
                        out_path, out_key,
                        ' '.join(map(str, filter_shape)),
                        ' '.join(map(str, block_shape)),
+                       ' '.join(map(str, sampling_factor)),
                        os.path.join(tmp_folder, '1_input_%i.npy' % job_id))
             if use_bsub:
-                log_file = 'logs/log_minfilter_step1_%i.log' % job_id
-                err_file = 'error_logs/err_minfilter_step1_%i.err' % job_id
+                log_file = 'logs/log_minfilter_upsampling_step1_%i.log' % job_id
+                err_file = 'error_logs/err_minfilter_upsampling_step1_%i.err' % job_id
                 f.write('bsub -J minfilter_step1_%i -We %i -o %s -e %s \'%s\' \n' %
                         (job_id, eta, log_file, err_file, command))
             else:
