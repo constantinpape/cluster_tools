@@ -46,6 +46,12 @@ def find_overlaps(block_id, blocking, ws, inner_block, outer_block, local_block,
     return overlap_ids
 
 
+# TODO need to do the same for features
+def uint_to_float(input_):
+    input_ = input_.astype('float32')
+    input_ /= 255.
+
+
 def single_block_watershed(block_id, blocking,
                            ds_affs, ds_mask, ds_out,
                            halo, tmp_folder,
@@ -60,8 +66,15 @@ def single_block_watershed(block_id, blocking,
 
     # load affinties and mask
     # t_load = time.time()
-    aff_bb = (slice(None),) + outer_bb
-    affs = ds_affs[aff_bb]
+    aff_bb1 = (slice(0, 3),) + outer_bb
+    affs1 = ds_affs[aff_bb1]
+    aff_bb2 = (slice(9, 12),) + outer_bb
+    affs2 = ds_affs[aff_bb2]
+
+    affs = np.concatenate([affs1, affs2], axis=0)
+
+    if affs.dtype == np.dtype('uint8'):
+        affs = uint_to_float(affs)
     mask = ds_mask[outer_bb].astype('bool')
     # print("Load data in:", time.time() - t_load)
 
@@ -93,7 +106,7 @@ def masked_watershed_step1(aff_path, aff_key,
                            out_path, key_out,
                            out_blocks, tmp_folder,
                            block_file, halo=[5, 50, 50],
-                           threshold_cc=.1, threshold_dt=.25,
+                           threshold_cc=.05, threshold_dt=.2,
                            sigma_seeds=2., invert_input=True):
 
     t0 = time.time()
@@ -107,8 +120,12 @@ def masked_watershed_step1(aff_path, aff_key,
     block_list = np.load(block_file)
 
     # the segmenter
+    # TODO  we hardcode the seed channels for now to [3, 4, 5]
+    # because we are only loading / using the lowest and highest channel affinities for the watershed for now
     segmenter = cseg.LRAffinityWatershed(threshold_cc, threshold_dt, sigma_seeds,
-                                         is_anisotropic=True, invert_input=invert_input)
+                                         is_anisotropic=True, invert_input=invert_input,
+                                         seed_channel=[3, 4, 5],
+                                         size_filter=50)
 
     # we get the job id from the file name
     overlap_ids = [single_block_watershed(block_id, blocking,

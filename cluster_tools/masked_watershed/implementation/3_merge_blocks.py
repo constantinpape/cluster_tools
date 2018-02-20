@@ -70,7 +70,7 @@ def merge_blocks(ovlp_ids, tmp_folder, offsets, ovlp_threshold):
         return None
 
 
-def masked_watershed_step3(input_file, tmp_folder, ovlp_threshold=.9):
+def masked_watershed_step3(input_file, tmp_folder, ovlp_threshold=.95):
     t0 = time.time()
     overlap_ids = np.load(input_file)
     offsets = np.load(os.path.join(tmp_folder, 'offsets.npy'))
