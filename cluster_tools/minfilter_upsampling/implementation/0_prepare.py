@@ -2,7 +2,7 @@
 
 import os
 import argparse
-from math import ceil
+# from math import ceil
 import numpy as np
 
 import z5py
@@ -34,8 +34,8 @@ def prepare(mask_path, mask_key,
     shape = ds_mask.shape
 
     ds_mask_ds = z5py.File(ds_mask_path)[ds_mask_key]
-    ds_shape = ds_mask.shape
-    shape_from_ds = tuple(sh // sf for sh in zip(shape, sampling_factor))
+    ds_shape = ds_mask_ds.shape
+    shape_from_ds = tuple(sh // sf for sh, sf in zip(shape, sampling_factor))
     assert shape_from_ds == ds_shape, "%s, %s" % (str(shape_from_ds), str(ds_shape))
 
     if not os.path.exists(tmp_folder):
@@ -71,7 +71,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     prepare(args.mask_path, args.mask_key,
-            args.ds_mask_path, args.ds_mask_key,_
+            args.ds_mask_path, args.ds_mask_key,
             args.out_path, args.out_key,
             tuple(args.chunks), tuple(args.block_shape),
             tuple(args.sampling_factor),

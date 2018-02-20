@@ -14,7 +14,7 @@ def extract_boundary_map_features(graph_path,
 
     def extract_block(block_id):
         print("Extracting features for block", block_id)
-        ndist.extractBlockFeaturesFromBoundaryMaps(graph_path, 'sub_graphs/s0/block_',
+        ndist.extractBlockFeaturesFromBoundaryMaps(os.path.join(graph_path, 'sub_graphs/s0/block_'),
                                                    data_path, data_key,
                                                    labels_path, labels_key,
                                                    [block_id], features_out_tmp)
@@ -32,7 +32,7 @@ def extract_affinity_map_features(graph_path,
 
     def extract_block(block_id):
         print("Extracting features for block", block_id)
-        ndist.extractBlockFeaturesFromAffinityMaps(graph_path, 'sub_graphs/s0/block_',
+        ndist.extractBlockFeaturesFromAffinityMaps(os.path.join(graph_path, 'sub_graphs/s0/block_'),
                                                    data_path, data_key,
                                                    labels_path, labels_key,
                                                    [block_id], features_out_tmp,

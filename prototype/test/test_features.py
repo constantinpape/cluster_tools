@@ -11,8 +11,8 @@ OFFSETS = [[-1, 0, 0], [0, -1, 0], [0, 0, -1],
 
 
 def test_features(use_affs):
-    # path = './testdata.n5'
-    path = '/home/papec/Work/neurodata_hdd/testdata.n5'
+    path = './testdata.n5'
+    # path = '/home/papec/Work/neurodata_hdd/testdata.n5'
     assert os.path.exists(path)
     data_key = 'affs_xy' if not use_affs else 'full_affs'
     seg_key = 'watershed'

@@ -7,7 +7,8 @@ from prototype import multicut
 
 
 def test_mc(n_scales=2):
-    path = '/home/papec/Work/neurodata_hdd/testdata.n5'
+    # path = '/home/papec/Work/neurodata_hdd/testdata.n5'
+    path = './testdata.n5'
     multicut(path, 'watershed', './graph.n5', 'graph',
              './features_aff.n5', path, 'multicut',
              [25, 256, 256], n_scales)

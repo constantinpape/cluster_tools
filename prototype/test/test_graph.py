@@ -6,8 +6,8 @@ from prototype import compute_region_graph
 
 
 def test_graph():
-    # seg_path = './testdata.n5'
-    seg_path = '/home/papec/Work/neurodata_hdd/testdata.n5'
+    seg_path = './testdata.n5'
+    # seg_path = '/home/papec/Work/neurodata_hdd/testdata.n5'
     assert os.path.exists(seg_path)
     seg_key = 'watershed'
     blocks = (25, 256, 256)

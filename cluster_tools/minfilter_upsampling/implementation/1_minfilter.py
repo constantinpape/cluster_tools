@@ -28,7 +28,8 @@ def minfilter_block(block_id, blocking, halo,
     ds_roi = tuple(slice(beg // sa, end // sa)
                    for beg, end, sa in zip(block.outerBlock.begin, block.outerBlock.end, sampling_factor))
     ds_mask = ds_mask_ds[ds_roi]
-    mask_resized = vigra.sampling.resize(ds_mask, shape=mask1.shape)
+    mask_resized = vigra.sampling.resize(ds_mask.astype('float32'), shape=mask1.shape)
+    mask_resized = mask_resized > 0
 
     mask = np.logical_and(mask1, mask_resized)
 
@@ -45,7 +46,7 @@ def minfilter_step1(mask_path, mask_key,
                     block_file):
     t0 = time.time()
     mask_ds = z5py.File(mask_path)[mask_key]
-    ds_mask_ds = z5py.File(ds_mask_ds)[ds_mask_key]
+    ds_mask_ds = z5py.File(ds_mask_path)[ds_mask_key]
     out_ds = z5py.File(mask_path)[out_key]
 
     shape = mask_ds.shape
@@ -58,7 +59,7 @@ def minfilter_step1(mask_path, mask_key,
     halo = list(fshape // 2 for fshape in filter_shape)
     [minfilter_block(block_id, blocking,
                      halo, mask_ds, ds_mask_ds,
-                     out_ds, filter_shape) for block_id in block_list]
+                     out_ds, sampling_factor, filter_shape) for block_id in block_list]
 
     job_id = int(os.path.split(block_file)[1].split('_')[2][:-4])
     print("Success job %i" % job_id)

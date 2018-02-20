@@ -176,10 +176,13 @@ def multicut(labels_path, labels_key,
 
     # get node to block assignment for scale level 0 and the oversegmentaton nodes
     f_nodes = z5py.File('./nodes_to_blocks.n5', use_zarr_format=False)
-    f_nodes.create_group('s0')
+    if 's0' not in f_nodes:
+        f_nodes.create_group('s0')
+    print("Here")
     ndist.nodesToBlocks(os.path.join(graph_path, 'sub_graphs/s0/block_'),
                         os.path.join('./nodes_to_blocks.n5/s0', 'node_'),
                         n_initial_blocks, n_nodes, 8)
+    print("There")
 
     initial_node_labeling = None
     agglomerator = cseg.Multicut('kernighan-lin')
