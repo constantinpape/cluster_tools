@@ -142,7 +142,7 @@ def make_scripts(sample,
         os.mkdir('./5_multicut')
     os.chdir('./5_multicut')
     # 100  jobs is way too much
-    make_multicut_scripts(path, n_scales, 40, n_threads_max, block_shape, tmp_dir)
+    make_multicut_scripts(path, n_scales, n_jobs, n_threads_max, block_shape, tmp_dir)
     os.chdir('..')
 
     # make the projection scripts
@@ -154,12 +154,12 @@ def make_scripts(sample,
 
 
 if __name__ == '__main__':
-    sample = 'A+'
+    sample = 'B'
     tmp_dir = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cache/cremi_%s' % sample
     if not os.path.exists(tmp_dir):
         os.mkdir(tmp_dir)
-    n_jobs = 120
+    n_jobs = 40
     n_scales = 1
-    n_threads = 12
-    block_shape = (25, 256, 256)
+    n_threads = 8
+    block_shape = (50, 512, 512)
     make_scripts(sample, n_scales, n_jobs, n_threads, block_shape, tmp_dir)

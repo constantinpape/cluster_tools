@@ -21,7 +21,7 @@ def min_filter_mask(path, mask_key, out_key,
                               shape=ds_mask.shape,
                               chunks=chunks,
                               dtype='uint8',
-                              compressor='gzip')
+                              compression='gzip')
     else:
         ds = f[out_key]
         assert ds.shape == ds_mask.shape
@@ -47,20 +47,23 @@ def min_filter_mask(path, mask_key, out_key,
 
 
 if __name__ == '__main__':
-    sample = 'A+'
-    path = '/home/papec/Work/neurodata_hdd/ntwrk_papec/cremi_warped/sample%s.n5' % sample
-    mask_key = 'masks/original_mask'
+    for sample in ('A', 'B', 'C'):
+        path = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cremi_warped/sample%s.n5' % sample
+        mask_key = 'masks/original_mask'
 
-    out_key = 'masks/min_filter_mask'
-    chunks = (25, 256, 256)
-    blocks = (50, 512, 512)
+        out_key = 'masks/min_filter_mask'
+        chunks = (25, 256, 256)
+        blocks = (50, 512, 512)
 
-    net_in_shape = (84, 268, 268)
-    net_out_shape = (56, 56, 56)
-    filter_shape = tuple((netin - netout) // 2 for netin, netout in zip(net_in_shape, net_out_shape))
-    filter_shape = tuple(fshape * 2 + 1 for fshape in filter_shape)
+        net_in_shape = (88, 808, 808)
+        net_out_shape = (60, 596, 596)
+        filter_shape = tuple((netin - netout)
+                             for netin, netout in zip(net_in_shape, net_out_shape))
+        print(filter_shape)
+        # filter_shape = tuple(fshape * 2 + 1 for fshape in filter_shape)
 
-    min_filter_mask(path, mask_key, out_key,
-                    filter_shape=filter_shape,
-                    chunks=chunks,
-                    blocks=blocks)
+        min_filter_mask(path, mask_key, out_key,
+                        filter_shape=filter_shape,
+                        chunks=chunks,
+                        blocks=blocks,
+                        n_threads=20)

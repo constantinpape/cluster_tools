@@ -1,15 +1,51 @@
 import numpy as np
 import vigra
+from concurrent import futures
 
 import z5py
 
-completely_black = {'A+': [88],
+completely_black = {'A': [6, 167],
+                    'B': [24],
+                    'C': [51, 111],
+                    'A+': [88],
                     'B+': [],
-                    'C+': []}
+                    'C+': [51, 111]}
+
+
+def find_completely_black_slices(sample):
+    out_path = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cremi_warped/sample%s.n5' % sample
+    raw_ds = z5py.File(out_path, use_zarr_format=False)['raw']
+    shape = raw_ds.shape
+    chunks = raw_ds.chunks
+
+    def find_completely_black_chunked(z0, z1):
+        print("Find completely black for z-range", z0, z1)
+        bb = np.s_[z0:z1]
+        raw = raw_ds[bb]
+        zero_slices = []
+        for z in range(raw.shape[0]):
+            raw_z = raw[z]
+            if np.allclose(raw_z, 0):
+                zero_slices.append(z + z0)
+
+        return zero_slices
+
+    z_points = range(0, shape[0] + 1, chunks[0])
+    # zero_slices = [tp.submit(z_points[i], z_points[i + 1]) for i in range(len(z_points) - 1)]
+    with futures.ThreadPoolExecutor(10) as tp:
+        tasks = [tp.submit(find_completely_black_chunked, z_points[i], z_points[i + 1]) for i in range(len(z_points) - 1)]
+        zero_slices = [t.result() for t in tasks]
+
+    all_zero_slices = []
+    for zsl in zero_slices:
+        all_zero_slices.extend(zsl)
+
+    zero_slices = np.unique(all_zero_slices)
+    print("Sample", sample, "has zero slices", zero_slices)
 
 
 def make_mask(sample):
-    path = '/home/papec/Work/neurodata_hdd/ntwrk_papec/cremi_warped/sample%s.n5' % sample
+    path = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cremi_warped/sample%s.n5' % sample
     black_slice_list = completely_black[sample]
     print("Loading raw...")
     f = z5py.File(path, use_zarr_format=False)
@@ -44,14 +80,25 @@ def make_mask(sample):
         mask[black_id] = mask[black_id - 1]
 
     print("Writing to n5...")
-    ds = f.create_dataset('original_mask',
+    ds = f.create_dataset('masks/original_mask',
                           dtype='uint8',
-                          compressor='gzip',
+                          compression='gzip',
                           chunks=(25, 256, 256),
                           shape=mask.shape)
-    ds[:] = mask
+    ds[:] = 1 - mask
     print("... done")
 
 
+def invert_mask(sample):
+    path = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cremi_warped/sample%s.n5' % sample
+    f = z5py.File(path, use_zarr_format=False)
+    ds = f['masks/original_mask']
+    mask = ds[:]
+    ds[:] = 1 - mask
+
+
 if __name__ == '__main__':
-    make_mask('A+')
+    for sample in ('A', 'B', 'C'):
+        invert_mask(sample)
+    # make_mask('C')
+    # find_completely_black_slices('A+')
