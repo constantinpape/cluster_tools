@@ -46,12 +46,6 @@ def find_overlaps(block_id, blocking, ws, inner_block, outer_block, local_block,
     return overlap_ids
 
 
-# TODO need to do the same for features
-def uint_to_float(input_):
-    input_ = input_.astype('float32')
-    input_ /= 255.
-
-
 def single_block_watershed(block_id, blocking,
                            ds_affs, ds_mask, ds_out,
                            halo, tmp_folder,
@@ -74,7 +68,8 @@ def single_block_watershed(block_id, blocking,
     affs = np.concatenate([affs1, affs2], axis=0)
 
     if affs.dtype == np.dtype('uint8'):
-        affs = uint_to_float(affs)
+        affs = affs.astype('float32')
+        affs /= 255.
     mask = ds_mask[outer_bb].astype('bool')
     # print("Load data in:", time.time() - t_load)
 
