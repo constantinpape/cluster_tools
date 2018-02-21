@@ -1,6 +1,7 @@
 #! /usr/bin/python
 
 import os
+import z5py
 import argparse
 import time
 import json
@@ -20,18 +21,25 @@ def features_step1(sub_graph_prefix,
     with open(offset_file, 'r') as f:
         offsets = json.load(f)
 
-    if offsets is None:
-        ndist.extractBlockFeaturesFromBoundaryMaps(sub_graph_prefix,
-                                                   data_path, data_key,
-                                                   labels_path, labels_key,
-                                                   block_list, os.path.join(out_path, 'blocks'))
+    dtype = z5py.File(data_path)[data_key].dtype
+
+    if offsets is not None:
+        affinity_function = ndist.extractBlockFeaturesFromAffinityMaps_uint8 if dtype == 'uint8' else \
+            ndist.extractBlockFeaturesFromAffinityMaps_float32
+
+        affinity_function(sub_graph_prefix,
+                          data_path, data_key,
+                          labels_path, labels_key,
+                          block_list, os.path.join(out_path, 'blocks'),
+                          offsets)
     else:
-        ndist.extractBlockFeaturesFromAffinityMaps(sub_graph_prefix,
-                                                   data_path, data_key,
-                                                   labels_path, labels_key,
-                                                   block_list,
-                                                   os.path.join(out_path, 'blocks'),
-                                                   offsets)
+        boundary_function = ndist.extractBlockFeaturesFromBoundaryMaps_uint8 if dtype == 'uint8' else \
+            ndist.extractBlockFeaturesFromBoundaryMaps_float32
+        boundary_function(sub_graph_prefix,
+                          data_path, data_key,
+                          labels_path, labels_key,
+                          block_list,
+                          os.path.join(out_path, 'blocks'))
 
     job_id = int(os.path.split(block_file)[1].split('_')[2][:-4])
     print("Success job %i" % job_id)
