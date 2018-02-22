@@ -18,13 +18,9 @@ def relabel_step2(labels_path, labels_key, tmp_folder, block_shape, n_threads=1)
                                     roiEnd=list(shape),
                                     blockShape=block_shape)
 
-    def get_block_uniques(block_id):
-        block_path = os.path.join(tmp_folder, '1_output_%i.npy' % block_id)
-        return np.load(block_path)
-
-    # TODO this could be parallelized
-    uniques = np.concatenate([get_block_uniques(block_id) for block_id in range(blocking.numberOfBlocks)])
-    uniques = np.unique(uniques)
+    uniques = np.concatenate([np.load(os.path.join(tmp_folder, '1_output_%i.npy' % block_id))
+                              for block_id in range(blocking.numberOfBlocks)])
+    uniques = np.unique(uniques).astype('uint64', copy=False)
     n_labels = int(uniques.max() + 1)
     relabeled, _, _ = vigra.analysis.relabelConsecutive(uniques, keep_zeros=True, start_label=1)
 
