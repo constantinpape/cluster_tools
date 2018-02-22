@@ -8,15 +8,24 @@ import z5py
 
 def make_rf_jobs(tmp_folder, n_edges, chunk_size, n_jobs):
     n_chunks = n_edges // chunk_size + 1 if chunk_size % n_edges != 0 else n_edges // chunk_size
-    assert n_jobs >= n_chunks, "%i, %i" % (n_jobs, n_chunks)
+    assert n_jobs <= n_chunks, "%i, %i" % (n_jobs, n_chunks)
 
-    chunks_per_job = n_chunks // n_jobs + 1 if n_chunks % n_jobs else n_jobs // n_chunks
+    # distribute chunks to jobs as equal as possible
+    chunks_per_job = np.zeros(n_jobs, dtype='uint32')
+    chunk_count = n_chunks
+    job_id = 0
+    while chunk_count > 0:
+        chunks_per_job[job_id] += 1
+        chunk_count -= 1
+        job_id += 1
+        job_id = job_id % n_jobs
+    assert np.sum(chunks_per_job) == n_chunks
 
     for job_id in range(n_jobs):
-        edge_begin = job_id * chunks_per_job * chunk_size
-        edge_end = min((job_id + 1) * chunks_per_job * chunk_size, n_edges)
-        # if job_id == n_jobs - 1:
-        #     edge_end = n_edges
+        edge_begin = job_id * chunks_per_job[job_id] * chunk_size
+        edge_end = (job_id + 1) * chunks_per_job[job_id] * chunk_size
+        if job_id == n_jobs - 1:
+            edge_end = n_edges
         np.save(os.path.join(tmp_folder, "1_input_%i.npy" % job_id),
                 np.array([edge_begin, edge_end], dtype='uint32'))
 
@@ -29,6 +38,9 @@ def prepare(features_path, features_key,
 
     n_edges = z5py.File(features_path)[features_key].shape[0]
     edge_chunks = z5py.File(features_path)[features_key].chunks[0]
+
+    if not os.path.exists(tmp_folder):
+        os.mkdir(tmp_folder)
 
     # if we use a random forest, we need to prepare the jobs for it
     # otherwise, we don't need to schedule any extra jobs
@@ -47,6 +59,8 @@ def prepare(features_path, features_key,
         assert ds.shape == (n_edges,)
         assert ds.chunks == (edge_chunks,)
 
+    print("Success")
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -55,7 +69,7 @@ if __name__ == '__main__':
     parser.add_argument('out_path', type=str)
     parser.add_argument('out_key', type=str)
 
-    parser.add_argument('--n_jobs', type=str)
+    parser.add_argument('--n_jobs', type=int)
     parser.add_argument('--tmp_folder', type=str)
     parser.add_argument('--random_forest_path', type=str, default='')
 

@@ -105,7 +105,7 @@ def make_batch_jobs_step2(features_path, features_key, graph_path, graph_key,
         if use_bsub:
             log_file = 'logs/log_costs_step2.log'
             err_file = 'error_logs/err_costs_step2.err'
-            f.write('bsub -J costs_step2_%i -We %i -o %s -e %s \'%s\' \n' %
+            f.write('bsub -J costs_step2 -We %i -o %s -e %s \'%s\' \n' %
                     (eta, log_file, err_file, command))
         else:
             f.write(command + '\n')
@@ -157,8 +157,8 @@ def make_batch_jobs(features_path, features_key, graph_path, graph_key,
                                     executable, n_threads_rf=n_threads_rf,
                                     use_bsub=use_bsub, eta=eta_[0])
 
-    make_batch_jobs_step2(features_path,  features_key, graph_path, out_path,
-                          out_key, with_rf, executable,
+    make_batch_jobs_step2(features_path,  features_key, graph_path, graph_key,
+                          out_path, out_key, with_rf, executable,
                           use_bsub=use_bsub, eta=eta_[1])
 
     make_master_job(n_jobs, with_rf, executable, 'master.sh')

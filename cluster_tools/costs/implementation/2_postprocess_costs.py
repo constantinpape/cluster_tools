@@ -1,5 +1,6 @@
 #! /usr/bin/python
 
+import time
 import argparse
 import z5py
 import cremi_tools.segmentation as cseg
@@ -60,6 +61,7 @@ def costs_step2(input_path, input_key,
                 weight_edges=False,
                 weighting_exponent=1.):
 
+    t0 = time.time()
     ds_graph = z5py.File(graph_path)[graph_key]
 
     costs = make_costs(input_path, input_key,
@@ -67,9 +69,12 @@ def costs_step2(input_path, input_key,
                        ds_graph,
                        costs_for_multicut,
                        beta, weighting_exponent,
-                       weight_edges)
+                       weight_edges,
+                       invert_inputs)
     ds = z5py.File(out_path)[out_key]
     ds[:] = costs
+    print("Success")
+    print("In %f s" % (time.time() - t0,))
 
 
 if __name__ == '__main__':
@@ -88,4 +93,4 @@ if __name__ == '__main__':
     args = parser.parse_args()
     costs_step2(args.input_path, args.input_key, args.features_path, args.features_key,
                 args.graph_path, args.graph_key, args.out_path, args.out_key,
-                args.ingert_inputs)
+                args.invert_inputs)
