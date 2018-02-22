@@ -80,7 +80,9 @@ def single_block_watershed(block_id, blocking,
 
     # save watershed in the inner (non-overlapping) block
     # t_save = time.time()
-    ds_out[inner_bb] = ws[local_bb].astype('uint64')
+    # we only write output if we have a segment
+    if max_id > 0:
+        ds_out[inner_bb] = ws[local_bb].astype('uint64')
     # print("Save watershed in:", time.time() - t_save)
 
     # t_ovlp = time.time()
