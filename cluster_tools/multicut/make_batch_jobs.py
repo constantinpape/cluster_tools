@@ -19,7 +19,7 @@ def make_executable(path):
 
 
 # this only calls 0_prepare.py, slight misnomer....
-def make_batch_jobs_step1(graph_path, graph_key, features_path, features_key,
+def make_batch_jobs_step1(graph_path, graph_key, costs_path, costs_key,
                           block_shape, n_scales, tmp_folder, n_jobs, n_threads,
                           use_mc_costs, executable,
                           script_file='jobs_step1.sh', use_bsub=True, eta=5):
@@ -40,7 +40,7 @@ def make_batch_jobs_step1(graph_path, graph_key, features_path, features_key,
     with open(script_file, 'w') as f:
         f.write('#! /bin/bash\n')
         command = './0_prepare.py %s %s %s %s --initial_block_shape %s --n_scales %s --tmp_folder %s --n_jobs %s --n_threads %s --use_mc_costs %s\n' %\
-                  (graph_path, graph_key, features_path, features_key,
+                  (graph_path, graph_key, costs_path, costs_key,
                    ' '.join(map(str, block_shape)),
                    str(n_scales), tmp_folder, str(n_jobs), str(n_threads),
                    str(use_mc_costs))
@@ -181,7 +181,7 @@ def make_master_job(n_jobs, n_scales, executable, script_file):
     make_executable(script_file)
 
 
-def make_batch_jobs(graph_path, graph_key, features_path, features_key,
+def make_batch_jobs(graph_path, graph_key, costs_path, costs_key,
                     out_path, node_out_key,
                     block_shape, n_scales, tmp_folder, n_jobs, executable,
                     agglomerator_key=('multicut', 'kl'),
@@ -207,7 +207,7 @@ def make_batch_jobs(graph_path, graph_key, features_path, features_key,
         rmtree('logs')
     os.mkdir('logs')
 
-    make_batch_jobs_step1(graph_path, graph_key, features_path, features_key,
+    make_batch_jobs_step1(graph_path, graph_key, costs_path, costs_key,
                           block_shape, n_scales, tmp_folder, n_jobs, n_threads,
                           use_mc_costs=1 if agglomerator_key[0] == 'multicut' else 0,
                           executable=executable,
