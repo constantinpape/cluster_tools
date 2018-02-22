@@ -28,13 +28,22 @@ def edges_to_jobs2(n_edges, chunk_size, n_jobs, tmp_folder, n_blocks):
     if n_jobs > n_chunks:
         n_jobs = n_chunks
 
-    chunks_per_job = n_chunks // n_jobs + 1 if n_chunks % n_jobs else n_jobs // n_chunks
+    # distribute chunks to jobs as equal as possible
+    chunks_per_job = np.zeros(n_jobs, dtype='uint32')
+    chunk_count = n_chunks
+    job_id = 0
+    while chunk_count > 0:
+        chunks_per_job[job_id] += 1
+        chunk_count -= 1
+        job_id += 1
+        job_id = job_id % n_jobs
+    assert np.sum(chunks_per_job) == n_chunks
 
     for job_id in range(n_jobs):
-        edge_begin = job_id * chunks_per_job * chunk_size
-        edge_end = min((job_id + 1) * chunks_per_job * chunk_size, n_edges)
-        # if job_id == n_jobs - 1:
-        #     edge_end = n_edges
+        edge_begin = job_id * chunks_per_job[job_id] * chunk_size
+        edge_end = (job_id + 1) * chunks_per_job[job_id] * chunk_size
+        if job_id == n_jobs - 1:
+            edge_end = n_edges
         np.save(os.path.join(tmp_folder, "2_input_%i.npy" % job_id),
                 np.array([edge_begin, edge_end, n_blocks], dtype='uint32'))
 
