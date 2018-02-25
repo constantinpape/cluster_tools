@@ -15,6 +15,13 @@ def masked_watershed_step4(out_path, out_key, tmp_folder, n_jobs):
     # load the node assignments and filter invalid assignments
     node_assignment = [np.load(os.path.join(tmp_folder, '3_output_assignments_%i.npy' % job_id))
                        for job_id in range(n_jobs)]
+
+    # hacky version if we don't have all the results
+    # node_assignment = [np.load(os.path.join(tmp_folder, '3_output_assignments_%i.npy' % job_id))
+    #                    for job_id in range(n_jobs)
+    #                    if os.path.exists(os.path.join(tmp_folder, '3_output_assignments_%i.npy' % job_id))]
+
+
     node_assignment = np.concatenate([assignment for assignment in node_assignment
                                       if assignment.size > 0], axis=0)
     max_id = int(np.load(os.path.join(tmp_folder, 'max_id.npy')))

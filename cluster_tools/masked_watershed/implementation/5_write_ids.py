@@ -8,6 +8,7 @@ import numpy as np
 import z5py
 
 
+# TODO don't write empty output
 def assign_node_ids(block_id, blocking, ds_out, node_labeling, offsets):
     block = blocking.getBlock(block_id)
     bb = tuple(slice(b, e) for b, e in zip(block.begin, block.end))
