@@ -23,7 +23,12 @@ def make_batch_jobs_step1(labels_path, labels_key,
                           node_labeling_path, node_labeling_key,
                           tmp_folder, block_shape, chunks,
                           n_jobs, executable,
+                          roi_begin=None, roi_end=None,
                           script_file='jobs_step1.sh', use_bsub=True, eta=5):
+
+    if roi_begin is not None:
+        assert roi_end is not None
+        assert len(roi_begin) == len(roi_end) == 3
 
     # copy the relevant files
     file_dir = os.path.dirname(os.path.abspath(__file__))
@@ -41,12 +46,22 @@ def make_batch_jobs_step1(labels_path, labels_key,
 
     with open(script_file, 'w') as f:
         f.write('#! /bin/bash\n')
-        f.write('./0_prepare.py %s %s %s %s --tmp_folder %s --block_shape %s --chunks %s --n_jobs %s\n' %
-                (labels_path, labels_key,
-                 out_path, out_key, tmp_folder,
-                 ' '.join(map(str, block_shape)),
-                 ' '.join(map(str, chunks)),
-                 str(n_jobs)))
+        if roi_begin is not None:
+            f.write('./0_prepare.py %s %s %s %s --tmp_folder %s --block_shape %s --chunks %s --n_jobs %s\n' %
+                    (labels_path, labels_key,
+                     out_path, out_key, tmp_folder,
+                     ' '.join(map(str, block_shape)),
+                     ' '.join(map(str, chunks)),
+                     str(n_jobs)))
+        else:
+            f.write('./0_prepare.py %s %s %s %s --tmp_folder %s --block_shape %s --chunks %s --n_jobs %s --roi_begin %s --roi_end %s\n' %
+                    (labels_path, labels_key,
+                     out_path, out_key, tmp_folder,
+                     ' '.join(map(str, block_shape)),
+                     ' '.join(map(str, chunks)),
+                     str(n_jobs),
+                     ' '.join(map(str, roi_begin)),
+                     ' '.join(map(str, roi_end))))
         # TODO we need to check for success here !
 
         for job_id in range(n_jobs):
@@ -90,6 +105,7 @@ def make_batch_jobs(labels_path, labels_key,
                     node_labeling_path, node_labeling_key,
                     tmp_folder, block_shape, chunks,
                     n_jobs, executable,
+                    roi_begin=None, roi_end=None,
                     eta=5, use_bsub=True):
 
     assert isinstance(eta, int)
@@ -107,6 +123,7 @@ def make_batch_jobs(labels_path, labels_key,
                           out_path, out_key,
                           node_labeling_path, node_labeling_key,
                           tmp_folder, block_shape, chunks, n_jobs, executable,
+                          roi_begin=roi_begin, roi_end=roi_end,
                           use_bsub=use_bsub, eta=eta)
 
     make_master_job(n_jobs, executable, 'master.sh')
