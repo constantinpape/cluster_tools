@@ -59,9 +59,14 @@ def make_batch_jobs_step1(features_path, features_key, out_path, out_key,
 
     with open(script_file, 'w') as f:
         f.write('#! /bin/bash\n')
-        f.write('./0_prepare.py %s %s %s %s --n_jobs %s --tmp_folder %s --random_forest_path %s \n' %
-                (features_path, features_key, out_path, out_key,
-                 str(n_jobs), tmp_folder, random_forest_path))
+        if with_rf:
+            f.write('./0_prepare.py %s %s %s %s --n_jobs %s --tmp_folder %s --random_forest_path %s \n' %
+                    (features_path, features_key, out_path, out_key,
+                     str(n_jobs), tmp_folder, random_forest_path))
+        else:
+            f.write('./0_prepare.py %s %s %s %s --n_jobs %s --tmp_folder %s \n' %
+                    (features_path, features_key, out_path, out_key,
+                     str(n_jobs), tmp_folder))
         if with_rf:
             write_rf_jobs(f)
 

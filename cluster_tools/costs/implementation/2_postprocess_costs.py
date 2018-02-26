@@ -6,12 +6,23 @@ import z5py
 import cremi_tools.segmentation as cseg
 
 
-# TODO multi-threaded implementation
+# TODO multi-threaded for non-edge weighted
+
+def multicut_costs():
+    pass
+
+
+def probability_costs():
+    pass
+
+
+# TODO multi-threaded implementation for edge weighting
 def make_costs(input_path, input_key,
                features_path, features_key,
                ds_graph, costs_for_multicut,
                beta, weighting_exponent,
                weight_edges, invert_inputs):
+               # n_threads):
 
     # find the ignore edges
     uv_ids = ds_graph['edges'][:]
@@ -20,7 +31,7 @@ def make_costs(input_path, input_key,
     # get the multicut edge costs from mean affinities
     input_ds = z5py.File(input_path)[input_key]
     # we might have 1d or 2d inputs, depending on input from features or random forest
-    slice_ = slice(None) if input_ds.ndim == 1 else tuple(slice(None), slice(0, 1))
+    slice_ = slice(None) if input_ds.ndim == 1 else (slice(None), slice(0, 1))
 
     if invert_inputs:
         costs = 1. - input_ds[slice_].squeeze()
@@ -71,6 +82,7 @@ def costs_step2(input_path, input_key,
                        beta, weighting_exponent,
                        weight_edges,
                        invert_inputs)
+
     ds = z5py.File(out_path)[out_key]
     ds[:] = costs
     print("Success")
