@@ -21,7 +21,7 @@ def make_executable(path):
 # this only calls 0_prepare.py, slight misnomer....
 def make_batch_jobs_step1(graph_path, graph_key, costs_path, costs_key,
                           block_shape, n_scales, tmp_folder, n_jobs, n_threads,
-                          use_mc_costs, executable,
+                          executable,
                           script_file='jobs_step1.sh', use_bsub=True, eta=5):
 
     # copy the relevant files
@@ -39,11 +39,10 @@ def make_batch_jobs_step1(graph_path, graph_key, costs_path, costs_key,
 
     with open(script_file, 'w') as f:
         f.write('#! /bin/bash\n')
-        command = './0_prepare.py %s %s %s %s --initial_block_shape %s --n_scales %s --tmp_folder %s --n_jobs %s --n_threads %s --use_mc_costs %s\n' %\
+        command = './0_prepare.py %s %s %s %s --initial_block_shape %s --n_scales %s --tmp_folder %s --n_jobs %s --n_threads %s \n' %\
                   (graph_path, graph_key, costs_path, costs_key,
                    ' '.join(map(str, block_shape)),
-                   str(n_scales), tmp_folder, str(n_jobs), str(n_threads),
-                   str(use_mc_costs))
+                   str(n_scales), tmp_folder, str(n_jobs), str(n_threads))
 
         if use_bsub:
             log_file = 'logs/log_multicut_step1.log'
@@ -72,9 +71,11 @@ def make_batch_jobs_step2(graph_path, tmp_folder, n_scales,
     assert os.path.exists(executable), "Could not find python at %s" % executable
     shebang = '#! %s' % executable
 
-    copy(os.path.join(file_dir, 'implementation/1a_solve_subproblems.py'), cwd)
-    replace_shebang('1a_solve_subproblems.py', shebang)
-    make_executable('1a_solve_subproblems.py')
+    subproblem_file_name = '1a_solve_subproblems_multithreaded.py'
+    # subproblem_file_name = '1a_solve_subproblems.py'
+    copy(os.path.join(file_dir, 'implementation/%s' % subproblem_file_name), cwd)
+    replace_shebang(subproblem_file_name, shebang)
+    make_executable(subproblem_file_name)
 
     copy(os.path.join(file_dir, 'implementation/1b_reduce_problem.py'), cwd)
     replace_shebang('1b_reduce_problem.py', shebang)
@@ -85,20 +86,22 @@ def make_batch_jobs_step2(graph_path, tmp_folder, n_scales,
         if scale == 0:
             block_prefix = os.path.join(graph_path, 'sub_graphs', 's%i' % scale, 'block_')
         else:
-            block_prefix = os.path.join(graph_path, 'merged_graphs', 's%i' % scale, 'block_')
+            block_prefix = os.path.join(tmp_folder, 'merged_graph.n5', 's%i' % scale, 'sub_graphs', 'block_')
 
         for job_id in range(n_jobs):
-            command = './1a_solve_subproblems.py %s %s %s --tmp_folder %s --agglomerator_key %s --initial_block_shape %s --block_file %s' % \
-                      (graph_path, block_prefix, str(scale),
+            command = './%s %s %s %s --tmp_folder %s --agglomerator_key %s --initial_block_shape %s --block_file %s --n_threads %s' % \
+                      (subproblem_file_name,
+                       graph_path, block_prefix, str(scale),
                        tmp_folder,
                        '_'.join(agglomerator_key),
                        ' '.join(map(str, block_shape)),
-                       os.path.join(tmp_folder, '2_input_s%i_%i.npy' % (scale, job_id)))
+                       os.path.join(tmp_folder, '2_input_s%i_%i.npy' % (scale, job_id)),
+                       str(n_threads))
             if use_bsub:
                 log_file = 'logs/log_multicut_step2_scale%i_%i.log' % (scale, job_id)
                 err_file = 'error_logs/err_multicut_step2_scale%i_%i.err' % (scale, job_id)
-                f.write('bsub -J multicut_step2_scale%i_%i -We %i -o %s -e %s \'%s\' \n' %
-                        (scale, job_id, eta, log_file, err_file, command))
+                f.write('bsub -n %i -J multicut_step2_scale%i_%i -We %i -o %s -e %s \'%s\' \n' %
+                        (n_threads, scale, job_id, eta, log_file, err_file, command))
             else:
                 f.write(command + '\n')
 
@@ -209,7 +212,6 @@ def make_batch_jobs(graph_path, graph_key, costs_path, costs_key,
 
     make_batch_jobs_step1(graph_path, graph_key, costs_path, costs_key,
                           block_shape, n_scales, tmp_folder, n_jobs, n_threads,
-                          use_mc_costs=1 if agglomerator_key[0] == 'multicut' else 0,
                           executable=executable,
                           use_bsub=use_bsub, eta=eta_[0])
     make_batch_jobs_step2(graph_path, tmp_folder, n_scales,

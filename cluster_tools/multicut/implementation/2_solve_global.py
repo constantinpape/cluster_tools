@@ -43,7 +43,9 @@ def multicut_step2(out_path, node_labeling_key,
 
     f_out = z5py.File(out_path, use_zarr_format=False)
     node_shape = (len(new_initial_node_labeling), )
-    ds_nodes = f_out.create_dataset(node_labeling_key, dtype='uint64', shape=node_shape, chunks=node_shape)
+    chunks = (min(len(new_initial_node_labeling), 524288), )
+    ds_nodes = f_out.create_dataset(node_labeling_key, dtype='uint64', shape=node_shape,
+                                    chunks=chunks)
     ds_nodes[:] = new_initial_node_labeling
 
     print("Success")

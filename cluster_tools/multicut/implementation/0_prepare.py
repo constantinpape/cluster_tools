@@ -34,9 +34,11 @@ def serialize_initial_problem(graph_path, tmp_folder, costs_path, costs_key):
     if 's0' not in f_graph:
         f_graph.create_group('s0')
 
-    # TODO fix symlinks
-    # make symbolic link to the costs
-    os.symlink(os.path.join(costs_path, costs_key), os.path.join(graph_out_path, 's0', 'costs'))
+    assert os.path.exists(costs_path), costs_path
+    # # make symbolic link to the costs
+    # costs_target = os.path.join(graph_out_path, 's0', 'costs')
+    # # if not os.path.exists(costs_target):
+    # os.symlink(os.path.join(costs_path, costs_key), costs_target)
 
     # FIXME this does not work, for some odd reason
     # make symlinks to the normal, zero-level graph
@@ -88,14 +90,10 @@ if __name__ == '__main__':
     parser.add_argument("--tmp_folder", type=str)
     parser.add_argument("--n_jobs", type=int)
     parser.add_argument("--n_threads", type=int)
-    parser.add_argument("--use_mc_costs", type=int)
-
-    # TODO make cost options settable
 
     args = parser.parse_args()
 
     prepare(args.graph_path, args.graph_key,
             args.costs_path, args.costs_key,
             list(args.initial_block_shape), args.n_scales,
-            args.tmp_folder, args.n_jobs, args.n_threads,
-            bool(args.use_mc_costs))
+            args.tmp_folder, args.n_jobs, args.n_threads)

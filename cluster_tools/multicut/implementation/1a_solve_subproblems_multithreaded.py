@@ -4,6 +4,7 @@ import time
 import os
 import argparse
 import numpy as np
+from concurrent import futures
 
 import z5py
 import cremi_tools.segmentation as cseg
@@ -59,6 +60,9 @@ def solve_block_subproblem(block_id,
     sub_graph.insertEdges(sub_uvs)
 
     sub_costs = costs[inner_edges]
+    assert len(sub_costs) == sub_graph.numberOfEdges
+    # print(len(sub_costs))
+
     sub_result = agglomerator(sub_graph, sub_costs)
     sub_edgeresult = sub_result[sub_uvs[:, 0]] != sub_result[sub_uvs[:, 1]]
 
@@ -81,6 +85,7 @@ def multicut_step1(graph_path,
                    agglomerator_key,
                    initial_block_shape,
                    block_file,
+                   n_threads,
                    cut_outer_edges=False):
 
     t0 = time.time()
@@ -96,20 +101,23 @@ def multicut_step1(graph_path,
 
     # TODO we should have symlinks instead of the if else
     if scale == 0:
-        graph_path_ = graph_path
+        graph_path_ = os.path.join(graph_path, 'graph')
     else:
         graph_path_ = os.path.join(tmp_folder, 'merged_graph.n5', 's%i' % scale)
-    graph = ndist.Graph(os.path.join(graph_path_, 'graph'))
+    graph = ndist.Graph(graph_path_)
 
-    results = [solve_block_subproblem(block_id,
-                                      graph,
-                                      block_prefix,
-                                      costs,
-                                      agglomerator,
-                                      shape,
-                                      block_shape,
-                                      cut_outer_edges)
-               for block_id in block_ids]
+    with futures.ThreadPoolExecutor(n_threads) as tp:
+        tasks = [tp.submit(solve_block_subproblem,
+                           block_id,
+                           graph,
+                           block_prefix,
+                           costs,
+                           agglomerator,
+                           shape,
+                           block_shape,
+                           cut_outer_edges)
+                 for block_id in block_ids]
+        results = [t.result() for t in tasks]
 
     results = [res for res in results if res is not None]
     if len(results) > 0:
@@ -135,9 +143,7 @@ if __name__ == '__main__':
     parser.add_argument("--agglomerator_key", type=str)
     parser.add_argument("--initial_block_shape", type=int, nargs=3)
     parser.add_argument("--block_file", type=str)
-
-    # dummy argument
-    parser.add_argument('--n_threads', type=int)
+    parser.add_argument("--n_threads", type=int)
     args = parser.parse_args()
 
     multicut_step1(args.graph_path,
@@ -145,4 +151,5 @@ if __name__ == '__main__':
                    args.scale, args.tmp_folder,
                    args.agglomerator_key,
                    args.initial_block_shape,
-                   args.block_file)
+                   args.block_file,
+                   args.n_threads)
