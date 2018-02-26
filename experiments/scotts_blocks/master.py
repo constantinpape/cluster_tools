@@ -5,13 +5,27 @@ import hashlib
 EXECUTABLE = '/groups/saalfeld/home/papec/Work/software/conda/miniconda3/envs/production/bin/python'
 
 
+def make_minfilter_scripts(path, n_jobs, chunks, filter_shape, block_shape):
+    sys.path.append('../../..')
+    from cluster_tools.minfilter import make_batch_jobs
+    make_batch_jobs(path, 'masks/initial_mask',
+                    path, 'masks/minfilter_mask',
+                    chunks, filter_shape,
+                    block_shape,
+                    os.path.join(tmp_dir, 'tmp_files', 'tmp_minfilter'),
+                    n_jobs=n_jobs,
+                    executable=EXECUTABLE,
+                    use_bsub=True,
+                    eta=5)
+
+
 def make_ws_scripts(path, n_jobs, block_shape, tmp_dir):
     sys.path.append('../../..')
     from cluster_tools.masked_watershed import make_batch_jobs
     chunks = [bs // 2 for bs in block_shape]
     # chunks = block_shape
     make_batch_jobs(path, 'predictions/full_affs',
-                    path, 'min_filter_mask',
+                    path, 'masks/minfilter_mask',
                     path, 'segmentations/watershed',
                     os.path.join(tmp_dir, 'tmp_files', 'tmp_ws'),
                     block_shape, chunks, n_jobs, EXECUTABLE,
@@ -61,6 +75,22 @@ def make_feature_scripts(path, n_jobs1, n_jobs2, n_threads, block_shape, tmp_dir
                     eta=[20, 5])
 
 
+def make_cost_scripts(path, n_jobs, n_threads, tmp_dir):
+    sys.path.append('../../..')
+    from cluster_tools.costs import make_batch_jobs
+    rf_path = '/groups/saalfeld/home/papec/Work/my_projects/cluster_tools/experiments/cremi/rf_ABC.pkl'
+    make_batch_jobs(os.path.join(tmp_dir, 'tmp_files', 'features.n5'), 'features',
+                    os.path.join(tmp_dir, 'tmp_files', 'graph.n5'), 'graph',
+                    rf_path,
+                    os.path.join(tmp_dir, 'tmp_files', 'costs.n5'), 'costs',
+                    n_jobs,
+                    os.path.join(tmp_dir, 'tmp_files', 'tmp_costs'),
+                    n_threads,
+                    executable=EXECUTABLE,
+                    use_bsub=True,
+                    eta=5)
+
+
 def make_multicut_scripts(path, n_scales, n_jobs, n_threads, block_shape, tmp_dir):
     sys.path.append('../../..')
     from cluster_tools.multicut import make_batch_jobs
@@ -105,6 +135,17 @@ def make_scripts(path,
     if not os.path.exists(os.path.join(tmp_dir, 'tmp_files')):
         os.mkdir(os.path.join(tmp_dir, 'tmp_files'))
 
+    # make the minfilter scripts
+    if not os.path.exists('./0_minfilter'):
+        os.mkdir('./0_minfilter')
+    net_in_shape = (88, 808, 808)
+    net_out_shape = (60, 596, 596)
+    filter_shape = tuple((netin - netout) for netin, netout in zip(net_in_shape, net_out_shape))
+    chunks = [bs // 2 for bs in block_shape]
+    os.chdir('./0_minfilter')
+    make_minfilter_scripts(path, n_jobs, chunks, filter_shape, block_shape)
+    os.chdir('..')
+
     # make the ws scripts
     if not os.path.exists('./1_watershed'):
         os.mkdir('./1_watershed')
@@ -133,6 +174,13 @@ def make_scripts(path,
     make_feature_scripts(path, n_jobs_max, 4, n_threads_max, block_shape, tmp_dir)
     os.chdir('..')
 
+    # make the costs scripts
+    if not os.path.exists('./4a_costs'):
+        os.mkdir('./4a_costs')
+    os.chdir('./4a_costs')
+    make_cost_scripts(path, 12, 4, tmp_dir)
+    os.chdir('..')
+
     # make the multicut scripts
     if not os.path.exists('./5_multicut'):
         os.mkdir('./5_multicut')
@@ -150,7 +198,7 @@ def make_scripts(path,
 
 
 if __name__ == '__main__':
-    path = '/nrs/saalfeld/lauritzen/01/workspace.n5/raw'
+    path = '/nrs/saalfeld/lauritzen/02/workspace.n5/raw'
     mhash = hashlib.md5(path.encode('utf-8')).hexdigest()
     tmp_dir = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cache/scotts_block_%s' % mhash
     if not os.path.exists(tmp_dir):

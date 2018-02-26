@@ -1,37 +1,50 @@
 import os
 import sys
+sys.path.append('../../..')
 
 EXECUTABLE = '/groups/saalfeld/home/papec/Work/software/conda/miniconda3/envs/production/bin/python'
 
 
-def make_ws_scripts(path, n_jobs, block_shape, tmp_dir):
-    sys.path.append('../../..')
+# TODO minfiltering with on-the fly initial mask
+def make_minfilter_scripts(path, n_jobs, chunks, filter_shape, block_shape):
+    from cluster_tools.minfilter import make_batch_jobs
+    make_batch_jobs(path, 'masks/initial_mask',
+                    path, 'masks/minfilter_mask',
+                    chunks, filter_shape,
+                    block_shape,
+                    os.path.join(tmp_dir, 'tmp_files', 'tmp_minfilter'),
+                    n_jobs=n_jobs,
+                    executable=EXECUTABLE,
+                    use_bsub=True,
+                    eta=5)
+
+
+def make_ws_scripts(path, aff_path, n_jobs, block_shape, tmp_dir):
     from cluster_tools.masked_watershed import make_batch_jobs
     chunks = [bs // 2 for bs in block_shape]
     # chunks = block_shape
-    make_batch_jobs(path, 'predictions/full_affs',
-                    path, 'masks/min_filter_mask',
+    make_batch_jobs(aff_path, 'predictions/full_affs',
+                    path, 'masks/neuropil_mask',
                     path, 'segmentations/watershed',
                     os.path.join(tmp_dir, 'tmp_files', 'tmp_ws'),
                     block_shape, chunks, n_jobs, EXECUTABLE,
                     use_bsub=True,
-                    n_threads_ufd=4,
-                    eta=[20, 5, 5, 5])
+                    n_threads_ufd=12,
+                    eta=[120, 30, 30, 60])
 
 
 def make_relabel_scripts(path, n_jobs, block_shape, tmp_dir):
-    sys.path.append('../../..')
     from cluster_tools.relabel import make_batch_jobs
     make_batch_jobs(path, 'segmentations/watershed',
                     os.path.join(tmp_dir, 'tmp_files', 'tmp_relabel'),
                     block_shape, n_jobs,
                     EXECUTABLE,
-                    use_bsub=True,
-                    eta=[5, 5, 5])
+                    use_bsub=False,
+                    eta=[20, 10, 20])
 
 
+# TODO the graph merging should get more threads, if possible 32
 def make_graph_scripts(path, n_scales, n_jobs, n_threads, block_shape, tmp_dir):
-    sys.path.append('../../..')
     from cluster_tools.graph import make_batch_jobs
     make_batch_jobs(path, 'segmentations/watershed',
                     os.path.join(tmp_dir, 'tmp_files', 'graph.n5'),
@@ -40,29 +53,26 @@ def make_graph_scripts(path, n_scales, n_jobs, n_threads, block_shape, tmp_dir):
                     n_scales, n_jobs,
                     EXECUTABLE,
                     use_bsub=True,
-                    n_threads_merge=n_threads,
-                    eta=[10, 10, 10, 10])
+                    n_threads_merge=16,
+                    eta=[30, 10, 60, 10])
 
 
-def make_feature_scripts(path, n_jobs1, n_jobs2, n_threads, block_shape, tmp_dir):
-    sys.path.append('../../..')
+def make_feature_scripts(path, aff_path, n_jobs1, n_jobs2, n_threads, block_shape, tmp_dir):
     from cluster_tools.features import make_batch_jobs
     make_batch_jobs(os.path.join(tmp_dir, 'tmp_files', 'graph.n5'), 'graph',
                     os.path.join(tmp_dir, 'tmp_files', 'features.n5'), 'features',
-                    path, 'predictions/full_affs',
+                    aff_path, 'predictions/full_affs',
                     path, 'segmentations/watershed',
                     os.path.join(tmp_dir, 'tmp_files', 'tmp_features'),
                     block_shape,
                     n_jobs1, n_jobs2,
-                    # n_threads2=n_threads,
-                    n_threads2=8,
+                    n_threads2=n_threads,
                     executable=EXECUTABLE,
                     use_bsub=True,
-                    eta=[20, 5])
+                    eta=[60, 15])
 
 
 def make_cost_scripts(path, n_jobs, n_threads, tmp_dir):
-    sys.path.append('../../..')
     from cluster_tools.costs import make_batch_jobs
     # rf_path = '/groups/saalfeld/home/papec/Work/my_projects/cluster_tools/experiments/cremi/rf_ABC.pkl'
     rf_path = ''
@@ -79,25 +89,23 @@ def make_cost_scripts(path, n_jobs, n_threads, tmp_dir):
 
 
 def make_multicut_scripts(path, n_scales, n_jobs, n_threads, block_shape, tmp_dir):
-    sys.path.append('../../..')
     from cluster_tools.multicut import make_batch_jobs
     make_batch_jobs(os.path.join(tmp_dir, 'tmp_files', 'graph.n5'), 'graph',
                     os.path.join(tmp_dir, 'tmp_files', 'tmp_mc', 'merged_graph.n5', 's0'), 'costs',
-                    path, 'node_labelings/multicut',
+                    path, 'node_labelings/multicut2',
                     block_shape, n_scales,
-                    os.path.join(tmp_dir, 'tmp_files', 'tmp_mc'),
+                    os.path.join(tmp_dir, 'tmp_files', 'tmp_mc2'),
                     n_jobs,
                     n_threads=n_threads,
                     executable=EXECUTABLE,
                     use_bsub=False,
-                    eta=[5, 5, 15])
+                    eta=[90, 90, 180])
 
 
 def make_projection_scripts(path, n_jobs, block_shape, tmp_dir):
-    sys.path.append('../../..')
     from cluster_tools.label_projection import make_batch_jobs
-    # chunks = [bs // 2 for bs in block_shape]
-    chunks = block_shape
+    chunks = [bs // 2 for bs in block_shape]
+    # chunks = block_shape
     make_batch_jobs(path, 'segmentations/watershed',
                     path, 'segmentations/multicut',
                     path, 'node_labelings/multicut',
@@ -108,15 +116,13 @@ def make_projection_scripts(path, n_jobs, block_shape, tmp_dir):
                     eta=5)
 
 
-def make_scripts(sample,
+def make_scripts(path,
+                 aff_path,
                  n_scales,
                  n_jobs_max,
                  n_threads_max,
                  block_shape,
                  tmp_dir):
-
-    path = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cremi_warped/sample%s.n5' % sample
-
     # make folders
     if not os.path.exists(os.path.join(path, 'segmentations')):
         os.mkdir(os.path.join(path, 'segmentations'))
@@ -125,11 +131,22 @@ def make_scripts(sample,
     if not os.path.exists(os.path.join(tmp_dir, 'tmp_files')):
         os.mkdir(os.path.join(tmp_dir, 'tmp_files'))
 
+    # make the minfilter scripts
+    if not os.path.exists('./0_minfilter'):
+        os.mkdir('./0_minfilter')
+    net_in_shape = (88, 808, 808)
+    net_out_shape = (60, 596, 596)
+    filter_shape = tuple((netin - netout) for netin, netout in zip(net_in_shape, net_out_shape))
+    chunks = [bs // 2 for bs in block_shape]
+    os.chdir('./0_minfilter')
+    make_minfilter_scripts(path, n_jobs, chunks, filter_shape, block_shape)
+    os.chdir('..')
+
     # make the ws scripts
     if not os.path.exists('./1_watershed'):
         os.mkdir('./1_watershed')
     os.chdir('./1_watershed')
-    make_ws_scripts(path, n_jobs_max, block_shape, tmp_dir)
+    make_ws_scripts(path, aff_path, n_jobs_max, block_shape, tmp_dir)
     os.chdir('..')
 
     # make the relabeling scripts
@@ -150,14 +167,14 @@ def make_scripts(sample,
     if not os.path.exists('./4_features'):
         os.mkdir('./4_features')
     os.chdir('./4_features')
-    make_feature_scripts(path, n_jobs_max, 4, n_threads_max, block_shape, tmp_dir)
+    make_feature_scripts(path, aff_path, n_jobs_max, 10, n_threads_max, block_shape, tmp_dir)
     os.chdir('..')
 
     # make the costs scripts
     if not os.path.exists('./4a_costs'):
         os.mkdir('./4a_costs')
     os.chdir('./4a_costs')
-    make_cost_scripts(path, 4, 12, tmp_dir)
+    make_cost_scripts(path, 200, 4, tmp_dir)
     os.chdir('..')
 
     # make the multicut scripts
@@ -177,12 +194,13 @@ def make_scripts(sample,
 
 
 if __name__ == '__main__':
-    sample = 'A'
-    tmp_dir = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cache/cremi_%s' % sample
+    path = '/groups/saalfeld/saalfeldlab/sampleE'
+    aff_path = '/nrs/saalfeld/sample_E/sample_E.n5/volumes'
+    tmp_dir = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cache/sampleE2'
     if not os.path.exists(tmp_dir):
         os.mkdir(tmp_dir)
-    n_jobs = 4
-    n_scales = 2
-    n_threads = 12
-    block_shape = (100, 1024, 1024)
-    make_scripts(sample, n_scales, n_jobs, n_threads, block_shape, tmp_dir)
+    n_jobs = 1
+    n_scales = 3
+    n_threads = 20
+    block_shape = (50, 512, 512)
+    make_scripts(path, aff_path, n_scales, n_jobs, n_threads, block_shape, tmp_dir)
