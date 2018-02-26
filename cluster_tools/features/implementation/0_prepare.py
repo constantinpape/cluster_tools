@@ -39,11 +39,15 @@ def edges_to_jobs2(n_edges, chunk_size, n_jobs, tmp_folder, n_blocks):
         job_id = job_id % n_jobs
     assert np.sum(chunks_per_job) == n_chunks
 
+    chunk_index = 0
     for job_id in range(n_jobs):
-        edge_begin = job_id * chunks_per_job[job_id] * chunk_size
-        edge_end = (job_id + 1) * chunks_per_job[job_id] * chunk_size
+        print(chunk_index, chunks_per_job[job_id])
+        edge_begin = chunk_index * chunk_size
+        edge_end = (chunk_index + chunks_per_job[job_id]) * chunk_size
+        chunk_index += chunks_per_job[job_id]
         if job_id == n_jobs - 1:
             edge_end = n_edges
+        print(job_id, edge_begin, edge_end)
         np.save(os.path.join(tmp_folder, "2_input_%i.npy" % job_id),
                 np.array([edge_begin, edge_end, n_blocks], dtype='uint32'))
 
