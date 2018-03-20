@@ -14,10 +14,11 @@ def blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder, roi_begin, roi_end):
                                     blockShape=list(block_shape))
     if roi_begin is not None:
         assert roi_end is not None
-        block_list = blocking.getBlockIdsOverlappingBoundingBox(roi_begin,
-                                                                roi_end,
+        block_list = blocking.getBlockIdsOverlappingBoundingBox(list(roi_begin),
+                                                                list(roi_end),
                                                                 [0, 0, 0])
         n_blocks = len(block_list)
+        print("Scheduling", n_blocks, "blocks / ", blocking.numberOfBlocks)
     else:
         n_blocks = blocking.numberOfBlocks
         block_list = list(range(n_blocks))
@@ -51,7 +52,7 @@ def prepare(labels_path, labels_key,
 
     if not os.path.exists(tmp_folder):
         os.mkdir(tmp_folder)
-    blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder)
+    blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder, roi_begin, roi_end)
 
 
 if __name__ == '__main__':
@@ -75,5 +76,5 @@ if __name__ == '__main__':
             tuple(args.block_shape),
             tuple(args.chunks),
             args.n_jobs,
-            list(args.roi_begin),
-            list(args.roi_end))
+            args.roi_begin,
+            args.roi_end)

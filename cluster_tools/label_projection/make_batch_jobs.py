@@ -46,7 +46,7 @@ def make_batch_jobs_step1(labels_path, labels_key,
 
     with open(script_file, 'w') as f:
         f.write('#! /bin/bash\n')
-        if roi_begin is not None:
+        if roi_begin is None:
             f.write('./0_prepare.py %s %s %s %s --tmp_folder %s --block_shape %s --chunks %s --n_jobs %s\n' %
                     (labels_path, labels_key,
                      out_path, out_key, tmp_folder,
