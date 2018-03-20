@@ -15,7 +15,7 @@ def get_labels(path, n_threads=20):
                        numberOfLabels=int(ws.max()) + 1,
                        numberOfThreads=n_threads)
     uvs = rag.uvIds()
-    valid_edges = np.logical_not((uvs == 0).any(axis=1))
+    valid_edges = (uvs != 0).all(axis=1)
     print("Loading groundtruth")
     gt = z5py.File(path)['segmentations/groundtruth'][:]
     print("Accumulating labels")
@@ -25,7 +25,7 @@ def get_labels(path, n_threads=20):
     return labels, valid_edges
 
 
-def learn_rf(out_path, n_trees=150, n_threads=20):
+def learn_rf(out_path, n_trees=200, n_threads=20):
     samples = ['A', 'B', 'C']
     # samples = ['A']
 

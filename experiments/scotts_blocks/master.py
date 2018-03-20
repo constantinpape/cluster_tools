@@ -203,7 +203,7 @@ if __name__ == '__main__':
     tmp_dir = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cache/scotts_block_%s' % mhash
     if not os.path.exists(tmp_dir):
         os.mkdir(tmp_dir)
-    n_jobs = 100
+    n_jobs = 200
     n_scales = 1
     n_threads = 12
     block_shape = (50, 512, 512)
