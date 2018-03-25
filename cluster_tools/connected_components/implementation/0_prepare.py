@@ -13,10 +13,11 @@ def blocks_to_jobs(shape, block_shape, n_jobs, tmp_folder):
                                     roiEnd=list(shape),
                                     blockShape=block_shape)
     n_blocks = blocking.numberOfBlocks
-    chunk_size = int(ceil(float(n_blocks) / n_jobs))
+    assert n_jobs <= n_blocks, "%i, %i" % (n_jobs, n_blocks)
     block_list = list(range(n_blocks))
-    for idx, i in enumerate(range(0, len(block_list), chunk_size)):
-        np.save(os.path.join(tmp_folder, '1_input_%i.npy' % idx), block_list[i:i + chunk_size])
+    for job_id in range(n_jobs):
+        np.save(os.path.join(tmp_folder, '1_input_%i.npy' % job_id),
+                block_list[job_id::n_jobs])
 
 
 def prepare(in_path, in_key,

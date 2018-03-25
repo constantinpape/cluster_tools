@@ -29,6 +29,12 @@ def process_single_block(block_id, blocking, ds_in, ds_out, tmp_folder):
 
     # get the subvolume, find connected components and write non-overlapping part to file
     subvolume = ds_in[bb_outer]
+
+    # FIXME this is hard-coded for synapses
+    subvolume -= subvolume.min()
+    subvolume /= subvolume.max()
+    subvolume = (subvolume > .5).astype('uint8')
+
     cc = vigra.analysis.labelVolumeWithBackground(subvolume).astype('uint64')
     cc[cc != 0] += offset
     ds_out[bb_inner] = cc[bb_local]

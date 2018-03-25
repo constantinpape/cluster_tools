@@ -35,7 +35,7 @@ def learn_rf(out_path, n_trees=200, n_threads=20):
     for sample in samples:
         print("Getting features and labels for sample", sample)
         cache_folder = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cache/cremi_%s/tmp_files' % sample
-        path = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cremi_warped/sample%s.n5' % sample
+        path = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cremi_warped/sample%s_train.n5' % sample
         features = z5py.File(os.path.join(cache_folder, 'features.n5'))['features'][:]
 
         # sanity check the featues

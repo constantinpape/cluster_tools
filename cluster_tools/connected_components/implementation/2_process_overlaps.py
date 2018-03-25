@@ -17,7 +17,9 @@ def process_overlap(ovlp_ids, tmp_folder):
     node_assignment = np.concatenate([ids_a[None], ids_b[None]], axis=0).transpose()
     if node_assignment.size:
         node_assignment = np.unique(node_assignment, axis=0)
-        return node_assignment
+        # filter zeros
+        valid_assignments = (node_assignment != 0).all(axis=1)
+        return node_assignment[valid_assignments]
 
 
 def cc_ufd_step2(tmp_folder, ovlp_file):
@@ -25,7 +27,8 @@ def cc_ufd_step2(tmp_folder, ovlp_file):
     job_id = int(os.path.split(ovlp_file)[1].split('_')[3][:-4])
 
     node_assignments = [process_overlap(ovlp_ids, tmp_folder) for ovlp_ids in overlap_ids]
-    node_assignments = [na.tolist() for na in node_assignments if na is not None]
+    node_assignments = np.concatenate([na for na in node_assignments if na is not None],
+                                      axis=0)
     np.save(os.path.join(tmp_folder, '2_output_%i.npy' % job_id), node_assignments)
     print("Success job %i" % job_id)
 

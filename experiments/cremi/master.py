@@ -64,8 +64,7 @@ def make_feature_scripts(path, n_jobs1, n_jobs2, n_threads, block_shape, tmp_dir
 def make_cost_scripts(path, n_jobs, n_threads, tmp_dir):
     sys.path.append('../../..')
     from cluster_tools.costs import make_batch_jobs
-    # rf_path = '/groups/saalfeld/home/papec/Work/my_projects/cluster_tools/experiments/cremi/rf_ABC.pkl'
-    rf_path = ''
+    rf_path = '/groups/saalfeld/home/papec/Work/my_projects/cluster_tools/experiments/cremi/rf_ABC.pkl'
     make_batch_jobs(os.path.join(tmp_dir, 'tmp_files', 'features.n5'), 'features',
                     os.path.join(tmp_dir, 'tmp_files', 'graph.n5'), 'graph',
                     rf_path,
@@ -83,13 +82,13 @@ def make_multicut_scripts(path, n_scales, n_jobs, n_threads, block_shape, tmp_di
     from cluster_tools.multicut import make_batch_jobs
     make_batch_jobs(os.path.join(tmp_dir, 'tmp_files', 'graph.n5'), 'graph',
                     os.path.join(tmp_dir, 'tmp_files', 'tmp_mc', 'merged_graph.n5', 's0'), 'costs',
-                    path, 'node_labelings/multicut',
+                    path, 'node_labelings/multicut_rf',
                     block_shape, n_scales,
                     os.path.join(tmp_dir, 'tmp_files', 'tmp_mc'),
                     n_jobs,
                     n_threads=n_threads,
                     executable=EXECUTABLE,
-                    use_bsub=False,
+                    use_bsub=True,
                     eta=[5, 5, 15])
 
 
@@ -99,8 +98,8 @@ def make_projection_scripts(path, n_jobs, block_shape, tmp_dir):
     # chunks = [bs // 2 for bs in block_shape]
     chunks = block_shape
     make_batch_jobs(path, 'segmentations/watershed',
-                    path, 'segmentations/multicut',
-                    path, 'node_labelings/multicut',
+                    path, 'segmentations/multicut_rf',
+                    path, 'node_labelings/multicut_rf',
                     os.path.join(tmp_dir, 'tmp_files', 'tmp_projection'),
                     block_shape, chunks, n_jobs,
                     executable=EXECUTABLE,
@@ -150,7 +149,7 @@ def make_scripts(sample,
     if not os.path.exists('./4_features'):
         os.mkdir('./4_features')
     os.chdir('./4_features')
-    make_feature_scripts(path, n_jobs_max, 4, n_threads_max, block_shape, tmp_dir)
+    make_feature_scripts(path, n_jobs_max, 1, n_threads_max, block_shape, tmp_dir)
     os.chdir('..')
 
     # make the costs scripts
@@ -177,12 +176,12 @@ def make_scripts(sample,
 
 
 if __name__ == '__main__':
-    sample = 'A'
+    sample = 'A+'
     tmp_dir = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cache/cremi_%s' % sample
     if not os.path.exists(tmp_dir):
         os.mkdir(tmp_dir)
-    n_jobs = 4
-    n_scales = 2
+    n_jobs = 64
+    n_scales = 1
     n_threads = 12
-    block_shape = (100, 1024, 1024)
+    block_shape = (50, 512, 512)
     make_scripts(sample, n_scales, n_jobs, n_threads, block_shape, tmp_dir)
