@@ -60,16 +60,27 @@ def single_block_watershed(block_id, blocking,
 
     # load affinties and mask
     # t_load = time.time()
-    aff_bb1 = (slice(0, 3),) + outer_bb
-    affs1 = ds_affs[aff_bb1]
-    aff_bb2 = (slice(9, 12),) + outer_bb
-    affs2 = ds_affs[aff_bb2]
 
-    affs = np.concatenate([affs1, affs2], axis=0)
+    # aff_bb1 = (slice(0, 3),) + outer_bb
+    # affs1 = ds_affs[aff_bb1]
+    # aff_bb2 = (slice(9, 12),) + outer_bb
+    # affs2 = ds_affs[aff_bb2]
+    # affs = np.concatenate([affs1, affs2], axis=0)
+
+    affs = ds_affs[(slice(None),) + outer_bb]
 
     if affs.dtype == np.dtype('uint8'):
         affs = affs.astype('float32')
         affs /= 255.
+
+    # check if we have an additional glia channel (i.e. 13 channels)
+    # otherwise we have only affinties;
+    # we invert the affinity channels, but not the glia channel
+    if affs.shape[0] == 13:
+        affs[:-1] = 1. - affs[:-1]
+    else:
+        affs = 1. - affs
+
     mask = ds_mask[outer_bb].astype('bool')
     # print("Load data in:", time.time() - t_load)
 
@@ -103,8 +114,8 @@ def masked_watershed_step1(aff_path, aff_key,
                            out_path, key_out,
                            out_blocks, tmp_folder,
                            block_file, halo=[5, 50, 50],
-                           threshold_cc=.05, threshold_dt=.2,
-                           sigma_seeds=2., invert_input=True):
+                           threshold_cc=.025, threshold_dt=.25,
+                           sigma_seeds=1.6):
 
     t0 = time.time()
     ds_affs = z5py.File(aff_path)[aff_key]
@@ -120,8 +131,8 @@ def masked_watershed_step1(aff_path, aff_key,
     # TODO  we hardcode the seed channels for now to [3, 4, 5]
     # because we are only loading / using the lowest and highest channel affinities for the watershed for now
     segmenter = cseg.LRAffinityWatershed(threshold_cc, threshold_dt, sigma_seeds,
-                                         is_anisotropic=True, invert_input=invert_input,
-                                         seed_channel=[3, 4, 5],
+                                         is_anisotropic=True,
+                                         channel_weights=None,
                                          size_filter=50)
 
     # we get the job id from the file name

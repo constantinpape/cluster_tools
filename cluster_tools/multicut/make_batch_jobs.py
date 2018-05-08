@@ -184,7 +184,8 @@ def make_master_job(n_jobs, n_scales, executable, script_file):
     make_executable(script_file)
 
 
-def make_batch_jobs(graph_path, graph_key, costs_path, costs_key,
+def make_batch_jobs(graph_path, graph_key,
+                    costs_path, costs_key,
                     out_path, node_out_key,
                     block_shape, n_scales, tmp_folder, n_jobs, executable,
                     agglomerator_key=('multicut', 'kl'),

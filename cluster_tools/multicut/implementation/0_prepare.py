@@ -1,5 +1,6 @@
 #! /usr/bin/python
 
+from shutil import copytree
 import time
 import os
 import argparse
@@ -35,6 +36,7 @@ def serialize_initial_problem(graph_path, tmp_folder, costs_path, costs_key):
         f_graph.create_group('s0')
 
     assert os.path.exists(costs_path), costs_path
+
     # # make symbolic link to the costs
     # costs_target = os.path.join(graph_out_path, 's0', 'costs')
     # # if not os.path.exists(costs_target):
@@ -45,6 +47,11 @@ def serialize_initial_problem(graph_path, tmp_folder, costs_path, costs_key):
     # print("Symlink from", os.path.join(graph_path, 'graph'))
     # print("to", os.path.join(graph_out_path, 's0', 'graph'))
     # os.symlink(os.path.join(graph_path, 'graph'), os.path.join(graph_out_path, 's0', 'graph'))
+
+    # FIXME
+    # symlinks don't work, so we copy
+    costs_target = os.path.join(graph_out_path, 's0', 'costs')
+    copytree(os.path.join(costs_path, costs_key), costs_target)
 
 
 def prepare(graph_path, graph_key,
