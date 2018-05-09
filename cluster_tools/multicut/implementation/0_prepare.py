@@ -51,7 +51,10 @@ def serialize_initial_problem(graph_path, tmp_folder, costs_path, costs_key):
     # FIXME
     # symlinks don't work, so we copy
     costs_target = os.path.join(graph_out_path, 's0', 'costs')
-    copytree(os.path.join(costs_path, costs_key), costs_target)
+    if not os.path.exists(costs_target):
+        costs_src = os.path.join(costs_path, costs_key)
+        assert os.path.exists(costs_src), costs_src
+        copytree(costs_src, costs_target)
 
 
 def prepare(graph_path, graph_key,

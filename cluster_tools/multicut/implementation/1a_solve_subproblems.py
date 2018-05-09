@@ -81,7 +81,7 @@ def multicut_step1(graph_path,
                    agglomerator_key,
                    initial_block_shape,
                    block_file,
-                   cut_outer_edges=False):
+                   cut_outer_edges=True):
 
     t0 = time.time()
     agglomerator = AGGLOMERATORS[agglomerator_key]
