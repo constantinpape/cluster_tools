@@ -1,3 +1,5 @@
+#! /usr/bin/python
+
 import os
 import argparse
 import json
@@ -8,7 +10,9 @@ import vigra
 import nifty
 
 
-def process_block(ds, ds_out, block_id, blocking, block_config):
+def process_block(ds, ds_out, ds_mask, block_id, blocking, block_config):
+
+    # get the configuration for this block
     boundary_threshold = block_config['boundary_threshold']
     distance_threshold = block_config['distance_threshold']
     sigma = block_config['sigma']
@@ -28,6 +32,15 @@ def process_block(ds, ds_out, block_id, blocking, block_config):
     bb = tuple(slice(beg, end) for beg, end
                in zip(block.outerBlock.begin, block.outerBlock.end))
 
+    # first load the mask and see if we have to do anything
+    mask = ds_mask[bb].astype('bool')
+    local_bb = tuple(slice(beg, end) for beg, end
+                     in zip(block.innerBlockLocal.begin, block.innerBlockLocal.end))
+    inner_mask = mask[local_bb]
+    if np.sum(inner_mask) == 0:
+        return 0
+
+    # load the affinities from the slices specified in the config
     affs = []
     for aff_slice, inv_channel in zip(aff_slices, invert_channels):
         aff = ds[aff_slice + bb]
@@ -40,6 +53,8 @@ def process_block(ds, ds_out, block_id, blocking, block_config):
         affs.append(aff)
     affs = np.concatenate(affs, axis=0)
 
+    # transform affinities to boundary map via max projection
+    # and (optional) smoothing
     bmap = np.max(affs, axis=0)
     if sigma > 0:
         aniso = resolution[0] / resolution[1]
@@ -47,9 +62,11 @@ def process_block(ds, ds_out, block_id, blocking, block_config):
         bmap = vigra.filters.gaussianSmoothing(bmap, sigma_)
     bmap = (bmap > boundary_threshold).astype('uint32')
 
+    # set the inverse mask to 1
+    inv_mask = np.logical_not(mask)
+    bmap[inv_mask] = 1
+
     dt = vigra.filters.distanceTransform(bmap, pixel_pitch=resolution)
-    local_bb = tuple(slice(beg, end) for beg, end
-                     in zip(block.innerBlockLocal.begin, block.innerBlockLocal.end))
     dt = dt[local_bb]
     components = vigra.analysis.labelVolumeWithBackground((dt > distance_threshold).view('uint8'))
 
@@ -60,28 +77,40 @@ def process_block(ds, ds_out, block_id, blocking, block_config):
     return int(components.max())
 
 
-def step1_dt(path, key, out_path, out_key, cache_folder, job_id):
+def step1_dt(path, aff_key, out_key, mask_key, cache_folder, job_id):
     input_file = os.path.join(cache_folder, '1_config_%i.json' % job_id)
     with open(input_file) as f:
         input_config = json.load(f)
     block_config = input_config['block_config']
     block_shape = input_config['block_shape']
 
-    ds = z5py.File(path)[key]
-    ds_out = z5py.File(out_path)[out_key]
+    f = z5py.File(path)
+    ds = f[aff_key]
+    ds_out = f[out_key]
+    ds_mask = f[mask_key]
 
     shape = ds.shape
     blocking = nifty.tools.blocking([0, 0, 0], list(shape), list(block_shape))
 
-    max_ids = [process_block(ds, ds_out, block_id, blocking, config)
+    max_ids = [process_block(ds, ds_out, ds_mask, block_id, blocking, config)
                for block_id, config in block_config.items()]
     results = {block_id: max_id
                for block_id, max_id in zip(block_config.keys(), max_ids)}
 
-    with open('1_results.json', 'w') as f:
+    with open('1_results_%i.json' % block_id, 'w') as f:
         json.dump(results, f)
     print("Success")
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('path', type=str)
+    parser.add_argument('aff_key', type=str)
+    parser.add_argument('out_key', type=str)
+    parser.add_argument('mask_key', type=str)
+    parser.add_argument('cache_folder', type=str)
+    parser.add_argument('job_id', type=int)
+    args = parser.parse_args()
+
+    step1_dt(args.path, args.aff_key, args.out_key,
+             args.mask_key, args.cache_folder, args.job_id)
