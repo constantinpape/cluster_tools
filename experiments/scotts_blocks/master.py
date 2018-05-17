@@ -19,25 +19,41 @@ def make_minfilter_scripts(path, n_jobs, chunks, filter_shape, block_shape):
                     eta=5)
 
 
+# def make_ws_scripts(path, n_jobs, block_shape, tmp_dir):
+#     sys.path.append('../../..')
+#     from cluster_tools.masked_watershed import make_batch_jobs
+#     chunks = [bs // 2 for bs in block_shape]
+#     # chunks = block_shape
+#     make_batch_jobs(path, 'predictions/affs_glia',
+#                     path, 'masks/minfilter_mask',
+#                     path, 'segmentations/watershed2',
+#                     os.path.join(tmp_dir, 'tmp_files', 'tmp_ws'),
+#                     block_shape, chunks, n_jobs, EXECUTABLE,
+#                     use_bsub=True,
+#                     n_threads_ufd=4,
+#                     eta=[20, 5, 5, 5])
+
+
 def make_ws_scripts(path, n_jobs, block_shape, tmp_dir):
-    sys.path.append('../../..')
-    from cluster_tools.masked_watershed import make_batch_jobs
-    chunks = [bs // 2 for bs in block_shape]
-    # chunks = block_shape
-    make_batch_jobs(path, 'predictions/affs_glia',
-                    path, 'masks/minfilter_mask',
-                    path, 'segmentations/watershed',
-                    os.path.join(tmp_dir, 'tmp_files', 'tmp_ws'),
-                    block_shape, chunks, n_jobs, EXECUTABLE,
-                    use_bsub=True,
-                    n_threads_ufd=4,
-                    eta=[20, 5, 5, 5])
+    from cluster_tools.dt_components import make_batch_jobs
+    make_batch_jobs(path,
+                    aff_key='predictions/affs_glia',
+                    out_key='segmentations/dt_components',
+                    mask_key='masks/minfilter_mask',
+                    cache_folder=os.path.join(tmp_dir, 'tmp_ws'),
+                    n_jobs=n_jobs,
+                    block_shape=block_shape,
+                    ws_key='segmentations/watershed2',
+                    executable=EXECUTABLE,
+                    use_bsub=True)
+                    # n_threads_ufd=4,
+                    # eta=[20, 5, 5, 5])
 
 
 def make_relabel_scripts(path, n_jobs, block_shape, tmp_dir):
     sys.path.append('../../..')
     from cluster_tools.relabel import make_batch_jobs
-    make_batch_jobs(path, 'segmentations/watershed',
+    make_batch_jobs(path, 'segmentations/watershed2',
                     os.path.join(tmp_dir, 'tmp_files', 'tmp_relabel'),
                     block_shape, n_jobs,
                     EXECUTABLE,
@@ -48,7 +64,7 @@ def make_relabel_scripts(path, n_jobs, block_shape, tmp_dir):
 def make_graph_scripts(path, n_scales, n_jobs, n_threads, block_shape, tmp_dir):
     sys.path.append('../../..')
     from cluster_tools.graph import make_batch_jobs
-    make_batch_jobs(path, 'segmentations/watershed',
+    make_batch_jobs(path, 'segmentations/watershed2',
                     os.path.join(tmp_dir, 'tmp_files', 'graph.n5'),
                     os.path.join(tmp_dir, 'tmp_files', 'tmp_graph'),
                     block_shape,
@@ -65,7 +81,7 @@ def make_feature_scripts(path, n_jobs1, n_jobs2, n_threads, block_shape, tmp_dir
     make_batch_jobs(os.path.join(tmp_dir, 'tmp_files', 'graph.n5'), 'graph',
                     os.path.join(tmp_dir, 'tmp_files', 'features.n5'), 'features',
                     path, 'predictions/affs_glia',
-                    path, 'segmentations/watershed',
+                    path, 'segmentations/watershed2',
                     os.path.join(tmp_dir, 'tmp_files', 'tmp_features'),
                     block_shape,
                     n_jobs1, n_jobs2,
@@ -110,7 +126,7 @@ def make_projection_scripts(path, n_jobs, block_shape, tmp_dir, res_key):
     from cluster_tools.label_projection import make_batch_jobs
     chunks = [bs // 2 for bs in block_shape]
     # chunks = block_shape
-    make_batch_jobs(path, 'segmentations/watershed',
+    make_batch_jobs(path, 'segmentations/watershed2',
                     path, 'segmentations/%s' % res_key,
                     path, 'node_labelings/%s' % res_key,
                     os.path.join(tmp_dir, 'tmp_files', 'tmp_projection'),
@@ -136,7 +152,7 @@ def make_scripts(path,
         os.mkdir(os.path.join(tmp_dir, 'tmp_files'))
 
     if rf_path == '':
-        res_key = 'mc_glia_global'
+        res_key = 'mc_glia_global2_nnfeats'
     else:
         res_key = 'mc_glia_rf_affs_global'
 
@@ -203,9 +219,11 @@ def make_scripts(path,
 
 
 if __name__ == '__main__':
-    path = '/nrs/saalfeld/lauritzen/02/workspace.n5/raw'
+    block_id = 2
+    path = '/nrs/saalfeld/lauritzen/0%i/workspace.n5/raw' % block_id
     mhash = hashlib.md5(path.encode('utf-8')).hexdigest()
     tmp_dir = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cache/scotts_block_%s' % mhash
+    # tmp_dir = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cache/scotts_block_%i' % block_id
     if not os.path.exists(tmp_dir):
         os.mkdir(tmp_dir)
     n_jobs = 300

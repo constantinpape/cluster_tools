@@ -11,7 +11,7 @@ import nifty
 
 def merge_block(ds, block_id, blocking, offsets, empty_blocks):
     # get current block
-    block = blocking.getBlockWithHalo(block_id)
+    block = blocking.getBlock(block_id)
     off = offsets[block_id]
 
     # iterate over the neighbors, find adjacent component
@@ -56,7 +56,7 @@ def merge_block(ds, block_id, blocking, offsets, empty_blocks):
             assignments.append(assignment[valid_assignment])
 
     if assignments:
-        return np.concateate(assignments, axis=0)
+        return np.concatenate(assignments, axis=0)
     else:
         return None
 
@@ -69,6 +69,8 @@ def step3_merge_components(path, out_key, cache_folder, job_id):
         input_config = json.load(f)
         block_shape = input_config['block_shape']
         block_ids = list(input_config['block_config'].keys())
+        # json keys are always str, so we need to cast to int
+        block_ids = list(map(int, block_ids))
 
     # load the block offsets and empty blocks
     with open(os.path.join(cache_folder, 'block_offsets.json')) as f:
@@ -78,9 +80,9 @@ def step3_merge_components(path, out_key, cache_folder, job_id):
 
     ds = z5py.File(path)[out_key]
     shape = ds.shape
-    blocking = nifty.tools.blocking([0, 0, 0], list(shape), list(block_shape), empty_blocks)
+    blocking = nifty.tools.blocking([0, 0, 0], list(shape), list(block_shape))
 
-    results = [merge_block(ds, block_id, blocking, offsets)
+    results = [merge_block(ds, block_id, blocking, offsets, empty_blocks)
                for block_id in block_ids
                if block_id not in empty_blocks]
 
@@ -89,6 +91,7 @@ def step3_merge_components(path, out_key, cache_folder, job_id):
         results = np.concatenate(results, axis=0)
     out_path = os.path.join(cache_folder, '3_results_%i.npy' % job_id)
     np.save(out_path, results)
+    print("Success")
 
 
 if __name__ == '__main__':

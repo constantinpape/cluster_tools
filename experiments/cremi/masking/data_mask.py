@@ -8,7 +8,7 @@ completely_black = {'A': [6, 167],
                     'B': [24],
                     'C': [51, 111],
                     'A+': [88],
-                    'B+': [],
+                    'B+': [24],
                     'C+': [51, 111]}
 
 
@@ -52,6 +52,17 @@ def make_mask(sample):
     raw = f['raw'][:]
     print("... done")
 
+    if 'masks' not in f:
+        f.create_group('masks')
+    if 'masks/original_mask' in f:
+        ds = f['masks/original_mask']
+    else:
+        ds = f.create_dataset('masks/original_mask',
+                              dtype='uint8',
+                              compression='gzip',
+                              chunks=(26, 256, 256),
+                              shape=raw.shape)
+
     print("Generating mask...")
     zero_mask = (raw == 0).astype('uint8')
     print("... done")
@@ -80,11 +91,6 @@ def make_mask(sample):
         mask[black_id] = mask[black_id - 1]
 
     print("Writing to n5...")
-    ds = f.create_dataset('masks/original_mask',
-                          dtype='uint8',
-                          compression='gzip',
-                          chunks=(25, 256, 256),
-                          shape=mask.shape)
     ds[:] = 1 - mask
     print("... done")
 
@@ -98,7 +104,8 @@ def invert_mask(sample):
 
 
 if __name__ == '__main__':
-    for sample in ('A', 'B', 'C'):
-        invert_mask(sample)
+    for sample in ('B+',):
+        make_mask(sample)
+        # invert_mask(sample)
     # make_mask('C')
     # find_completely_black_slices('A+')

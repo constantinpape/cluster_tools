@@ -27,6 +27,7 @@ def step4_ufd(cache_folder, n_jobs):
 
     out_path = os.path.join(cache_folder, 'node_assignments.npy')
     np.save(out_path, node_labels)
+    print("Success")
 
 
 if __name__ == '__main__':

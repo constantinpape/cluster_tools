@@ -10,17 +10,42 @@ import vigra
 import nifty
 
 
+def compute_dt_components(affs, mask,
+                          boundary_threshold, distance_threshold,
+                          sigma, resolution, local_bb):
+    # transform affinities to boundary map via max projection
+    # and (optional) smoothing
+    bmap = np.max(affs, axis=0)
+    if sigma > 0:
+        aniso = resolution[0] / resolution[1]
+        sigma_ = (sigma / aniso, sigma, sigma)
+        bmap = vigra.filters.gaussianSmoothing(bmap, sigma_)
+    bmap = (bmap > boundary_threshold).astype('uint32')
+
+    # set the inverse mask to 1
+    bmap[mask] = 1
+
+    dt = vigra.filters.distanceTransform(bmap, pixel_pitch=resolution)
+    dt = dt[local_bb]
+    return vigra.analysis.labelVolumeWithBackground((dt > distance_threshold).view('uint8'))
+
+
 def process_block(ds, ds_out, ds_mask, block_id, blocking, block_config):
 
     # get the configuration for this block
     boundary_threshold = block_config['boundary_threshold']
     distance_threshold = block_config['distance_threshold']
-    sigma = block_config['sigma']
+    sigma_components = block_config['sigma_components']
     resolution = block_config['resolution']
     aff_slices = block_config['aff_slices']
     aff_slices = [(slice(sl[0], sl[1]),) for sl in aff_slices]
     invert_channels = block_config['invert_channels']
     assert len(aff_slices) == len(invert_channels)
+
+    # for debugging
+    # if block_id == 0:
+    #     for cnf, val in block_config.items():
+    #         print(cnf, val)
 
     # TODO double check this
     # compute the correct halo
@@ -45,7 +70,7 @@ def process_block(ds, ds_out, ds_mask, block_id, blocking, block_config):
     for aff_slice, inv_channel in zip(aff_slices, invert_channels):
         aff = ds[aff_slice + bb]
         if aff.dtype == np.dtype('uint8'):
-            affs = affs.astype('float32')
+            aff = aff.astype('float32') / 255.
         if inv_channel:
             aff = 1. - aff
         if aff.ndim == 3:
@@ -53,28 +78,17 @@ def process_block(ds, ds_out, ds_mask, block_id, blocking, block_config):
         affs.append(aff)
     affs = np.concatenate(affs, axis=0)
 
-    # transform affinities to boundary map via max projection
-    # and (optional) smoothing
-    bmap = np.max(affs, axis=0)
-    if sigma > 0:
-        aniso = resolution[0] / resolution[1]
-        sigma_ = (sigma / aniso, sigma, sigma)
-        bmap = vigra.filters.gaussianSmoothing(bmap, sigma_)
-    bmap = (bmap > boundary_threshold).astype('uint32')
-
-    # set the inverse mask to 1
+    # compute the components of the thresholded (3d, anisotropic) distance transform
     inv_mask = np.logical_not(mask)
-    bmap[inv_mask] = 1
-
-    dt = vigra.filters.distanceTransform(bmap, pixel_pitch=resolution)
-    dt = dt[local_bb]
-    components = vigra.analysis.labelVolumeWithBackground((dt > distance_threshold).view('uint8'))
+    seeds = compute_dt_components(affs, inv_mask,
+                                  boundary_threshold, distance_threshold,
+                                  sigma_components, resolution, local_bb)
 
     out_bb = tuple(slice(beg, end) for beg, end
                    in zip(block.innerBlock.begin, block.innerBlock.end))
-    ds_out[out_bb] = components.astype('uint64')
+    ds_out[out_bb] = seeds.astype('uint64')
 
-    return int(components.max())
+    return int(seeds.max()) + 1
 
 
 def step1_dt(path, aff_key, out_key, mask_key, cache_folder, job_id):
@@ -89,15 +103,15 @@ def step1_dt(path, aff_key, out_key, mask_key, cache_folder, job_id):
     ds_out = f[out_key]
     ds_mask = f[mask_key]
 
-    shape = ds.shape
+    shape = ds_out.shape
     blocking = nifty.tools.blocking([0, 0, 0], list(shape), list(block_shape))
 
-    max_ids = [process_block(ds, ds_out, ds_mask, block_id, blocking, config)
+    max_ids = [process_block(ds, ds_out, ds_mask, int(block_id), blocking, config)
                for block_id, config in block_config.items()]
     results = {block_id: max_id
                for block_id, max_id in zip(block_config.keys(), max_ids)}
 
-    with open('1_results_%i.json' % block_id, 'w') as f:
+    with open(os.path.join(cache_folder, '1_results_%i.json' % job_id), 'w') as f:
         json.dump(results, f)
     print("Success")
 

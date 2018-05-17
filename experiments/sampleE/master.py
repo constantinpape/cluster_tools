@@ -23,36 +23,36 @@ def make_ws_scripts(path, aff_path, n_jobs, block_shape, tmp_dir):
     from cluster_tools.masked_watershed import make_batch_jobs
     chunks = [bs // 2 for bs in block_shape]
     # chunks = block_shape
-    make_batch_jobs(aff_path, 'predictions/full_affs',
-                    path, 'masks/neuropil_mask',
-                    path, 'segmentations/watershed',
+    make_batch_jobs(aff_path, 'predictions/affs_glia',
+                    path, 'masks/minfilter_mask',
+                    path, 'segmentations/watershed_glia2',
                     os.path.join(tmp_dir, 'tmp_files', 'tmp_ws'),
                     block_shape, chunks, n_jobs, EXECUTABLE,
                     use_bsub=True,
                     n_threads_ufd=12,
-                    eta=[120, 30, 30, 60])
+                    eta=[180, 30, 30, 60])
 
 
 def make_relabel_scripts(path, n_jobs, block_shape, tmp_dir):
     from cluster_tools.relabel import make_batch_jobs
-    make_batch_jobs(path, 'segmentations/watershed',
+    make_batch_jobs(path, 'segmentations/watershed_glia2',
                     os.path.join(tmp_dir, 'tmp_files', 'tmp_relabel'),
                     block_shape, n_jobs,
                     EXECUTABLE,
-                    use_bsub=False,
+                    use_bsub=True,
                     eta=[20, 10, 20])
 
 
 # TODO the graph merging should get more threads, if possible 32
 def make_graph_scripts(path, n_scales, n_jobs, n_threads, block_shape, tmp_dir):
     from cluster_tools.graph import make_batch_jobs
-    make_batch_jobs(path, 'segmentations/watershed',
+    make_batch_jobs(path, 'segmentations/watershed_glia2',
                     os.path.join(tmp_dir, 'tmp_files', 'graph.n5'),
                     os.path.join(tmp_dir, 'tmp_files', 'tmp_graph'),
                     block_shape,
                     n_scales, n_jobs,
                     EXECUTABLE,
-                    use_bsub=True,
+                    use_bsub=False,
                     n_threads_merge=16,
                     eta=[30, 10, 60, 10])
 
@@ -61,8 +61,8 @@ def make_feature_scripts(path, aff_path, n_jobs1, n_jobs2, n_threads, block_shap
     from cluster_tools.features import make_batch_jobs
     make_batch_jobs(os.path.join(tmp_dir, 'tmp_files', 'graph.n5'), 'graph',
                     os.path.join(tmp_dir, 'tmp_files', 'features.n5'), 'features',
-                    aff_path, 'predictions/full_affs',
-                    path, 'segmentations/watershed',
+                    aff_path, 'predictions/affs_glia',
+                    path, 'segmentations/watershed_glia2',
                     os.path.join(tmp_dir, 'tmp_files', 'tmp_features'),
                     block_shape,
                     n_jobs1, n_jobs2,
@@ -74,7 +74,6 @@ def make_feature_scripts(path, aff_path, n_jobs1, n_jobs2, n_threads, block_shap
 
 def make_cost_scripts(path, n_jobs, n_threads, tmp_dir):
     from cluster_tools.costs import make_batch_jobs
-    # rf_path = '/groups/saalfeld/home/papec/Work/my_projects/cluster_tools/experiments/cremi/rf_ABC.pkl'
     rf_path = ''
     make_batch_jobs(os.path.join(tmp_dir, 'tmp_files', 'features.n5'), 'features',
                     os.path.join(tmp_dir, 'tmp_files', 'graph.n5'), 'graph',
@@ -92,13 +91,13 @@ def make_multicut_scripts(path, n_scales, n_jobs, n_threads, block_shape, tmp_di
     from cluster_tools.multicut import make_batch_jobs
     make_batch_jobs(os.path.join(tmp_dir, 'tmp_files', 'graph.n5'), 'graph',
                     os.path.join(tmp_dir, 'tmp_files', 'tmp_mc', 'merged_graph.n5', 's0'), 'costs',
-                    path, 'node_labelings/multicut2',
+                    path, 'node_labelings/multicut_glia',
                     block_shape, n_scales,
-                    os.path.join(tmp_dir, 'tmp_files', 'tmp_mc2'),
+                    os.path.join(tmp_dir, 'tmp_files', 'tmp_m'),
                     n_jobs,
                     n_threads=n_threads,
                     executable=EXECUTABLE,
-                    use_bsub=False,
+                    use_bsub=True,
                     eta=[90, 90, 180])
 
 
@@ -106,9 +105,9 @@ def make_projection_scripts(path, n_jobs, block_shape, tmp_dir):
     from cluster_tools.label_projection import make_batch_jobs
     chunks = [bs // 2 for bs in block_shape]
     # chunks = block_shape
-    make_batch_jobs(path, 'segmentations/watershed',
-                    path, 'segmentations/multicut',
-                    path, 'node_labelings/multicut',
+    make_batch_jobs(path, 'segmentations/watershed_glia2',
+                    path, 'segmentations/multicut_glia',
+                    path, 'node_labelings/multicut_glia',
                     os.path.join(tmp_dir, 'tmp_files', 'tmp_projection'),
                     block_shape, chunks, n_jobs,
                     executable=EXECUTABLE,
@@ -199,7 +198,7 @@ if __name__ == '__main__':
     tmp_dir = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cache/sampleE2'
     if not os.path.exists(tmp_dir):
         os.mkdir(tmp_dir)
-    n_jobs = 1
+    n_jobs = 1200
     n_scales = 3
     n_threads = 20
     block_shape = (50, 512, 512)

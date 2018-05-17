@@ -114,7 +114,7 @@ def masked_watershed_step1(aff_path, aff_key,
                            out_path, key_out,
                            out_blocks, tmp_folder,
                            block_file, halo=[5, 50, 50],
-                           threshold_cc=.025, threshold_dt=.25,
+                           threshold_cc=.001, threshold_dt=.25,
                            sigma_seeds=1.6):
 
     t0 = time.time()
@@ -128,12 +128,10 @@ def masked_watershed_step1(aff_path, aff_key,
     block_list = np.load(block_file)
 
     # the segmenter
-    # TODO  we hardcode the seed channels for now to [3, 4, 5]
-    # because we are only loading / using the lowest and highest channel affinities for the watershed for now
     segmenter = cseg.LRAffinityWatershed(threshold_cc, threshold_dt, sigma_seeds,
                                          is_anisotropic=True,
-                                         channel_weights=None,
-                                         size_filter=50)
+                                         size_filter=25,
+                                         sigma_pre=2.)
 
     # we get the job id from the file name
     overlap_ids = [single_block_watershed(block_id, blocking,

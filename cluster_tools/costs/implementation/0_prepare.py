@@ -29,7 +29,7 @@ def make_rf_jobs(tmp_folder, n_edges, chunk_size, n_jobs):
         chunk_index += chunks_per_job[job_id]
         if job_id == n_jobs - 1:
             edge_end = n_edges
-        print(job_id, edge_begin, edge_end)
+        # print(job_id, edge_begin, edge_end)
         np.save(os.path.join(tmp_folder, "1_input_%i.npy" % job_id),
                 np.array([edge_begin, edge_end], dtype='uint32'))
 

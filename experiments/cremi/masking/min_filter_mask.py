@@ -47,13 +47,13 @@ def min_filter_mask(path, mask_key, out_key,
 
 
 if __name__ == '__main__':
-    for sample in ('A', 'B', 'C'):
+    for sample in ('B+',):
         path = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cremi_warped/sample%s.n5' % sample
         mask_key = 'masks/original_mask'
 
-        out_key = 'masks/min_filter_mask'
-        chunks = (25, 256, 256)
-        blocks = (50, 512, 512)
+        out_key = 'masks/minfilter_mask'
+        chunks = (26, 256, 256)
+        blocks = (52, 512, 512)
 
         net_in_shape = (88, 808, 808)
         net_out_shape = (60, 596, 596)
@@ -66,4 +66,4 @@ if __name__ == '__main__':
                         filter_shape=filter_shape,
                         chunks=chunks,
                         blocks=blocks,
-                        n_threads=20)
+                        n_threads=30)
