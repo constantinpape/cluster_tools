@@ -2,6 +2,7 @@
 
 import os
 import argparse
+import pickle
 
 import numpy as np
 import vigra
@@ -21,15 +22,12 @@ def relabel_step2(labels_path, labels_key, tmp_folder, block_shape, n_threads=1)
     uniques = np.concatenate([np.load(os.path.join(tmp_folder, '1_output_%i.npy' % block_id))
                               for block_id in range(blocking.numberOfBlocks)])
     uniques = np.unique(uniques).astype('uint64', copy=False)
-    n_labels = int(uniques.max() + 1)
-    relabeled, _, _ = vigra.analysis.relabelConsecutive(uniques, keep_zeros=True, start_label=1)
+    _, max_id, mapping = vigra.analysis.relabelConsecutive(uniques, keep_zeros=True, start_label=1)
 
-    labeling = np.zeros(n_labels, dtype='uint64')
-    labeling[uniques] = relabeled
-
-    np.save(os.path.join(tmp_folder, '2_output.npy'), labeling)
-    max_id = int(labeling.max())
     ds_labels.attrs['maxId'] = max_id
+
+    with open(os.path.join(tmp_folder, '2_output.pkl'), 'wb') as f:
+        pickle.dump(mapping, f)
 
     print("Success")
 

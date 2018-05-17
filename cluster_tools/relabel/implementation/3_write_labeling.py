@@ -1,5 +1,6 @@
 #! /usr/bin/python
 
+import pickle
 import os
 import argparse
 
@@ -12,7 +13,7 @@ def write_labeling(block_id, blocking, ds, labeling):
     block = blocking.getBlock(block_id)
     bb = tuple(slice(b, e) for b, e in zip(block.begin, block.end))
     labels = ds[bb]
-    ds[bb] = nifty.tools.take(labeling, labels)
+    ds[bb] = nifty.tools.takeDict(labeling, labels)
 
 
 def relabel_step3(labels_path, labels_key, tmp_folder, block_shape, block_file):
@@ -23,7 +24,8 @@ def relabel_step3(labels_path, labels_key, tmp_folder, block_shape, block_file):
                                     roiEnd=list(shape),
                                     blockShape=block_shape)
     block_list = np.load(block_file)
-    labeling = np.load(os.path.join(tmp_folder, '2_output.npy'))
+    with open(os.path.join(tmp_folder, '2_output.pkl'), 'rb') as f:
+        labeling = pickle.load(f)
 
     [write_labeling(block_id, blocking, ds_labels, labeling) for block_id in block_list]
     print("Success")
