@@ -123,6 +123,36 @@ def make_batch_jobs_step2(path, out_key, aff_key, cache_folder, n_jobs,
     make_executable(script_file)
 
 
+def make_batch_jobs_step3(path, ws_key, out_key, cache_folder, n_jobs, executable,
+                          script_file='jobs_step3.sh', use_bsub=True, eta=5):
+
+    # copy the relevant files
+    file_dir = os.path.dirname(os.path.abspath(__file__))
+    cwd = os.getcwd()
+    assert os.path.exists(executable), "Could not find python at %s" % executable
+    shebang = '#! %s' % executable
+
+    copy(os.path.join(file_dir, 'implementation/3_write_segmentation.py'), cwd)
+    replace_shebang('3_write_segmentation.py', shebang)
+    make_executable('3_write_segmentation.py')
+
+    with open(script_file, 'w') as f:
+        f.write('#! /bin/bash\n')
+
+        for job_id in range(n_jobs):
+            command = './3_write_segmentation.py %s %s %s %s %i' % (path, ws_key, out_key,
+                                                                    cache_folder, job_id)
+            if use_bsub:
+                log_file = 'logs/log_consensus_stitching_step3_%i.log' % job_id
+                err_file = 'error_logs/err_consensus_stitching_step3_%i.err' % job_id
+                f.write('bsub -J consensus_stitching_step3_%i -We %i -o %s -e %s \'%s\' \n' %
+                        (job_id, eta, log_file, err_file, command))
+            else:
+                f.write(command + '\n')
+
+    make_executable(script_file)
+
+
 def make_master_job(n_jobs, executable, script_file):
     file_dir = os.path.dirname(os.path.abspath(__file__))
     cwd = os.getcwd()
@@ -136,8 +166,10 @@ def make_master_job(n_jobs, executable, script_file):
     parent_dir = os.path.abspath(os.path.join(file_dir, os.pardir))
     copy(os.path.join(parent_dir, 'wait_and_check.py'), cwd)
 
+    # TODO don't hardcode prefixes
+    prefixes = '1_blocking1 1_blocking2'
     with open(script_file, 'w') as f:
-        f.write('./master_job.py %i %i\n' % n_jobs)
+        f.write('./master_job.py %i %s\n' % (n_jobs, prefixes))
     make_executable(script_file)
 
 
@@ -178,4 +210,7 @@ def make_batch_jobs(path, ws_key, aff_key, out_key,
                           merge_threshold, n_threads, executable,
                           use_bsub=use_bsub, eta=eta_[2])
 
-    # make_master_job(n_jobs, executable, 'master.sh')
+    make_batch_jobs_step3(path, ws_key, out_key, cache_folder, n_jobs,
+                          executable, use_bsub=use_bsub, eta=eta_[3])
+
+    make_master_job(n_jobs, executable, 'master.sh')

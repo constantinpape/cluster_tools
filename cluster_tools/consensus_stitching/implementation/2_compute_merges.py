@@ -15,14 +15,14 @@ def step2(path, out_key, cache_folder, n_jobs,
           prefixes):
 
     # load in parallel - why not
-    paths = [os.path.join(cache_folder, '%s_uvs_%i.json' % (prefix, job_id))
+    paths = [os.path.join(cache_folder, '%s_uvs_%i.npy' % (prefix, job_id))
              for prefix in prefixes for job_id in range(n_jobs)]
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(np.load, path) for path in paths]
         results = [t.result() for t in tasks]
         uv_ids = np.concatenate([res for res in results if res.size], axis=0)
 
-    paths = [os.path.join(cache_folder, '%s_votes_%i.json' % (prefix, job_id))
+    paths = [os.path.join(cache_folder, '%s_votes_%i.npy' % (prefix, job_id))
              for prefix in prefixes for job_id in range(n_jobs)]
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(np.load, path) for path in paths]
@@ -46,7 +46,7 @@ def step2(path, out_key, cache_folder, n_jobs,
                                                start_label=1, out=node_labels)[1]
     # write the number of labels to file
     ds = z5py.File(path)[out_key]
-    ds.atts["maxId"] = max_id
+    ds.attrs["maxId"] = max_id
 
     out_path = os.path.join(cache_folder, 'node_assignments.npy')
     np.save(out_path, node_labels)
