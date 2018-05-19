@@ -172,7 +172,8 @@ def compute_threshold(affs, mask, boundary_threshold):
 
 
 def compute_dt_threshold(affs, mask, boundary_threshold,
-                         distance_threshold, resolution, sigma):
+                         distance_threshold, resolution, sigma,
+                         local_bb):
     if sigma > 0:
         aniso = resolution[0] / resolution[1]
         sigma_ = (sigma / aniso, sigma, sigma)
@@ -182,8 +183,117 @@ def compute_dt_threshold(affs, mask, boundary_threshold,
     # set the inverse mask to 1
     affs[np.logical_not(mask)] = 1
 
-    affs = vigra.filters.distanceTransform(affs, pixel_pitch=resolution)
+    # compute the distance transform and crop it back to inner bb
+    affs = vigra.filters.distanceTransform(affs, pixel_pitch=resolution)[local_bb]
+    # return conected components of areas larger than the distance threshold
     return vigra.analysis.labelVolumeWithBackground((affs > distance_threshold).view('uint8'))
+
+
+def threshold_dt_blocks(ds_affs, ds_mask, ds_out, blocking, block_id, config):
+    print("Processing block", block_id)
+    t0 = time.time()
+
+    # get parameters from the config object
+    boundary_threshold = config['boundary_threshold']
+    aff_slices = config['aff_slices']
+    aff_slices = [(slice(sl[0], sl[1]),) for sl in aff_slices]
+    invert_channels = config['invert_channels']
+    assert len(aff_slices) == len(invert_channels)
+    # parameters specific for dt threshold
+    resolution = config['resolution']
+    distance_threshold = config['distance_threshold']
+    sigma = config['sigma']
+
+    # compute the necessary halo if we compute distance trafos
+    # TODO double check
+    halo = [2 * int(distance_threshold / res) for res in resolution]
+
+    # get block bounding box
+    block = blocking.getBlockWithHalo(block_id, halo)
+    bb = tuple(slice(beg, end)
+               for beg, end in zip(block.outerBlock.begin, block.outerBlock.end))
+
+    # load mask
+    mask = ds_mask[bb]
+    # if we don't have any data in the mask,
+    # write 0 for max-id
+    if np.sum(mask) == 0:
+        return 0, time.time() - t0
+
+    # load the affinities from the slices specified in the config
+    affs = []
+    for aff_slice, inv_channel in zip(aff_slices, invert_channels):
+        aff = ds_affs[aff_slice + bb]
+        if aff.dtype == np.dtype('uint8'):
+            aff = aff.astype('float32') / 255.
+        if inv_channel:
+            aff = 1. - aff
+        if aff.ndim == 3:
+            aff = aff[None]
+        affs.append(aff)
+    affs = np.concatenate(affs, axis=0)
+
+    # make max projection, threshold and extract connected components
+    affs = np.max(affs, axis=0)
+    local_bb = tuple(slice(beg, end) for beg, end in zip(block.innerBlockLocal.begin,
+                                                         block.innerBlockLocal.end))
+    affs = compute_dt_threshold(affs, mask, boundary_threshold,
+                                distance_threshold, resolution, sigma,
+                                local_bb)
+    # affs = compute_threshold(affs, mask, boundary_threshold)
+
+    # write the result to the out volume,
+    inner_bb = tuple(slice(beg, end) for beg, end in zip(block.innerBlock.begin,
+                                                         block.innerBlock.end))
+    ds_out[inner_bb] = affs.astype('uint64')
+    # return the number of components and the processing time
+    return int(affs.max()) + 1, time.time() - t0
+
+
+def threshold_default_blocks(ds_affs, ds_mask, ds_out, blocking, block_id, config):
+    print("Processing block", block_id)
+    t0 = time.time()
+
+    # get parameters from the config object
+    boundary_threshold = config['boundary_threshold']
+    aff_slices = config['aff_slices']
+    aff_slices = [(slice(sl[0], sl[1]),) for sl in aff_slices]
+    invert_channels = config['invert_channels']
+    assert len(aff_slices) == len(invert_channels)
+
+    # get block bounding box
+    block = blocking.getBlock(block_id)
+    bb = tuple(slice(beg, end)
+               for beg, end in zip(block.begin, block.end))
+
+    # load mask
+    mask = ds_mask[bb]
+    # if we don't have any data in the mask,
+    # write 0 for max-id
+    if np.sum(mask) == 0:
+        return 0, time.time() - t0
+
+    # load the affinities from the slices specified in the config
+    affs = []
+    for aff_slice, inv_channel in zip(aff_slices, invert_channels):
+        aff = ds_affs[aff_slice + bb]
+        if aff.dtype == np.dtype('uint8'):
+            aff = aff.astype('float32') / 255.
+        if inv_channel:
+            aff = 1. - aff
+        if aff.ndim == 3:
+            aff = aff[None]
+        affs.append(aff)
+    affs = np.concatenate(affs, axis=0)
+
+    # make max projection, threshold and extract connected components
+    affs = np.max(affs, axis=0)
+    affs = compute_threshold(affs, mask, boundary_threshold)
+
+    # write the result to the out volume,
+    ds_out[bb] = affs.astype('uint64')
+    # return the number of components and the processing time
+    return int(affs.max()) + 1, time.time() - t0
 
 
 def threshold_blocks(path, aff_key, mask_key, out_key,
@@ -203,68 +313,23 @@ def threshold_blocks(path, aff_key, mask_key, out_key,
     # load the configuration
     with open(config_path) as f:
         input_config = json.load(f)
-        config = input_config['config']
-        boundary_threshold = config['boundary_threshold']
-        block_shape = config['block_shape']
-        aff_slices = config['aff_slices']
-        aff_slices = [(slice(sl[0], sl[1]),) for sl in aff_slices]
-        invert_channels = config['invert_channels']
-        assert len(aff_slices) == len(invert_channels)
         block_ids = input_config['block_list']
+        config = input_config['config']
+        block_shape = config['block_shape']
         use_dt = config['use_dt']
-        if use_dt:
-            resolution = config['resolution']
-            distance_threshold = config['distance_threshold']
-            sigma = config['sigma']
+
+    blocking = nifty.tools.blocking([0, 0, 0],
+                                    list(shape),
+                                    list(block_shape))
 
     for block_id in block_ids:
-        print("Processing block", block_id)
-        t0 = time.time()
-        res_file = os.path.join(tmp_folder, 'threshold_result_block%i.json' % block_id)
-        # get block bounding box
-        blocking = nifty.tools.blocking([0, 0, 0],
-                                        list(shape),
-                                        list(block_shape))
-        block = blocking.getBlock(block_id)
-        bb = tuple(slice(beg, end)
-                   for beg, end in zip(block.begin, block.end))
-
-        # load mask
-        mask = ds_mask[bb]
-        # if we don't have any data in the mask,
-        # write 0 for max-id
-        if np.sum(mask) == 0:
-            with open(res_file, 'w') as f:
-                json.dump({'n_components': 0, 't': time.time() - t0}, f)
-            continue
-
-        # load the affinities from the slices specified in the config
-        affs = []
-        for aff_slice, inv_channel in zip(aff_slices, invert_channels):
-            aff = ds_affs[aff_slice + bb]
-            if aff.dtype == np.dtype('uint8'):
-                aff = aff.astype('float32') / 255.
-            if inv_channel:
-                aff = 1. - aff
-            if aff.ndim == 3:
-                aff = aff[None]
-            affs.append(aff)
-        affs = np.concatenate(affs, axis=0)
-
-        # make max projection, threshold and extract connected components
-        affs = np.max(affs, axis=0)
         if use_dt:
-            affs = compute_dt_threshold(affs, mask, boundary_threshold,
-                                        distance_threshold, resolution, sigma)
+            n_comp, t0 = threshold_dt_blocks(ds_affs, ds_mask, ds_out, blocking, block_id, config)
         else:
-            affs = compute_threshold(affs, mask, boundary_threshold)
-
-        # write the result to the out volume,
-        # write the max-id
-        ds_out[bb] = affs.astype('uint64')
-        n_comp = int(affs.max()) + 1
+            n_comp, t0 = threshold_default_blocks(ds_affs, ds_mask, ds_out, blocking, block_id, config)
+        res_file = os.path.join(tmp_folder, 'threshold_result_block%i.json' % block_id)
         with open(res_file, 'w') as f:
-            json.dump({'n_components': n_comp, 't': time.time() - t0}, f)
+            json.dump({'n_components': n_comp, 't': t0}, f)
 
 
 if __name__ == '__main__':
