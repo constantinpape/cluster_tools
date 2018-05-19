@@ -163,6 +163,29 @@ class ThresholdTask(luigi.Task):
         return luigi.LocalTarget(os.path.join(self.tmp_folder, 'threshold.log'))
 
 
+def compute_threshold(affs, mask, boundary_threshold):
+        affs = affs < boundary_threshold
+        # take care of mask
+        inv_mask = np.logical_not(mask)
+        affs[inv_mask] = 0
+        return vigra.analysis.labelVolumeWithBackground(affs.view('uint8'))
+
+
+def compute_dt_threshold(affs, mask, boundary_threshold,
+                         distance_threshold, resolution, sigma):
+    if sigma > 0:
+        aniso = resolution[0] / resolution[1]
+        sigma_ = (sigma / aniso, sigma, sigma)
+        affs = vigra.filters.gaussianSmoothing(affs, sigma_)
+    affs = (affs > boundary_threshold).astype('uint32')
+
+    # set the inverse mask to 1
+    affs[np.logical_not(mask)] = 1
+
+    affs = vigra.filters.distanceTransform(affs, pixel_pitch=resolution)
+    return vigra.analysis.labelVolumeWithBackground((affs > distance_threshold).view('uint8'))
+
+
 def threshold_blocks(path, aff_key, mask_key, out_key,
                      job_id, config_path, tmp_folder):
     """
@@ -188,6 +211,11 @@ def threshold_blocks(path, aff_key, mask_key, out_key,
         invert_channels = config['invert_channels']
         assert len(aff_slices) == len(invert_channels)
         block_ids = input_config['block_list']
+        use_dt = config['use_dt']
+        if use_dt:
+            resolution = config['resolution']
+            distance_threshold = config['distance_threshold']
+            sigma = config['sigma']
 
     for block_id in block_ids:
         print("Processing block", block_id)
@@ -225,11 +253,11 @@ def threshold_blocks(path, aff_key, mask_key, out_key,
 
         # make max projection, threshold and extract connected components
         affs = np.max(affs, axis=0)
-        affs = affs < boundary_threshold
-        # take care of mask
-        inv_mask = np.logical_not(mask)
-        affs[inv_mask] = 0
-        affs = vigra.analysis.labelVolumeWithBackground(affs.view('uint8'))
+        if use_dt:
+            affs = compute_dt_threshold(affs, mask, boundary_threshold,
+                                        distance_threshold, resolution, sigma)
+        else:
+            affs = compute_threshold(affs, mask, boundary_threshold)
 
         # write the result to the out volume,
         # write the max-id
