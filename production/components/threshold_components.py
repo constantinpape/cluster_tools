@@ -14,6 +14,8 @@ import luigi
 from concurrent import futures
 
 
+# TODO more clean up (job config files)
+# TODO computation with rois
 class ThresholdTask(luigi.Task):
     """
     Run all thresholding tasks
@@ -32,7 +34,7 @@ class ThresholdTask(luigi.Task):
     tmp_folder = luigi.Parameter()
     # FIXME default does not work; this still needs to be specified
     time_estimate = luigi.IntParameter(default=10)
-    run_locally = luigi.BoolParameter(default=False)
+    run_local = luigi.BoolParameter(default=False)
     # TODO optional parameter to just run a subset of blocks
 
     def _submit_job(self, job_id):
@@ -46,7 +48,7 @@ class ThresholdTask(luigi.Task):
         bsub_command = 'bsub -J threshold_block_%i -We %i -o %s -e %s \'%s\'' % (job_id,
                                                                                  self.time_estimate,
                                                                                  log_file, err_file, command)
-        if self.run_locally:
+        if self.run_local:
             subprocess.call([command], shell=True)
         else:
             subprocess.call([bsub_command], shell=True)
@@ -96,6 +98,10 @@ class ThresholdTask(luigi.Task):
         with open(self.config_path) as f:
             config = json.load(f)
             block_shape = config['block_shape']
+            chunks = tuple(config['chunks'])
+            # TODO support computation with roi
+            if 'roi' in config:
+                have_roi = True
 
         # find the shape and number of blocks
         f = z5py.File(self.path)
@@ -105,19 +111,17 @@ class ThresholdTask(luigi.Task):
         n_blocks = blocking.numberOfBlocks
 
         # make the output dataset
-        chunks = tuple(bs // 2 for bs in block_shape)
         f.require_dataset(self.out_key, shape=shape,
                           chunks=chunks, dtype='uint64', compression='gzip')
 
         # find the actual number of jobs and prepare job configs
         n_jobs = min(n_blocks, self.max_jobs)
-        n_jobs = 1
         self._prepare_jobs(n_jobs, n_blocks, config)
 
         # submit the jobs
         # TODO would be better to wrap this into a process pool, but
         # it will be quite a pain to make everything pickleable
-        if self.run_locally:
+        if self.run_local:
             # this only works in python 3 ?!
             with futures.ProcessPoolExecutor(n_jobs) as tp:
                 tasks = [tp.submit(self._submit_job, job_id)
@@ -128,30 +132,32 @@ class ThresholdTask(luigi.Task):
                 self._submit_job(job_id)
 
         # wait till all jobs are finished
-        if not self.run_locally:
-            util.wait_and_check_multiple_jobs("threshold_block", n_jobs)
+        if not self.run_local:
+            util.wait_for_jobs('papec')
 
         # check the job outputs
-        processed_blocks, n_components, times = self._check_outputs(n_jobs)
-        success = len(processed_blocks) == n_blocks
+        processed_blocks, n_components, times = self._collect_outputs(n_blocks)
         assert len(processed_blocks) == len(n_components) == len(times)
+        success = len(processed_blocks) == n_blocks
 
         # write output file if we succeed, otherwise write partial
         # success to different file and raise exception
         if success:
             out = self.output()
             # TODO does 'out' support with block?
-            out.open('w')
+            fres = out.open('w')
             json.dump({'n_components': n_components,
-                       'times': times}, f)
-            out.close()
+                       'times': times}, fres)
+            fres.close()
         else:
             log_path = os.path.join(self.tmp_folder, 'threshold_partial.json')
             with open(log_path, 'w') as out:
                 json.dump({'n_components': n_components,
                            'times': times,
                            'processed_blocks': processed_blocks}, out)
-            raise RuntimeError("ThresholdTask failed, serialized partial block list to %s" % log_path)
+            raise RuntimeError("ThresholdTask failed, %i / %i blocks processed, serialized partial results to %s" % (len(processed_blocks),
+                                                                                                                     n_blocks,
+                                                                                                                     log_path))
 
     def output(self):
         return luigi.LocalTarget(os.path.join(self.tmp_folder, 'threshold.log'))
@@ -184,6 +190,7 @@ def threshold_blocks(path, aff_key, mask_key, out_key,
         block_ids = input_config['block_list']
 
     for block_id in block_ids:
+        print("Processing block", block_id)
         t0 = time.time()
         res_file = os.path.join(tmp_folder, 'threshold_result_block%i.json' % block_id)
         # get block bounding box
@@ -201,7 +208,7 @@ def threshold_blocks(path, aff_key, mask_key, out_key,
         if np.sum(mask) == 0:
             with open(res_file, 'w') as f:
                 json.dump({'n_components': 0, 't': time.time() - t0}, f)
-            return
+            continue
 
         # load the affinities from the slices specified in the config
         affs = []

@@ -14,14 +14,13 @@ class OffsetTask(luigi.Task):
     """
 
     tmp_folder = luigi.Parameter()
-    max_jobs = luigi.IntParameter()
+    dependency = luigi.TaskParameter()
     # FIXME default does not work; this still needs to be specified
     time_estimate = luigi.IntParameter(default=10)
-    run_locally = luigi.BoolParameter(default=False)
-    dependency = luigi.TaskParameter()
+    run_local = luigi.BoolParameter(default=False)
 
     def requires(self):
-        return self.dependendy
+        return self.dependency
 
     def run(self):
         from .. import util
@@ -43,13 +42,20 @@ class OffsetTask(luigi.Task):
         bsub_command = 'bsub -J compute_offsets -We %i -o %s -e %s \'%s\'' % (self.time_estimate,
                                                                               log_file, err_file, command)
 
-        if self.run_locally:
+        # submit job
+        if self.run_local:
             subprocess.call([command], shell=True)
         else:
             subprocess.call([bsub_command], shell=True)
 
-        if not self.run_locally:
-            util.wait_and_check_single_job("compute_offsets")
+        # wait job is finished
+        if not self.run_local:
+            util.wait_for_jobs('papec')
+
+        # check for correct execution
+        success = os.path.exists(out_path)
+        if not success:
+            raise RuntimeError("Compute offsets failed")
 
     def output(self):
         out_file = os.path.join(self.tmp_folder, 'block_offsets.json')
