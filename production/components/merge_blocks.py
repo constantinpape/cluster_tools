@@ -63,7 +63,7 @@ class MergeTask(luigi.Task):
         times = []
         processed_blocks = []
         for job_id in range(n_jobs):
-            res_file = os.path.join(self.tmp_folder, 'merge_blocks_job%ijson' % job_id)
+            res_file = os.path.join(self.tmp_folder, 'merge_blocks_job%i.json' % job_id)
             try:
                 with open(res_file) as f:
                     res = json.load(f)
@@ -104,8 +104,6 @@ class MergeTask(luigi.Task):
         self._prepare_jobs(n_jobs, n_blocks, block_shape)
 
         # submit the jobs
-        # TODO would be better to wrap this into a process pool, but
-        # it will be quite a pain to make everything pickleable
         if self.run_local:
             # this only works in python 3 ?!
             with futures.ProcessPoolExecutor(n_jobs) as tp:
@@ -134,13 +132,13 @@ class MergeTask(luigi.Task):
             json.dump({'times': times}, fres)
             fres.close()
         else:
-            log_path = os.path.join(self.tmp_folder, 'merge_blocks.json')
+            log_path = os.path.join(self.tmp_folder, 'merge_blocks_partial.json')
             with open(log_path, 'w') as out:
                 json.dump({'times': times,
                            'processed_blocks': processed_blocks}, out)
-            raise RuntimeError("ThresholdTask failed, %i / %i blocks processed, serialized partial results to %s" % (len(processed_blocks),
-                                                                                                                     n_blocks,
-                                                                                                                     log_path))
+            raise RuntimeError("MergeTask failed, %i / %i blocks processed, serialized partial results to %s" % (len(processed_blocks),
+                                                                                                                 n_blocks,
+                                                                                                                 log_path))
 
     def output(self):
         return luigi.LocalTarget(os.path.join(self.tmp_folder, 'merge_blocks.log'))
@@ -228,7 +226,7 @@ def merge_blocks(path, out_key, job_id, config_path, offsets_path, tmp_folder):
     np.save(out_path, node_assignments)
 
     # serialize the block times
-    save_path = os.path.join(tmp_folder, 'merge_blocks_job%ijson' % job_id)
+    save_path = os.path.join(tmp_folder, 'merge_blocks_job%i.json' % job_id)
     with open(save_path, 'w') as f:
         json.dump({block_id: tt for block_id, tt in zip(block_ids, times)}, f)
 

@@ -23,3 +23,16 @@ def copy_and_replace(src, dest,
     copy(src, dest)
     replace_shebang(dest, shebang)
     make_executable(dest)
+
+
+def make_log_dirs(tmp_folder):
+    log_dir = os.path.join(tmp_folder, 'logs')
+    err_dir = os.path.join(tmp_folder, 'error_logs')
+    try:
+        os.mkdir(log_dir)
+    except OSError:
+        pass
+    try:
+        os.mkdir(err_dir)
+    except OSError:
+        pass

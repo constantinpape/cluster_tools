@@ -225,7 +225,7 @@ def threshold_blocks(path, aff_key, mask_key, out_key,
 
         # make max projection, threshold and extract connected components
         affs = np.max(affs, axis=0)
-        affs = affs > boundary_threshold
+        affs = affs < boundary_threshold
         # take care of mask
         inv_mask = np.logical_not(mask)
         affs[inv_mask] = 0
