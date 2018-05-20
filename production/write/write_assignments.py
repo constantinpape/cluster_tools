@@ -5,6 +5,7 @@ import os
 import json
 import argparse
 import subprocess
+import pickle
 from concurrent import futures
 
 import numpy as np
@@ -176,7 +177,10 @@ def write_block(ds_in, ds_out, blocking, block_id, node_labels):
     # check if this block is empty and don't write if so
     if np.sum(mask) == 0:
         return time.time() - t0
-    seg = nifty.tools.take(node_labels, seg)
+    if isinstance(node_labels, np.ndarray):
+        seg = nifty.tools.take(node_labels, seg)
+    else:
+        seg = nifty.tools.takeDict(node_labels, seg)
     ds_out[bb] = seg
     return time.time() - t0
 
@@ -187,7 +191,17 @@ def write_assignments(path, in_key, out_key,
                       tmp_folder, job_id,
                       offset_path=''):
 
-    node_labels = np.load(assignment_path)
+    # load consecutive labeling from npy or
+    # dictionary labeling from pkl
+    file_type = assignment_path.split('.')[-1]
+    if file_type == 'npy':
+        node_labels = np.load(assignment_path)
+    elif file_type == 'pkl':
+        with open(assignment_path, 'rb') as f:
+            node_labels = pickle.load(f)
+        assert isinstance(node_labels, dict)
+    else:
+        raise RuntimeError("Unsupported file type for node assignment")
 
     with_offsets = offset_path != ''
     if with_offsets:

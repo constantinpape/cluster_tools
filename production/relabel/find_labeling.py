@@ -76,7 +76,7 @@ class FindLabelingTask(luigi.Task):
             raise RuntimeError("FindLabelingTask failed")
 
     def output(self):
-        out_file = os.path.join(tmp_folder, 'relabeling_time.json')
+        out_file = os.path.join(tmp_folder, 'relabeling.pkl')
         return luigi.LocalTarget(out_file)
 
 # TODO this could be parallelized

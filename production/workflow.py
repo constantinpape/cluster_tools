@@ -2,6 +2,7 @@ import luigi
 
 from .components import ComponentsWorkflow
 from .watershed import FillingWatershedTask
+from .relabel import RelabelWorkflow
 from . util import make_dirs
 
 
@@ -38,8 +39,12 @@ class Workflow(luigi.WrapperTask):
                                        tmp_folder=self.tmp_folder, dependency=components_task,
                                        time_estimate=self.time_estimate,
                                        run_local=self.run_local)
-        return ws_task
-        # return components_task
+        relabel_task = RelabelWorkflow(path=self.path, key=self.out_key,
+                                       max_jobs=self.max_jobs, config_path=self.config_path,
+                                       tmp_folder=self.tmp_folder, dependency=ws_task,
+                                       time_estimate=self.time_estimate,
+                                       run_local=self.run_local)
+        return relabel_task
 
 
 # TODO helper function for config
