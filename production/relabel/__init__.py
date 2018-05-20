@@ -1,1 +1,1 @@
-from .workflow_task import RelabelingWorkflow
+from .workflow_task import RelabelWorkflow

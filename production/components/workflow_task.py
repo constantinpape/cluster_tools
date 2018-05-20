@@ -46,6 +46,7 @@ class ComponentsWorkflow(luigi.Task):
         write_task = WriteAssignmentTask(path=self.path, in_key=self.out_key,
                                          out_key=self.out_key, config_path=self.config_path,
                                          max_jobs=self.max_jobs, tmp_folder=self.tmp_folder,
+                                         identifier='write_components',
                                          dependency=assignment_task,
                                          offset_path=os.path.join(self.tmp_folder, 'block_offsets.json'),
                                          time_estimate=self.time_estimate, run_local=self.run_local)

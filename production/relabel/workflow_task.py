@@ -42,7 +42,9 @@ class RelabelWorkflow(luigi.Task):
                                          in_key=self.key,
                                          out_key=self.key,
                                          config_path=self.config_path,
+                                         max_jobs=self.max_jobs,
                                          tmp_folder=self.tmp_folder,
+                                         identifier='write_relabel',
                                          dependency=labels_task,
                                          time_estimate=self.time_estimate,
                                          run_local=self.run_local)

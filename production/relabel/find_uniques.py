@@ -24,7 +24,7 @@ class FindUniquesTask(luigi.Task):
     # TODO allow individual paths for individual blocks
     config_path = luigi.Parameter()
     tmp_folder = luigi.Parameter()
-    dependecy = luigi.TaskParameter()
+    dependency = luigi.TaskParameter()
     # FIXME default does not work; this still needs to be specified
     time_estimate = luigi.IntParameter(default=10)
     run_local = luigi.BoolParameter(default=False)
@@ -148,10 +148,10 @@ def uniques_in_block(block_id, blocking, ds, tmp_folder):
     np.save(os.path.join(tmp_folder, 'uniques_block_%i.npy' % block_id), uniques)
     res_path = os.path.join(tmp_folder, 'times_uniques_block%i.json' % block_id)
     with open(res_path, 'w') as f:
-        f.dump({'t': time.time() - t0})
+        json.dump({'t': time.time() - t0}, f)
 
 
-def find_uniques(labels_path, labels_key, tmp_folder, config_file):
+def find_uniques(labels_path, labels_key, config_file, tmp_folder):
     ds_labels = z5py.File(labels_path, use_zarr_format=False)[labels_key]
     shape = ds_labels.shape
 
@@ -172,10 +172,9 @@ if __name__ == '__main__':
     parser.add_argument("labels_path", type=str)
     parser.add_argument("labels_key", type=str)
 
-    parser.add_argument("tmp_folder", type=str)
     parser.add_argument("config_file", type=str)
+    parser.add_argument("tmp_folder", type=str)
 
     args = parser.parse_args()
     find_uniques(args.labels_path, args.labels_key,
-                 args.tmp_folder,
-                 args.config_file)
+                 args.config_file, args.tmp_folder)

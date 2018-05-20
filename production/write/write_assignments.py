@@ -28,6 +28,9 @@ class WriteAssignmentTask(luigi.Task):
     # maximal number of jobs that will be run in parallel
     max_jobs = luigi.IntParameter()
     tmp_folder = luigi.Parameter()
+    # identifier to seperate the output files of different write
+    # assignment tasks
+    identifier = luigi.Parameter()
     # TODO would be more elegant to express both as tasks,
     # but for this we would need an empty default task
     # for the offsets
@@ -152,7 +155,8 @@ class WriteAssignmentTask(luigi.Task):
                                                                                                                            log_path))
 
     def output(self):
-        return luigi.LocalTarget(os.path.join(self.tmp_folder, 'write_assignments.log'))
+        return luigi.LocalTarget(os.path.join(self.tmp_folder,
+                                              'write_assignments_%s.log' % self.identifier))
 
 
 def write_block_with_offsets(ds_in, ds_out, blocking, block_id, node_labels, offsets):
