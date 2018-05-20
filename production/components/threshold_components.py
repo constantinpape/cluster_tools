@@ -193,7 +193,7 @@ def threshold_dt_blocks(ds_affs, ds_mask, ds_out, blocking, block_id, config):
     # parameters specific for dt threshold
     resolution = config['resolution']
     distance_threshold = config['distance_threshold']
-    sigma = config['sigma']
+    sigma = config.get('sigma', 0)
 
     # compute the necessary halo if we compute distance trafos
     # TODO double check

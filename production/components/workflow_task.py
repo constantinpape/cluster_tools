@@ -1,14 +1,14 @@
 import os
 import luigi
+
 from .compute_block_offsets import OffsetTask
 from .threshold_components import ThresholdTask
 from .merge_blocks import MergeTask
 from .node_assignment import NodeAssignmentTask
 from ..write import WriteAssignmentTask
-from .. import util
 
 
-class Workflow(luigi.WrapperTask):
+class ComponentsWorkflow(luigi.Task):
 
     # path to the n5 file and keys
     path = luigi.Parameter()
@@ -27,10 +27,6 @@ class Workflow(luigi.WrapperTask):
     run_local = luigi.BoolParameter(default=False)
 
     def requires(self):
-
-        # make the tmp, log and err dicts if necessary
-        if not self.run_local:
-            util.make_dirs(self.tmp_folder)
 
         thresh_task = ThresholdTask(path=self.path, aff_key=self.aff_key,
                                     mask_key=self.mask_key, out_key=self.out_key,
@@ -54,3 +50,14 @@ class Workflow(luigi.WrapperTask):
                                          offset_path=os.path.join(self.tmp_folder, 'block_offsets.json'),
                                          time_estimate=self.time_estimate, run_local=self.run_local)
         return write_task
+
+    # just write a dummy file
+    def run(self):
+        out_path = self.input().path
+        assert os.path.exists(out_path)
+        res_file = self.output().path
+        with open(res_file, 'w') as f:
+            f.write('Success')
+
+    def output(self):
+        return luigi.LocalTarget(os.path.join(self.tmp_folder, 'components_workflow.log'))

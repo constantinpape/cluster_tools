@@ -45,20 +45,24 @@ class FillingWatershedTask(luigi.Task):
     def _make_checkerboard(self, blocking):
         blocks_a = [0]
         blocks_b = []
+        all_blocks = [0]
 
         def recurse(current_block, insert_list):
-            other_list = blocks_a if insert_list is blocks_b else blocks_a
+            other_list = blocks_a if insert_list is blocks_b else blocks_b
             for dim in range(3):
                 ngb_id = blocking.getNeighborId(current_block, dim, False)
                 if ngb_id != -1:
-                    insert_list.append(ngb_id)
-                    recurse(ngb_id, other_list)
+                    if ngb_id not in all_blocks:
+                        insert_list.append(ngb_id)
+                        all_blocks.append(ngb_id)
+                        recurse(ngb_id, other_list)
 
         recurse(0, blocks_b)
-        all_blocks = set(blocks_a + blocks_b)
+        all_blocks = blocks_a + blocks_b
         expected = set(range(blocking.numberOfBlocks))
-        assert len(all_blocks - expected) == 0
-        assert len(blocks_a) == len(blocks_b)
+        assert len(all_blocks) == len(expected), "%i, %i" % (len(all_blocks), len(expected))
+        assert len(set(all_blocks) - expected) == 0
+        assert len(blocks_a) == len(blocks_b), "%i, %i" % (len(blocks_a), len(blocks_b))
         return blocks_a, blocks_b
 
     def _prepare_jobs(self, n_jobs, block_list, config, prefix):
@@ -151,7 +155,9 @@ class FillingWatershedTask(luigi.Task):
         self._prepare_jobs(n_jobs, blocks_b, config, 'b')
 
         # submit the jobs
+        print("Start blocks a")
         self._submit_jobs(n_jobs, 'a')
+        print("Start blocks b")
         self._submit_jobs(n_jobs, 'b')
 
         n_blocks = blocking.numberOfBlocks
@@ -210,13 +216,12 @@ def run_2d_ws(hmap, seeds, mask, size_filter, offset):
         # watersheds can only handle uint32 seeds, and we WILL overflow uint32
         # however, we still need to seperate the additional from the extended seeds,
         # so we offset them
-        additional_seeds_mask = seeds >= offset
-        seeds_z, offz, mapping = vigra.analysis.relabelConsecutive(seeds[z],
-                                                                   start_label=1,
-                                                                   keep_zeros=True)
-        seeds_z[additional_seeds_mask] += offz
-        remapping = {new if old < offset else new + offz: old
-                     for new, old in mapping.items()}
+        additional_seeds_mask = seeds[z] >= offset
+        seeds_z, offz, old_to_new = vigra.analysis.relabelConsecutive(seeds[z],
+                                                                      start_label=1,
+                                                                      keep_zeros=True)
+        new_to_old = {new: old for old, new in old_to_new.items()}
+        additional_seeds_ids = np.unique(seeds_z[additional_seeds_mask])
         ws_z = vigra.analysis.watershedsNew(hmap[z], seeds=seeds_z.astype('uint32'))[0]
 
         # apply size_filter
@@ -224,17 +229,17 @@ def run_2d_ws(hmap, seeds, mask, size_filter, offset):
             ids, sizes = np.unique(ws_z, return_counts=True)
             filter_ids = ids[sizes < size_filter]
             # do not filter ids that belong to the extended seeds
-            filter_ids = filter_ids[filter_ids > offz]
+            filter_ids = filter_ids[np.in1d(filter_ids, additional_seeds_ids)]
             filter_mask = np.ma.masked_array(ws_z, np.in1d(ws_z, filter_ids)).mask
             ws_z[filter_mask] = 0
             vigra.analysis.watershedsNew(hmap[z], seeds=ws_z, out=ws_z)
 
-        # map bad to original ids
-        ws_z = ws_z.astype('uint64')
-        ws_z = nifty.tools.takeDict(remapping, ws_z)
-
         # set the invalid mask to zero
         ws_z[mask[z]] = 0
+
+        # map bad to original ids
+        ws_z = ws_z.astype('uint64')
+        ws_z = nifty.tools.takeDict(new_to_old, ws_z)
 
         # write the watershed to the seeds
         seeds[z] = ws_z
@@ -243,8 +248,9 @@ def run_2d_ws(hmap, seeds, mask, size_filter, offset):
 
 def ws_block(ds_affs, ds_seeds, ds_mask,
              blocking, block_id, block_config,
-             empty_blocks, tmp_folder):
+             empty_blocks, tmp_folder, offset):
 
+    print("Processing block", block_id)
     res_file = os.path.join(tmp_folder, 'filling_watershed_block%i.json' % block_id)
 
     t0 = time.time()
@@ -255,9 +261,9 @@ def ws_block(ds_affs, ds_seeds, ds_mask,
 
     # get offset to make new seeds unique between blocks
     # (we need to relabel later to make processing efficient !)
-    offset = block_id * np.prod(blocking.blockShape)
+    offset +=  block_id * np.prod(blocking.blockShape)
 
-    boundary_threshold = block_config['boundary_threshold']
+    boundary_threshold = block_config['boundary_threshold2']
     sigma_maxima = block_config['sigma_maxima']
     size_filter = block_config['size_filter']
     if 'halo' in block_config:
@@ -271,6 +277,7 @@ def ws_block(ds_affs, ds_seeds, ds_mask,
         local_bb = tuple(slice(beg, end)
                          for beg, end in zip(block.innerBlockLocal.begin, block.innerBlockLocal.end))
     else:
+        with_halo = False
         block = blocking.getBlock(block_id)
         bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
 
@@ -286,7 +293,18 @@ def ws_block(ds_affs, ds_seeds, ds_mask,
     if with_halo:
         seeds = ds_seeds[outer_bb]
         mask = ds_mask[outer_bb].astype('bool')
-        affs = np.pad(affs, halo, 'constant')
+
+        # calculate the correct padding
+        inner_block = block.innerBlock
+        outer_block = block.outerBlock
+        padding = tuple(((inner_beg - outer_beg), (outer_end - inner_end))
+                        for inner_beg, outer_beg, inner_end, outer_end in zip(inner_block.begin,
+                                                                              outer_block.begin,
+                                                                              inner_block.end,
+                                                                              outer_block.end))
+
+        affs = np.pad(affs, padding, 'constant')
+        assert affs.shape == seeds.shape == mask.shape
     else:
         seeds = ds_seeds[bb]
         mask = ds_mask[bb].astype('bool')
@@ -314,7 +332,7 @@ def ws_block(ds_affs, ds_seeds, ds_mask,
 
 
 def filling_ws(path, aff_key, seed_key, mask_key,
-               config_file, tmp_folder, job_id):
+               job_id, config_file, tmp_folder):
 
     f5 = z5py.File(path)
     ds_affs = f5[aff_key]
@@ -332,13 +350,14 @@ def filling_ws(path, aff_key, seed_key, mask_key,
     with open(offsets_path) as f:
         offset_config = json.load(f)
         empty_blocks = offset_config['empty_blocks']
+        offset = offset_config['n_labels']
 
     shape = ds_seeds.shape
     blocking = nifty.tools.blocking([0, 0, 0], list(shape), list(block_shape))
 
     [ws_block(ds_affs, ds_seeds, ds_mask,
               blocking, int(block_id), config,
-              empty_blocks, tmp_folder) for block_id in block_list]
+              empty_blocks, tmp_folder, offset) for block_id in block_list]
 
 
 if __name__ == '__main__':

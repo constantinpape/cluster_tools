@@ -25,10 +25,10 @@ def copy_and_replace(src, dest,
     make_executable(dest)
 
 
-def make_log_dirs(tmp_folder):
+def make_dirs(tmp_folder):
     # make the tmpdir
     try:
-        os.mkdir(self.tmp_folder)
+        os.mkdir(tmp_folder)
     except OSError:
         pass
     # make log and err dir
