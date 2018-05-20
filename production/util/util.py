@@ -26,6 +26,12 @@ def copy_and_replace(src, dest,
 
 
 def make_log_dirs(tmp_folder):
+    # make the tmpdir
+    try:
+        os.mkdir(self.tmp_folder)
+    except OSError:
+        pass
+    # make log and err dir
     log_dir = os.path.join(tmp_folder, 'logs')
     err_dir = os.path.join(tmp_folder, 'error_logs')
     try:

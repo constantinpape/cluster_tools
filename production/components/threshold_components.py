@@ -84,12 +84,6 @@ class ThresholdTask(luigi.Task):
     def run(self):
         from .. import util
 
-        # make the tmpdir
-        try:
-            os.mkdir(self.tmp_folder)
-        except OSError:
-            pass
-
         # copy the script to the temp folder and replace the shebang
         file_dir = os.path.dirname(os.path.abspath(__file__))
         util.copy_and_replace(os.path.join(file_dir, 'threshold_components.py'),
@@ -105,8 +99,7 @@ class ThresholdTask(luigi.Task):
 
         # find the shape and number of blocks
         f = z5py.File(self.path)
-        ds = f[self.mask_key]
-        shape = ds.shape
+        shape = f[self.mask_key].shape
         blocking = nifty.tools.blocking([0, 0, 0], shape, block_shape)
         n_blocks = blocking.numberOfBlocks
 
@@ -119,8 +112,6 @@ class ThresholdTask(luigi.Task):
         self._prepare_jobs(n_jobs, n_blocks, config)
 
         # submit the jobs
-        # TODO would be better to wrap this into a process pool, but
-        # it will be quite a pain to make everything pickleable
         if self.run_local:
             # this only works in python 3 ?!
             with futures.ProcessPoolExecutor(n_jobs) as tp:

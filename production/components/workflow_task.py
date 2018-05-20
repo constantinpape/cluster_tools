@@ -27,9 +27,11 @@ class Workflow(luigi.WrapperTask):
     run_local = luigi.BoolParameter(default=False)
 
     def requires(self):
-        # make the log and err dicts if necessary
+
+        # make the tmp, log and err dicts if necessary
         if not self.run_local:
-            util.make_log_dirs(self.tmp_folder)
+            util.make_dirs(self.tmp_folder)
+
         thresh_task = ThresholdTask(path=self.path, aff_key=self.aff_key,
                                     mask_key=self.mask_key, out_key=self.out_key,
                                     max_jobs=self.max_jobs, config_path=self.config_path,
