@@ -3,6 +3,7 @@ import luigi
 from .components import ComponentsWorkflow
 from .watershed import FillingWatershedTask
 from .relabel import RelabelWorkflow
+from .stitching import ConsensusStitchingWorkflow
 from . util import make_dirs
 
 
@@ -12,7 +13,8 @@ class Workflow(luigi.WrapperTask):
     path = luigi.Parameter()
     aff_key = luigi.Parameter()
     mask_key = luigi.Parameter()
-    out_key = luigi.Parameter()
+    ws_key = luigi.Parameter()
+    seg_key = luigi.Parameter()
     # maximal number of jobs that will be run in parallel
     max_jobs = luigi.IntParameter()
     # path to the configuration
@@ -29,22 +31,27 @@ class Workflow(luigi.WrapperTask):
         make_dirs(self.tmp_folder)
 
         components_task = ComponentsWorkflow(path=self.path, aff_key=self.aff_key,
-                                             mask_key=self.mask_key, out_key=self.out_key,
+                                             mask_key=self.mask_key, out_key=self.ws_key,
                                              max_jobs=self.max_jobs, config_path=self.config_path,
                                              tmp_folder=self.tmp_folder, time_estimate=self.time_estimate,
                                              run_local=self.run_local)
         ws_task = FillingWatershedTask(path=self.path, aff_key=self.aff_key,
-                                       seeds_key=self.out_key, mask_key=self.mask_key,
+                                       seeds_key=self.ws_key, mask_key=self.mask_key,
                                        max_jobs=self.max_jobs, config_path=self.config_path,
                                        tmp_folder=self.tmp_folder, dependency=components_task,
                                        time_estimate=self.time_estimate,
                                        run_local=self.run_local)
-        relabel_task = RelabelWorkflow(path=self.path, key=self.out_key,
+        relabel_task = RelabelWorkflow(path=self.path, key=self.ws_key,
                                        max_jobs=self.max_jobs, config_path=self.config_path,
                                        tmp_folder=self.tmp_folder, dependency=ws_task,
                                        time_estimate=self.time_estimate,
                                        run_local=self.run_local)
-        return relabel_task
+        stitch_task = ConsensusStitchingWorkflow(path=self.path, aff_key=self.aff_key, ws_key=self.ws_key,
+                                                 out_key=self.seg_key, max_jobs=self.max_jobs,
+                                                 config_path=self.config_path, tmp_folder=self.tmp_folder,
+                                                 dependency=relabel_task, time_estimate=self.time_estimate,
+                                                 run_local=self.run_local)
+        return stitch_task
 
 
 # TODO helper function for config

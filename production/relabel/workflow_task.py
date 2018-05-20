@@ -5,6 +5,8 @@ from .find_labeling import FindLabelingTask
 from ..write import WriteAssignmentTask
 
 
+# FIXME this does relabel consecutive
+# right now (though it does relabel to some degree)
 class RelabelWorkflow(luigi.Task):
 
     # path to the n5 file and keys
