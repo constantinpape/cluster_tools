@@ -135,7 +135,8 @@ class FindUniquesTask(luigi.Task):
                                                                                                                        log_path))
 
     def output(self):
-        pass
+        out_file = os.path.join(self.tmp_folder, 'find_uniques.json')
+        return luigi.LocalTarget(out_file)
 
 
 def uniques_in_block(block_id, blocking, ds, tmp_folder):
