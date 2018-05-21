@@ -4,16 +4,20 @@ import os
 import time
 import argparse
 import json
+import pickle
 import subprocess
 
 # import vigra
 import numpy as np
 import nifty
 import nifty.graph.rag as nrag
+import nifty.graph.lifted_mulitcut as nlmc
 import z5py
 import cremi_tools.segmentation as cseg
 import luigi
 from concurrent import futures
+# TODO needs to be in pythonpath
+from production import features as feat
 
 
 # TODO more clean up (job config files)
@@ -181,36 +185,8 @@ class MergeVotesTask(luigi.Task):
         return luigi.LocalTarget(os.path.join(self.tmp_folder, 'compute_merge_votes.log'))
 
 
-def segment_block(ds_ws, ds_affs, blocking, block_id, offsets):
-
-    print("Process block", block_id)
-    # load the segmentation
-    block = blocking.getBlock(block_id)
-    bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
-    ws = ds_ws[bb]
-
-    # if this block only contains a single segment id (usually 0 = ignore label) continue
-    ws_ids = np.unique(ws)
-    if len(ws_ids) == 1:
-        return None
-    max_id = ws_ids[-1]
-
-    # TODO should we do this ?
-    # map to a consecutive segmentation to speed up graph computations
-    # ws, max_id, mapping = vigra.analysis.relabelConsecutive(ws, keep_zeros=True, start_label=1)
-
-    # load the affinities
-    n_channels = len(offsets)
-    bb_affs = (slice(0, n_channels),) + bb
-    affs = ds_affs[bb_affs]
-    # convert affinities to float and invert them
-    # to get boundary probabilities
-    if affs.dtype == np.dtype('uint8'):
-        affs = affs.astype('float32') / 255.
-    affs = 1. - affs
-
+def compute_mc(ws, affs, offsets, n_labels):
     # compute the region adjacency graph
-    n_labels = int(max_id) + 1
     rag = nrag.gridRag(ws,
                        numberOfLabels=n_labels,
                        numberOfThreads=1)
@@ -242,6 +218,111 @@ def segment_block(ds_ws, ds_affs, blocking, block_id, offsets):
     return uv_ids, edge_indicator, sizes
 
 
+def compute_lmc(ws, affs, glia, offsets, n_labels, lifted_rf, lifted_nh):
+    # compute the region adjacency graph
+    rag = nrag.gridRag(ws,
+                       numberOfLabels=n_labels,
+                       numberOfThreads=1)
+    uv_ids = rag.uvIds()
+
+    # compute the features and get edge probabilities (from mean affinities)
+    # and edge sizes
+    features = nrag.accumulateAffinityStandartFeatures(rag, affs, offsets,
+                                                       numberOfThreads=1)
+    local_probs = features[:, 0]
+    sizes = features[:, -1].astype('uint64')
+
+    # remove all edges connecting to the ignore label, because
+    # they introduce short-cut lifted edges
+    valid_edges = (uv_ids != 0).all(axis=1)
+    uv_ids = uv_ids[valid_edges]
+    local_probs = local_probs[valid_edges]
+    sizes = sizes[valid_edges]
+
+    # build the original graph and lifted objective
+    # with lifted uv-ids
+    graph = nifty.graph.undirectedGraph(n_labels)
+    graph.insertEdges(uv_ids)
+    lifted_objective = nlmc.liftedMulticutObjective(graph)
+    lifted_objective.insertLiftedEdgesBfs(lifted_nh)
+    # TODO is the sort necessary?
+    # lifted_uv_ids = np.sort(lifted_graph.liftedUvIds(), axis=1)
+    lifted_uv_ids = lifted_objective.liftedUvIds()
+
+    # get features for the lifted edges
+    lifted_feats = np.concatenate([feat.region_features(ws, lifted_uv_ids, glia),
+                                   feat.ucm_features(n_labels, uv_ids, lifted_uv_ids, local_probs),
+                                   feat.clustering_features(graph, local_probs, lifted_uv_ids)], axis=1)
+    lifted_probs = lifted_rf.predict_proba(lifted_feats)[:, 1]
+
+    # turn probabilities into costs
+    local_costs = cseg.transform_probabilities_to_costs(local_probs)
+    lifted_costs = cseg.transform_probabilities_to_costs(lifted_probs)
+    # weight the costs
+    n_local, n_lifted = len(uv_ids), len(lifted_uv_ids)
+    total = float(n_lifted) + n_local
+    # TODO does this make sense ?
+    local_costs *= (n_lifted / total)
+    lifted_costs *= (n_local / total)
+
+    # update the lmc objective
+    lifted_objective.setCosts(uv_ids, local_costs)
+    lifted_objective.setCosts(lifted_uv_ids, lifted_costs)
+
+    # compute lifted multicut
+    solver_ga = lifted_objective.liftedMulticutGreedyAdditiveFactory().create(lifted_objective)
+    node_labels = solver_ga.optimize()
+    solver_kl = lifted_objective.liftedMulticutKernighanLinFactory().create(lifted_objective)
+    node_labels = solver_kl.optimize(node_labels)
+
+    # get indicators for merge !
+    # and return uv-ids, edge indicators and edge sizes
+    edge_indicator = (node_labels[uv_ids[:, 0]] == node_labels[uv_ids[:, 1]]).astype('uint8')
+    return uv_ids, edge_indicator, sizes
+
+
+def process_block(ds_ws, ds_affs, blocking, block_id, offsets,
+                  lifted_rf=None, lifted_nh=None):
+
+    print("Process block", block_id)
+    # load the segmentation
+    block = blocking.getBlock(block_id)
+    bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
+    ws = ds_ws[bb]
+
+    # if this block only contains a single segment id (usually 0 = ignore label) continue
+    ws_ids = np.unique(ws)
+    if len(ws_ids) == 1:
+        return None
+    n_labels = int(ws_ids[-1]) + 1
+
+    # TODO should we do this ?
+    # map to a consecutive segmentation to speed up graph computations
+    # ws, max_id, mapping = vigra.analysis.relabelConsecutive(ws, keep_zeros=True, start_label=1)
+
+    # load the affinities
+    n_channels = len(offsets)
+    bb_affs = (slice(0, n_channels),) + bb
+    affs = ds_affs[bb_affs]
+    # convert affinities to float and invert them
+    # to get boundary probabilities
+    if affs.dtype == np.dtype('uint8'):
+        affs = affs.astype('float32') / 255.
+    affs = 1. - affs
+
+    if lifted_rf is None:
+        uv_ids, edge_indicator, sizes = compute_mc(ws, affs, offsets, n_labels)
+    else:
+        assert lifted_nh is not None
+        n_aff_chans = ds_affs.shapa[0]
+        bb_glia = (slice(n_aff_chans - 1, n_aff_chans),) + bb
+        glia = ds_affs[bb_glia]
+        uv_ids, edge_indicator, sizes = compute_lmc(ws, affs, glia, offsets, n_labels,
+                                                    lifted_rf, lifted_nh)
+
+    return uv_ids, edge_indicator, sizes
+
+
 def compute_merge_votes(path, aff_key, ws_key, job_id,
                         tmp_folder, config_path, prefix):
 
@@ -254,6 +335,8 @@ def compute_merge_votes(path, aff_key, ws_key, job_id,
     block_shape, block_shift = config['block_shape2'], config['block_shift']
     offsets = config['affinity_offsets']
     weight_edges = config['weight_edges']
+    lifted_rf_path = config.get('lifted_rf_path', None)
+    lifted_nh = config.get('lifted_nh', None)
 
     # open all n5 datasets
     ds_ws = z5py.File(path)[ws_key]
@@ -263,8 +346,15 @@ def compute_merge_votes(path, aff_key, ws_key, job_id,
     blocking = nifty.tools.blocking([0, 0, 0], list(shape), block_shape,
                                     blockShift=block_shift)
 
-    results = [segment_block(ds_ws, ds_affs,
-                             blocking, block_id, offsets)
+    if lifted_rf_path is not None:
+        with open(lifted_rf_path, 'rb') as f:
+            lifted_rf = pickle.load(f)
+    else:
+        lifted_rf = None
+
+    results = [process_block(ds_ws, ds_affs,
+                             blocking, block_id, offsets,
+                             lifted_rf, lifted_nh)
                for block_id in block_list]
     results = [res for res in results if res is not None]
 
