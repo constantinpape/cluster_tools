@@ -64,4 +64,5 @@ class ConsensusStitchingWorkflow(luigi.Task):
             f.write('Success')
 
     def output(self):
-        return luigi.LocalTarget(os.path.join(self.tmp_folder, 'consensus_stitching_workflow.log'))
+        out_path = os.path.join(self.tmp_folder, 'consensus_stitching_workflow.log')
+        return luigi.LocalTarget(out_path)

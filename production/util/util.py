@@ -2,6 +2,7 @@ import os
 import stat
 import fileinput
 from shutil import copy, rmtree
+import luigi
 
 
 # https://stackoverflow.com/questions/39086/search-and-replace-a-line-in-a-file-in-python
@@ -42,3 +43,9 @@ def make_dirs(tmp_folder):
         os.mkdir(err_dir)
     except OSError:
         pass
+
+
+# Dummy task that is always fullfilled
+class DummyTask(luigi.Task):
+    def output(self):
+        return luigi.LocalTarget('.')

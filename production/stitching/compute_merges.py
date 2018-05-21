@@ -72,6 +72,7 @@ class MergesTask(luigi.Task):
             subprocess.call([command], shell=True)
         else:
             subprocess.call([bsub_command], shell=True)
+            util.wait_for_jobs('papec')
 
         out_path = self.output().path
         success = os.path.exists(out_path)
