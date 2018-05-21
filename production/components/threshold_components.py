@@ -307,7 +307,7 @@ def threshold_blocks(path, aff_key, mask_key, out_key,
         block_ids = input_config['block_list']
         config = input_config['config']
         block_shape = config['block_shape']
-        use_dt = config['use_dt']
+        use_dt = 'distance_threshold' in config
 
     blocking = nifty.tools.blocking([0, 0, 0],
                                     list(shape),

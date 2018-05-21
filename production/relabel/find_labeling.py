@@ -68,9 +68,7 @@ class FindLabelingTask(luigi.Task):
 
         try:
             out_path = self.output().path
-            with open(out_path) as f:
-                json.load(f)['t']
-            success = True
+            success = os.path.exists(out_path)
         except Exception:
             success = False
 

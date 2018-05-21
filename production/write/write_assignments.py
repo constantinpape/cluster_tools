@@ -61,10 +61,10 @@ class WriteAssignmentTask(luigi.Task):
                                                    config_path, assignment_path, self.tmp_folder, job_id)
         else:
             command = '%s %s %s %s %s %s %s %i --offset_path %s' % (script_path, self.path,
-                                                                     self.in_key, self.out_key,
-                                                                     config_path, assignment_path,
-                                                                     self.tmp_folder, job_id,
-                                                                     self.offset_path)
+                                                                    self.in_key, self.out_key,
+                                                                    config_path, assignment_path,
+                                                                    self.tmp_folder, job_id,
+                                                                    self.offset_path)
         log_file = os.path.join(self.tmp_folder, 'logs', 'log_write_assignments_%i' % job_id)
         err_file = os.path.join(self.tmp_folder, 'error_logs', 'err_write_assignments_%i.err' % job_id)
         bsub_command = 'bsub -J write_assignments_%i -We %i -o %s -e %s \'%s\'' % (job_id,
@@ -167,7 +167,11 @@ def write_block_with_offsets(ds_in, ds_out, blocking, block_id, node_labels, off
     seg = ds_in[bb]
     mask = seg != 0
     seg[mask] += off
-    seg = nifty.tools.take(node_labels, seg)
+    # choose the appropriate function for array or dictionary
+    if isinstance(node_labels, np.ndarray):
+        seg = nifty.tools.take(node_labels, seg)
+    else:
+        seg = nifty.tools.takeDict(node_labels, seg)
     ds_out[bb] = seg
     return time.time() - t0
 
@@ -181,6 +185,7 @@ def write_block(ds_in, ds_out, blocking, block_id, node_labels):
     # check if this block is empty and don't write if so
     if np.sum(mask) == 0:
         return time.time() - t0
+    # choose the appropriate function for array or dictionary
     if isinstance(node_labels, np.ndarray):
         seg = nifty.tools.take(node_labels, seg)
     else:
