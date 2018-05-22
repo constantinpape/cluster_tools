@@ -1,10 +1,76 @@
 import vigra
 import numpy as np
+from concurrent import futures
 
 import nifty
 import nifty.graph.agglo as nagglo
 import nifty.graph.rag as nrag
 import nifty.graph.opt.lifted_multicut as nlmc
+
+
+def node_z_coord(ws, n_labels):
+    nz = np.zeros(n_labels, dtype='uint32')
+    for z in range(ws.shape[0]):
+        nz[ws[z]] = z
+    return nz
+
+
+def edge_indications(uv_ids, node_z):
+    z_u = node_z[uv_ids[:, 0]]
+    z_v = node_z[uv_ids[:, 1]]
+    return z_u != z_v
+
+
+def accumulate_filter(rag, input_, filter_, sigma, edge_direction=2):
+    response = filter_(input_, sigma)
+    if response.ndim == 3:
+        features = nrag.accumulateEdgeFeaturesFlat(rag, response,
+                                                   response.max(), response.min(),
+                                                   numberOfThreads=1,
+                                                   zDirection=edge_direction)[:, None]
+    else:
+        features = np.concatenate([nrag.accumulateEdgeFeaturesFlat(rag, response[..., c],
+                                                                   response[..., c], response[..., c],
+                                                                   numberOfThreads=1,
+                                                                   zDirection=edge_direction)[:, None]
+                                   for c in response.shape[-1]], axis=1)
+    return features
+
+
+def edge_features(rag, ws, n_labels, uv_ids, affs, n_threads=1):
+
+    # get the input maps for xy and z features
+    bmap_xy = np.mean(affs[1:], axis=0)
+    bmap_z = affs[0]
+
+    node_z = node_z_coord(ws, n_labels)
+    z_edge_mask = edge_indications(uv_ids, node_z)
+
+    # TODO try to use fastfilters ?
+    filters = [vigra.filters.gaussianSmoothing,
+               vigra.filters.laplacianOfGaussian,
+               vigra.filters.hessianOfGaussianEigenvalues]
+    sigmas = [1.6, 4.2, 8.3]
+
+    def feature_channel(filter_, sigma):
+        feats = accumulate_filter(rag, bmap_xy, filter_, sigma)
+        feats_z = accumulate_filter(rag, bmap_z, filter_, sigma)
+        feats[z_edge_mask] = feats_z[z_edge_mask]
+        return feats
+
+    if n_threads == 1:
+        features = np.concatenate([feature_channel(filter_, sigma)
+                                   for filter_ in filters for sigma in sigmas],
+                                  axis=1)
+    else:
+        with futures.ThreadPoolExecutor(n_threads) as tp:
+            tasks = [tp.submit(feature_channel, filter_, sigma)
+                     for filter_ in filters for sigma in sigmas]
+            features = np.concatenate([t.result() for t in tasks], axis=1)
+
+    sizes = nrag.accumulateEdgeMeanAndLength(rag, bmap_xy, numberOfThreads=n_threads)[:, 1]
+    features = np.concatenate([features, sizes[:, None]], axis=1)
+    return features, sizes
 
 
 def make_filtered_lifted_nh(rag, n_labels, uv_ids, lifted_nh):
@@ -21,7 +87,7 @@ def make_filtered_lifted_nh(rag, n_labels, uv_ids, lifted_nh):
     filtered_uv_ids = uv_ids[edge_mask]
 
     # get the corresponding lifted nh
-    graph = nifty.undirectedGraph(n_labels)
+    graph = nifty.graph.undirectedGraph(n_labels)
     graph.insertEdges(filtered_uv_ids)
     lifted_objective = nlmc.liftedMulticutObjective(graph)
     lifted_objective.insertLiftedEdgesBfs(lifted_nh)
@@ -29,11 +95,12 @@ def make_filtered_lifted_nh(rag, n_labels, uv_ids, lifted_nh):
 
     # next, get the full lifted nh and post filter it for
     # small - to - small fragment connections
-    graph = nifty.undirectedGraph(n_labels)
+    graph = nifty.graph.undirectedGraph(n_labels)
     graph.insertEdges(uv_ids)
     lifted_objective = nlmc.liftedMulticutObjective(graph)
     lifted_objective.insertLiftedEdgesBfs(lifted_nh)
     additional_lifted_uv_ids = lifted_objective.liftedUvIds()
+    full_lifted = len(additional_lifted_uv_ids)
 
     # filter edges that connect to small fragments
     edge_mask = np.in1d(additional_lifted_uv_ids,
@@ -42,7 +109,7 @@ def make_filtered_lifted_nh(rag, n_labels, uv_ids, lifted_nh):
     additional_lifted_uv_ids = additional_lifted_uv_ids[edge_mask]
     if additional_lifted_uv_ids.size:
         lifted_uv_ids = np.concatenate([lifted_uv_ids, additional_lifted_uv_ids], axis=0)
-    print("Filtered number of lifted edges:", len(lifted_uv_ids))
+    print("Filtered number of lifted edges from", len(lifted_uv_ids), "to", full_lifted)
     return lifted_uv_ids
 
 
