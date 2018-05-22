@@ -279,9 +279,9 @@ def compute_lmc(ws, affs, glia, offsets, n_labels, lifted_rf, lifted_nh,
 
     # build the original graph and lifted objective
     # with lifted uv-ids
+    lifted_uv_ids = feat.make_filtered_lifted_nh(rag, n_labels, uv_ids, lifted_nh)
     graph = nifty.graph.undirectedGraph(n_labels)
     graph.insertEdges(uv_ids)
-    lifted_uv_ids = feat.make_filtered_lifted_nh(rag, graph, lifted_nh)
 
     # we may not get any lifted edges, in this case, fall back to normal multicut
     if lifted_uv_ids.size == 0:

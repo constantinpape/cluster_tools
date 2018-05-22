@@ -7,21 +7,41 @@ import nifty.graph.rag as nrag
 import nifty.graph.opt.lifted_multicut as nlmc
 
 
-def make_filtered_lifted_nh(rag, graph, lifted_nh):
-    # make lifted neighborhood, only connecting extended nodes
-    # which small fragments and other extended nodes, but not
-    # small fragments with small fragments
+def make_filtered_lifted_nh(rag, n_labels, uv_ids, lifted_nh):
+    # we can't build the full lifted nh, because the extended fragments
+    # connect short-cut lifted edges.
+    # Hence, we only create the nhood of small - to - snall fragments WITHOUT extended fragments,
+    # small - to - extended and extended to extended
 
+    # find the extended nodes
     extended_node_list = np.array(nrag.findZExtendedNodes(rag), dtype='uint32')
-    # get the full lifted nh
+    # filter the initial uv ids to exclude extended nodes
+    edge_mask = np.in1d(uv_ids, extended_node_list).reshape(uv_ids.shape)
+    edge_mask = (edge_mask == 0).all(axis=1)
+    filtered_uv_ids = uv_ids[edge_mask]
+
+    # get the corresponding lifted nh
+    graph = nifty.undirectedGraph(n_labels)
+    graph.insertEdges(filtered_uv_ids)
     lifted_objective = nlmc.liftedMulticutObjective(graph)
     lifted_objective.insertLiftedEdgesBfs(lifted_nh)
     lifted_uv_ids = lifted_objective.liftedUvIds()
+
+    # next, get the full lifted nh and post filter it for
+    # small - to - small fragment connections
+    graph = nifty.undirectedGraph(n_labels)
+    graph.insertEdges(uv_ids)
+    lifted_objective = nlmc.liftedMulticutObjective(graph)
+    lifted_objective.insertLiftedEdgesBfs(lifted_nh)
+    additional_lifted_uv_ids = lifted_objective.liftedUvIds()
+
     # filter edges that connect to small fragments
-    edge_mask = np.in1d(lifted_uv_ids, extended_node_list).reshape(lifted_uv_ids.shape)
+    edge_mask = np.in1d(additional_lifted_uv_ids,
+                        extended_node_list).reshape(additional_lifted_uv_ids.shape)
     edge_mask = np.sum(edge_mask, axis=1) > 1
-    print("Initial number of lifted edges:", len(lifted_uv_ids))
-    lifted_uv_ids = lifted_uv_ids[edge_mask]
+    additional_lifted_uv_ids = additional_lifted_uv_ids[edge_mask]
+    if additional_lifted_uv_ids.size:
+        lifted_uv_ids = np.concatenate([lifted_uv_ids, additional_lifted_uv_ids], axis=0)
     print("Filtered number of lifted edges:", len(lifted_uv_ids))
     return lifted_uv_ids
 

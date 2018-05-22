@@ -56,9 +56,9 @@ def extract_feats_and_labels(path, aff_key, ws_key, gt_key, mask_key, lifted_nh,
 
     # compute the lifted graph and lifted features
     print("Computing lifted objective")
+    lifted_uv_ids = feat.make_filtered_lifted_nh(rag, n_labels, uv_ids, lifted_nh)
     graph = nifty.graph.undirectedGraph(n_labels)
     graph.insertEdges(uv_ids)
-    lifted_uv_ids = feat.make_filtered_lifted_nh(rag, graph, lifted_nh)
     lifted_objective = nlmc.liftedMulticutObjective(graph)
 
     # TODO parallelize some of these
