@@ -10,14 +10,10 @@ import subprocess
 import vigra
 import numpy as np
 import nifty
-import nifty.graph.rag as nrag
-import nifty.graph.opt.lifted_multicut as nlmc
 import z5py
-import cremi_tools.segmentation as cseg
 import luigi
 from concurrent import futures
-# TODO needs to be in pythonpath
-from production import features as feat
+from production import multicut
 
 
 # TODO more clean up (job config files)
@@ -171,7 +167,7 @@ class MergeVotesTask(luigi.Task):
 
         else:
             log_path = os.path.join(self.tmp_folder, 'compute_merge_votes_partial.json')
-            msg = "FillingWatershedTask failed "
+            msg = "MergeVotesTask failed "
             msg += "%i / %i jobs processed for blocking a " % (len(processed_jobs_a), n_jobs1)
             msg += "%i / %i jobs processed for blocking b " % (len(processed_jobs_b), n_jobs2)
             msg += "serialized partial results to %s" % log_path
@@ -185,153 +181,10 @@ class MergeVotesTask(luigi.Task):
         return luigi.LocalTarget(os.path.join(self.tmp_folder, 'compute_merge_votes.log'))
 
 
-# we refactor this further to make it possible to
-# call from compute_mc and compute_lmc
-def run_mc(graph, probs, uv_ids,
-           edge_sizes=None, weighting_exponent=None, filter_ignore=False):
-    # build multicut solver
-    # TODO enable weighting by edge size
-    mc = cseg.Multicut('kernighan-lin', weight_edges=edge_sizes is not None)
-
-    # if we still have edges to ignore label, filter them (if we come here from lifted mc, we don't)
-    # set edges connecting to 0 (= ignore label) to repulsive
-    # (implemented like this, because we don't need to filter if we
-    # come here from LMC workflow)
-    if filter_ignore:
-        ignore_edges = (uv_ids == 0).any(axis=1)
-        # if we have edge sizes, set them to 1 for ignore edges,
-        # to not skew the max calculation
-        if edge_sizes is not None:
-            edge_sizes[ignore_edges] = 1
-
-    # transform probabilities to costs
-    if edge_sizes is not None:
-        costs = mc.probabilities_to_costs(probs, edge_sizes=edge_sizes,
-                                          weighting_exponent=weighting_exponent)
-    else:
-        costs = mc.probabilities_to_costs(probs)
-
-    if filter_ignore:
-        costs[ignore_edges] = -100
-
-    # solve the mc problem
-    node_labels = mc(graph, costs)
-
-    # get indicators for merge !
-    # and return uv-ids, edge indicators and edge sizes
-    edge_indicator = (node_labels[uv_ids[:, 0]] == node_labels[uv_ids[:, 1]]).astype('uint8')
-    return edge_indicator
-
-
-def compute_mc(ws, affs, offsets, n_labels, weight_mulitcut_edges, weighting_exponent):
-    # compute the region adjacency graph
-    rag = nrag.gridRag(ws,
-                       numberOfLabels=n_labels,
-                       numberOfThreads=1)
-    uv_ids = rag.uvIds()
-
-    # compute the features and get edge probabilities (from mean affinities)
-    # and edge sizes
-    features = nrag.accumulateAffinityStandartFeatures(rag, affs, offsets,
-                                                       numberOfThreads=1)
-    probs = features[:, 0]
-    sizes = features[:, -1].astype('uint64')
-
-    graph = nifty.graph.undirectedGraph(n_labels)
-    graph.insertEdges(uv_ids)
-    # compute multicut edge results
-    edge_indicator = run_mc(graph, probs, uv_ids,
-                            filter_ignore=True,
-                            edge_sizes=sizes if weight_mulitcut_edges else None,
-                            weighting_exponent=weighting_exponent)
-
-    return uv_ids, edge_indicator, sizes
-
-
-def compute_lmc(ws, affs, glia, offsets, n_labels, lifted_rf, lifted_nh,
-                weight_mulitcut_edges, weighting_exponent):
-    # compute the region adjacency graph
-    rag = nrag.gridRag(ws,
-                       numberOfLabels=n_labels,
-                       numberOfThreads=1)
-    uv_ids = rag.uvIds()
-
-    # compute the features and get edge probabilities (from mean affinities)
-    # and edge sizes
-    features = nrag.accumulateAffinityStandartFeatures(rag, affs, offsets,
-                                                       numberOfThreads=1)
-    local_probs = features[:, 0]
-    sizes = features[:, -1].astype('uint64')
-
-    # remove all edges connecting to the ignore label, because
-    # they introduce short-cut lifted edges
-    valid_edges = (uv_ids != 0).all(axis=1)
-    uv_ids = uv_ids[valid_edges]
-
-    # if we only had a single edge to ignore label, we can end up
-    # with empty uv-ids at this point.
-    # if so, return None
-    if uv_ids.size == 0:
-        return None, None, None
-
-    local_probs = local_probs[valid_edges]
-    sizes = sizes[valid_edges]
-
-    # build the original graph and lifted objective
-    # with lifted uv-ids
-    lifted_uv_ids = feat.make_filtered_lifted_nh(rag, n_labels, uv_ids, lifted_nh)
-    graph = nifty.graph.undirectedGraph(n_labels)
-    graph.insertEdges(uv_ids)
-
-    # we may not get any lifted edges, in this case, fall back to normal multicut
-    if lifted_uv_ids.size == 0:
-        edge_indicator = run_mc(graph, local_probs, uv_ids,
-                                weighting_exponent=weighting_exponent,
-                                edge_sizes=sizes if weight_mulitcut_edges else None)
-        return uv_ids, edge_indicator, sizes
-
-    lifted_objective = nlmc.liftedMulticutObjective(graph)
-
-    # get features for the lifted edges
-    lifted_feats = np.concatenate([  # feat.ucm_features(n_labels, lifted_objective, local_probs),
-                                   feat.clustering_features(graph, local_probs, lifted_uv_ids),
-                                   feat.ucm_features(n_labels, uv_ids, lifted_uv_ids, local_probs),
-                                   feat.region_features(ws, lifted_uv_ids, glia)], axis=1)
-    lifted_probs = lifted_rf.predict_proba(lifted_feats)[:, 1]
-
-    # turn probabilities into costs
-    # TODO enable weighting by edge size
-    local_costs = cseg.transform_probabilities_to_costs(local_probs,
-                                                        edge_sizes=sizes if weight_mulitcut_edges else None,
-                                                        weighting_exponent=weighting_exponent)
-    lifted_costs = cseg.transform_probabilities_to_costs(lifted_probs)
-
-    # we don't weight, because we might just have few lifted edges
-    # and this would downvote the local edges significantly
-    # weight the costs
-    # n_local, n_lifted = len(uv_ids), len(lifted_uv_ids)
-    # total = float(n_lifted) + n_local
-    # local_costs *= (n_lifted / total)
-    # lifted_costs *= (n_local / total)
-
-    # update the lmc objective
-    lifted_objective.setCosts(uv_ids, local_costs)
-    lifted_objective.setCosts(lifted_uv_ids, lifted_costs)
-
-    # compute lifted multicut
-    solver_ga = lifted_objective.liftedMulticutGreedyAdditiveFactory().create(lifted_objective)
-    node_labels = solver_ga.optimize()
-    solver_kl = lifted_objective.liftedMulticutKernighanLinFactory().create(lifted_objective)
-    node_labels = solver_kl.optimize(node_labels)
-
-    # get indicators for merge !
-    # and return uv-ids, edge indicators and edge sizes
-    edge_indicator = (node_labels[uv_ids[:, 0]] == node_labels[uv_ids[:, 1]]).astype('uint8')
-    return uv_ids, edge_indicator, sizes
-
-
 def process_block(ds_ws, ds_affs, blocking, block_id, offsets,
-                  lifted_rf=None, lifted_nh=None, weight_mulitcut_edges=0):
+                  use_lifted=False, rf=None, lifted_nh=None,
+                  weight_mulitcut_edges=False,
+                  weighting_exponent=1):
 
     print("Process block", block_id)
     # load the segmentation
@@ -358,20 +211,37 @@ def process_block(ds_ws, ds_affs, blocking, block_id, offsets,
         affs = affs.astype('float32') / 255.
     affs = 1. - affs
 
-    if lifted_rf is None:
-        uv_ids, edge_indicator, sizes = compute_mc(ws, affs, offsets, n_labels, weight_mulitcut_edges)
+    if use_lifted:
+        if rf is None:
+            uv_ids, edge_indicator, sizes = multicut.compute_lmc(ws, affs, offsets, n_labels,
+                                                                 weight_mulitcut_edges,
+                                                                 weighting_exponent)
+
+        else:
+            n_aff_chans = ds_affs.shape[0]
+            bb_glia = (slice(n_aff_chans - 1, n_aff_chans),) + bb
+            glia = ds_affs[bb_glia]
+            if glia.dtype == np.dtype('uint8'):
+                glia = glia.astype('float32') / 255.
+            uv_ids, edge_indicator, sizes = multicut.compute_lmc_learned(ws, affs, glia,
+                                                                         offsets, n_labels,
+                                                                         rf, lifted_nh,
+                                                                         weight_mulitcut_edges,
+                                                                         weighting_exponent)
     else:
-        assert lifted_nh is not None
-        n_aff_chans = ds_affs.shape[0]
-        bb_glia = (slice(n_aff_chans - 1, n_aff_chans),) + bb
-        glia = ds_affs[bb_glia]
-        if glia.dtype == np.dtype('uint8'):
-            glia = glia.astype('float32') / 255.
-        uv_ids, edge_indicator, sizes = compute_lmc(ws, affs, glia, offsets, n_labels,
-                                                    lifted_rf, lifted_nh, weight_mulitcut_edges)
-        # check for empty results
-        if uv_ids is None:
-            return None
+        if rf is None:
+            uv_ids, edge_indicator, sizes = multicut.compute_mc(ws, affs,
+                                                                offsets, n_labels,
+                                                                weight_mulitcut_edges,
+                                                                weighting_exponent)
+        else:
+            uv_ids, edge_indicator, sizes = multicut.compute_mc_learned(ws, affs,
+                                                                        offsets, n_labels,
+                                                                        weight_mulitcut_edges,
+                                                                        weighting_exponent, rf)
+    # check for empty results
+    if uv_ids is None:
+        return None
 
     # map back to the original ids
     uv_ids = nifty.tools.takeDict(reverse_mapping, uv_ids).astype('uint64')
@@ -392,7 +262,8 @@ def compute_merge_votes(path, aff_key, ws_key, job_id,
     weight_merge_edges = config['weight_merge_edges']
     weight_mulitcut_edges = config['weight_multicut_edges']
     weighting_exponent = config.get('weighting_exponent', 1.)
-    lifted_rf_path = config.get('lifted_rf_path', None)
+    use_lifted = config.get('use_lifted', False)
+    rf_path = config.get('rf_path', None)
     lifted_nh = config.get('lifted_nh', None)
 
     # open all n5 datasets
@@ -403,15 +274,26 @@ def compute_merge_votes(path, aff_key, ws_key, job_id,
     blocking = nifty.tools.blocking([0, 0, 0], list(shape), block_shape,
                                     blockShift=block_shift)
 
-    if lifted_rf_path is not None:
-        with open(lifted_rf_path, 'rb') as f:
-            lifted_rf = pickle.load(f)
+    if rf_path is not None:
+        if use_lifted:
+            assert lifted_nh is not None
+            assert len(rf_path) == 1
+            with open(rf_path[0], 'rb') as f:
+                rf = pickle.load(f)
+        else:
+            assert len(rf_path) == 2
+            rf = []
+            with open(rf_path[0], 'rb') as f:
+                rf.append(pickle.load(f))
+            with open(rf_path[1], 'rb') as f:
+                rf.append(pickle.load(f))
     else:
-        lifted_rf = None
+        rf = None
 
     results = [process_block(ds_ws, ds_affs,
-                             blocking, block_id, offsets,
-                             lifted_rf, lifted_nh,
+                             blocking, block_id,
+                             offsets,
+                             use_lifted, rf, lifted_nh,
                              weight_mulitcut_edges, weighting_exponent)
                for block_id in block_list]
     results = [res for res in results if res is not None]

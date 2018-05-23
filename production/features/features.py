@@ -2,6 +2,13 @@ import vigra
 import numpy as np
 from concurrent import futures
 
+# fastfilters import segfaults :(
+# try:
+#     import fastfilters as ff
+# except ImportError:
+#     import vigra.filters as ff
+import vigra.filters as ff
+
 import nifty
 import nifty.graph.agglo as nagglo
 import nifty.graph.rag as nrag
@@ -22,18 +29,20 @@ def edge_indications(uv_ids, node_z):
 
 
 def accumulate_filter(rag, input_, filter_, sigma, edge_direction=2):
-    response = filter_(input_, sigma)
+    response = np.concatenate([filter_(inp, sigma)[None] for inp in input_], axis=0)
     if response.ndim == 3:
         features = nrag.accumulateEdgeFeaturesFlat(rag, response,
-                                                   response.max(), response.min(),
+                                                   response.min(), response.max(),
                                                    numberOfThreads=1,
-                                                   zDirection=edge_direction)[:, None]
+                                                   zDirection=edge_direction)
     else:
         features = np.concatenate([nrag.accumulateEdgeFeaturesFlat(rag, response[..., c],
-                                                                   response[..., c], response[..., c],
+                                                                   response[..., c].min(),
+                                                                   response[..., c].max(),
                                                                    numberOfThreads=1,
-                                                                   zDirection=edge_direction)[:, None]
-                                   for c in response.shape[-1]], axis=1)
+                                                                   zDirection=edge_direction)
+                                   for c in range(response.shape[-1])],
+                                  axis=1)
     return features
 
 
@@ -47,9 +56,9 @@ def edge_features(rag, ws, n_labels, uv_ids, affs, n_threads=1):
     z_edge_mask = edge_indications(uv_ids, node_z)
 
     # TODO try to use fastfilters ?
-    filters = [vigra.filters.gaussianSmoothing,
-               vigra.filters.laplacianOfGaussian,
-               vigra.filters.hessianOfGaussianEigenvalues]
+    filters = [ff.gaussianSmoothing,
+               ff.laplacianOfGaussian,
+               ff.hessianOfGaussianEigenvalues]
     sigmas = [1.6, 4.2, 8.3]
 
     def feature_channel(filter_, sigma):
@@ -68,9 +77,11 @@ def edge_features(rag, ws, n_labels, uv_ids, affs, n_threads=1):
                      for filter_ in filters for sigma in sigmas]
             features = np.concatenate([t.result() for t in tasks], axis=1)
 
-    sizes = nrag.accumulateEdgeMeanAndLength(rag, bmap_xy, numberOfThreads=n_threads)[:, 1]
-    features = np.concatenate([features, sizes[:, None]], axis=1)
-    return features, sizes
+    sizes = nrag.accumulateEdgeMeanAndLength(rag, bmap_xy,
+                                             numberOfThreads=n_threads)[:, 1].astype('uint64')
+    features = np.concatenate([features,
+                               sizes[:, None].astype('float32')], axis=1)
+    return features, sizes, z_edge_mask
 
 
 def make_filtered_lifted_nh(rag, n_labels, uv_ids, lifted_nh):

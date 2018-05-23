@@ -16,7 +16,7 @@ import luigi
 
 # TODO more clean up (job config files)
 # TODO computation with rois
-class FillingWatershedTask(luigi.Task):
+class Watershed2dTask(luigi.Task):
     """
     Run watersheds to fill up components
     """
@@ -24,22 +24,17 @@ class FillingWatershedTask(luigi.Task):
     # path to the n5 file and keys
     path = luigi.Parameter()
     aff_key = luigi.Parameter()
-    seeds_key = luigi.Parameter()
     mask_key = luigi.Parameter()
+    out_key = luigi.Parameter()
     # maximal number of jobs that will be run in parallel
     max_jobs = luigi.IntParameter()
     # path to the configuration
     config_path = luigi.Parameter()
     tmp_folder = luigi.Parameter()
-    # the task that makes the seeds
-    dependency = luigi.TaskParameter()
     # FIXME default does not work; this still needs to be specified
     time_estimate = luigi.IntParameter(default=10)
     run_local = luigi.BoolParameter(default=False)
     # TODO optional parameter to just run a subset of blocks
-
-    def requires(self):
-        return self.dependency
 
     # TODO there must be a more efficient way to do this
     def _make_checkerboard(self, blocking):
@@ -70,21 +65,21 @@ class FillingWatershedTask(luigi.Task):
             block_jobs = block_list[job_id::n_jobs]
             job_config = {'config': config,
                           'block_list': block_jobs}
-            config_path = os.path.join(self.tmp_folder, 'filling_watershed_config_%s_job%i.json' % (prefix,
-                                                                                                    job_id))
+            config_path = os.path.join(self.tmp_folder, 'watershed2d_config_%s_job%i.json' % (prefix,
+                                                                                              job_id))
             with open(config_path, 'w') as f:
                 json.dump(job_config, f)
 
     def _submit_job(self, job_id, prefix):
-        script_path = os.path.join(self.tmp_folder, 'filling_watershed.py')
+        script_path = os.path.join(self.tmp_folder, 'watersheds_2d.py')
         assert os.path.exists(script_path)
-        config_path = os.path.join(self.tmp_folder, 'filling_watershed_config_%s_job%i.json' % (prefix,
-                                                                                                job_id))
+        config_path = os.path.join(self.tmp_folder, 'watershed2d_config_%s_job%i.json' % (prefix,
+                                                                                          job_id))
         command = '%s %s %s %s %s %i %s %s' % (script_path, self.path, self.aff_key,
-                                               self.seeds_key, self.mask_key,
+                                               self.mask_key, self.out_key,
                                                job_id, config_path, self.tmp_folder)
-        log_file = os.path.join(self.tmp_folder, 'logs', 'log_filling_watershed_%s_%i' % (prefix, job_id))
-        err_file = os.path.join(self.tmp_folder, 'error_logs', 'err_filling_watershed_%s_%i.err' % (prefix, job_id))
+        log_file = os.path.join(self.tmp_folder, 'logs', 'log_watershed2d_%s_%i' % (prefix, job_id))
+        err_file = os.path.join(self.tmp_folder, 'error_logs', 'err_watershed2d_%s_%i.err' % (prefix, job_id))
         bsub_command = 'bsub -J filling_watershed_%i -We %i -o %s -e %s \'%s\'' % (job_id,
                                                                                    self.time_estimate,
                                                                                    log_file, err_file, command)
@@ -113,7 +108,7 @@ class FillingWatershedTask(luigi.Task):
         times = []
         processed_blocks = []
         for block_id in range(n_blocks):
-            res_file = os.path.join(self.tmp_folder, 'filling_watershed_block%i.json' % block_id)
+            res_file = os.path.join(self.tmp_folder, 'watershed_2d_block%i.json' % block_id)
             try:
                 with open(res_file) as f:
                     res = json.load(f)
@@ -129,22 +124,28 @@ class FillingWatershedTask(luigi.Task):
 
         # copy the script to the temp folder and replace the shebang
         file_dir = os.path.dirname(os.path.abspath(__file__))
-        util.copy_and_replace(os.path.join(file_dir, 'filling_watershed.py'),
-                              os.path.join(self.tmp_folder, 'filling_watershed.py'))
+        util.copy_and_replace(os.path.join(file_dir, 'watersheds_2d.py'),
+                              os.path.join(self.tmp_folder, 'watersheds_2d.py'))
 
         with open(self.config_path) as f:
             config = json.load(f)
             block_shape = config['block_shape']
+            chunks = tuple(config['chunks'])
             # TODO support computation with roi
             if 'roi' in config:
                 have_roi = True
 
         # get the shape
         f5 = z5py.File(self.path)
-        shape = f5[self.seeds_key].shape
-        blocking = nifty.tools.blocking([0, 0, 0], shape, block_shape)
+        shape = f5[self.mask_key].shape
 
-        # TODO need to divide the blocks in 2 parts, defining a checkerboard pattern
+        # require the output dataset
+        f5.require_dataset(self.out_key, shape=shape, chunks=chunks,
+                           compression='gzip', dtype='uint64')
+
+        # get the blocking
+        blocking = nifty.tools.blocking([0, 0, 0], shape, block_shape)
+        # divide the blocks in 2 parts, defining a checkerboard pattern
         blocks_a, blocks_b = self._make_checkerboard(blocking)
 
         # find the actual number of jobs and prepare job configs
@@ -174,20 +175,20 @@ class FillingWatershedTask(luigi.Task):
             json.dump({'times': times}, fres)
             fres.close()
         else:
-            log_path = os.path.join(self.tmp_folder, 'filling_watershed_partial.json')
+            log_path = os.path.join(self.tmp_folder, 'watersheds_2d_partial.json')
             with open(log_path, 'w') as out:
                 json.dump({'times': times,
                            'processed_blocks': processed_blocks}, out)
-            raise RuntimeError("FillingWatershedTask failed, %i / %i blocks processed, serialized partial results to %s" % (len(processed_blocks),
-                                                                                                                            n_blocks,
-                                                                                                                            log_path))
+            raise RuntimeError("Watershed2dTask failed, %i / %i blocks processed, serialized partial results to %s" % (len(processed_blocks),
+                                                                                                                       n_blocks,
+                                                                                                                       log_path))
 
     def output(self):
-        return luigi.LocalTarget(os.path.join(self.tmp_folder, 'filling_watershed.log'))
+        return luigi.LocalTarget(os.path.join(self.tmp_folder, 'watershed_2d.log'))
 
 
 def compute_max_seeds(hmap, boundary_threshold,
-                      sigma, offset):
+                      sigma, offset, mask, initial_seeds=None):
 
     # we only compute the seeds on the smaller crop of the volume
     seeds = np.zeros_like(hmap, dtype='uint64')
@@ -197,32 +198,40 @@ def compute_max_seeds(hmap, boundary_threshold,
         dtz = vigra.filters.distanceTransform((hmap[z] > boundary_threshold).astype('uint32'))
         if sigma > 0:
             vigra.filters.gaussianSmoothing(dtz, sigma, out=dtz)
+
         # compute local maxima of the distance transform, then crop
         seeds_z = vigra.analysis.localMaxima(dtz, allowPlateaus=True, allowAtBorder=True, marker=np.nan)
         seeds_z = vigra.analysis.labelImageWithBackground(np.isnan(seeds_z).view('uint8'))
+
+        seeds_z[mask[z]] = int(seeds_z.max()) + 1
         # add offset to the seeds
         seeds_z = seeds_z.astype('uint64')
         seeds_z[seeds_z != 0] += offset
-        offset = seeds_z.max() + 1
+        offset = int(seeds_z.max()) + 1
+
+        # check if we have initial seeds
+        # and add them up if we do (we should be guranteed that the ids do not overlap by
+        # the block ovelap added)
+        if initial_seeds is not None:
+            initial_seed_mask = initial_seeds[z] != 0
+            # print(seeds_z.shape, initial_seed_mask.shape, initial_seeds[z].shape)
+            seeds_z[initial_seed_mask] = initial_seeds[z][initial_seed_mask]
+
         # write seeds to the corresponding slice
         seeds[z] = seeds_z
     return seeds
 
 
-def run_2d_ws(hmap, seeds, mask, size_filter, offset):
+def run_2d_ws(hmap, seeds, mask, size_filter):
     # iterate over the slices
     for z in range(seeds.shape[0]):
 
         # we need to remap the seeds consecutively, because vigra
         # watersheds can only handle uint32 seeds, and we WILL overflow uint32
-        # however, we still need to seperate the additional from the extended seeds,
-        # so we offset them
-        additional_seeds_mask = seeds[z] >= offset
-        seeds_z, offz, old_to_new = vigra.analysis.relabelConsecutive(seeds[z],
-                                                                      start_label=1,
-                                                                      keep_zeros=True)
+        seeds_z, _, old_to_new = vigra.analysis.relabelConsecutive(seeds[z],
+                                                                   start_label=1,
+                                                                   keep_zeros=True)
         new_to_old = {new: old for old, new in old_to_new.items()}
-        additional_seeds_ids = np.unique(seeds_z[additional_seeds_mask])
         ws_z = vigra.analysis.watershedsNew(hmap[z], seeds=seeds_z.astype('uint32'))[0]
 
         # apply size_filter
@@ -230,7 +239,6 @@ def run_2d_ws(hmap, seeds, mask, size_filter, offset):
             ids, sizes = np.unique(ws_z, return_counts=True)
             filter_ids = ids[sizes < size_filter]
             # do not filter ids that belong to the extended seeds
-            filter_ids = filter_ids[np.in1d(filter_ids, additional_seeds_ids)]
             filter_mask = np.ma.masked_array(ws_z, np.in1d(ws_z, filter_ids)).mask
             ws_z[filter_mask] = 0
             vigra.analysis.watershedsNew(hmap[z], seeds=ws_z, out=ws_z)
@@ -247,24 +255,20 @@ def run_2d_ws(hmap, seeds, mask, size_filter, offset):
     return seeds, int(seeds.max())
 
 
-def ws_block(ds_affs, ds_seeds, ds_mask,
+def ws_block(ds_affs, ds_mask, ds_out,
              blocking, block_id, block_config,
-             empty_blocks, tmp_folder, offset):
+             tmp_folder):
 
     print("Processing block", block_id)
-    res_file = os.path.join(tmp_folder, 'filling_watershed_block%i.json' % block_id)
+    res_file = os.path.join(tmp_folder, 'watershed_2d_block%i.json' % block_id)
 
     t0 = time.time()
-    if block_id in empty_blocks:
-        with open(res_file, 'w') as f:
-            json.dump({'t': 0}, f)
-        return
 
     # get offset to make new seeds unique between blocks
     # (we need to relabel later to make processing efficient !)
-    offset +=  block_id * np.prod(blocking.blockShape)
+    offset = block_id * np.prod(blocking.blockShape)
 
-    boundary_threshold = block_config['boundary_threshold2']
+    boundary_threshold = block_config['boundary_threshold']
     sigma_maxima = block_config['sigma_maxima']
     size_filter = block_config['size_filter']
     if 'halo' in block_config:
@@ -282,6 +286,19 @@ def ws_block(ds_affs, ds_seeds, ds_mask,
         block = blocking.getBlock(block_id)
         bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
 
+    # load mask with halo if necessary
+    if with_halo:
+        mask = ds_mask[outer_bb].astype('bool')
+
+    else:
+        mask = ds_mask[bb].astype('bool')
+
+    # don't process empty blocks
+    if np.sum(mask) == 0:
+        with open(res_file, 'w') as f:
+            json.dump({'t': time.time() - t0}, f)
+        return
+
     bb_affs = (slice(1, 3),) + bb
 
     # load affinities and make heightmap for the watershed
@@ -290,11 +307,9 @@ def ws_block(ds_affs, ds_seeds, ds_mask,
         affs = affs.astype('float32') / 255.
     affs = np.mean(1. - affs, axis=0)
 
-    # load seeds and mask with halo if necessary and zero-pad hmap
+    # pad the affinities if we have halo
+    # and load the fragments from the neighbor blocks to use as seeds
     if with_halo:
-        seeds = ds_seeds[outer_bb]
-        mask = ds_mask[outer_bb].astype('bool')
-
         # calculate the correct padding
         inner_block = block.innerBlock
         outer_block = block.outerBlock
@@ -305,10 +320,10 @@ def ws_block(ds_affs, ds_seeds, ds_mask,
                                                                               outer_block.end))
 
         affs = np.pad(affs, padding, 'constant')
-        assert affs.shape == seeds.shape == mask.shape
+        assert affs.shape == mask.shape
+        initial_seeds = ds_out[outer_bb]
     else:
-        seeds = ds_seeds[bb]
-        mask = ds_mask[bb].astype('bool')
+        initial_seeds = None
 
     # load the mask and make the invalid mask by inversion
     inv_mask = np.logical_not(mask)
@@ -316,29 +331,24 @@ def ws_block(ds_affs, ds_seeds, ds_mask,
 
     # get the maxima seeds on 2d distance transform to fill gaps
     # in the extended seeds
-    max_seeds = compute_max_seeds(affs, boundary_threshold, sigma_maxima, offset)
-
-    # add maxima seeds where we don't have seeds from the distance transform components
-    # and where we are not in the invalid mask
-    unlabeled_in_seeds = np.logical_and(seeds == 0, mask)
-    seeds[unlabeled_in_seeds] += max_seeds[unlabeled_in_seeds]
+    seeds = compute_max_seeds(affs, boundary_threshold, sigma_maxima, offset, inv_mask, initial_seeds)
 
     # run the watershed
-    seeds, max_id = run_2d_ws(affs, seeds, inv_mask, size_filter, offset)
+    seeds, max_id = run_2d_ws(affs, seeds, inv_mask, size_filter)
 
     # write the result
-    ds_seeds[bb] = seeds[local_bb] if with_halo else seeds
+    ds_out[bb] = seeds[local_bb] if with_halo else seeds
     with open(res_file, 'w') as f:
         json.dump({'t': time.time() - t0}, f)
 
 
-def filling_ws(path, aff_key, seed_key, mask_key,
-               job_id, config_file, tmp_folder):
+def run_watersheds_2d(path, aff_key, mask_key, out_key,
+                      job_id, config_file, tmp_folder):
 
     f5 = z5py.File(path)
     ds_affs = f5[aff_key]
-    ds_seeds = f5[seed_key]
     ds_mask = f5[mask_key]
+    ds_out = f5[out_key]
 
     with open(config_file) as f:
         input_config = json.load(f)
@@ -346,33 +356,29 @@ def filling_ws(path, aff_key, seed_key, mask_key,
         config = input_config['config']
         block_shape = config['block_shape']
 
-    # TODO shouldn't hardcode the path
-    offsets_path = os.path.join(tmp_folder, 'block_offsets.json')
-    with open(offsets_path) as f:
-        offset_config = json.load(f)
-        empty_blocks = offset_config['empty_blocks']
-        offset = offset_config['n_labels']
-
-    shape = ds_seeds.shape
+    shape = ds_mask.shape
     blocking = nifty.tools.blocking([0, 0, 0], list(shape), list(block_shape))
 
-    [ws_block(ds_affs, ds_seeds, ds_mask,
+    [ws_block(ds_affs, ds_mask, ds_out,
               blocking, int(block_id), config,
-              empty_blocks, tmp_folder, offset) for block_id in block_list]
+              tmp_folder) for block_id in block_list]
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('path', type=str)
     parser.add_argument('aff_key', type=str)
-    parser.add_argument('seed_key')
     parser.add_argument('mask_key', type=str)
+    parser.add_argument('out_key', type=str)
     parser.add_argument('job_id', type=int)
     parser.add_argument('config_file', type=str)
     parser.add_argument('tmp_folder', type=str)
     args = parser.parse_args()
 
-    filling_ws(args.path, args.aff_key,
-               args.seed_key, args.mask_key,
-               args.job_id, args.config_file,
-               args.tmp_folder)
+    run_watersheds_2d(args.path,
+                      args.aff_key,
+                      args.mask_key,
+                      args.out_key,
+                      args.job_id,
+                      args.config_file,
+                      args.tmp_folder)

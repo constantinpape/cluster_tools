@@ -4,7 +4,7 @@ import numpy as np
 
 import nifty
 import nifty.graph.rag as nrag
-import nifty.graph.opt.lifted_multicut as nlmc
+# import nifty.graph.opt.lifted_multicut as nlmc
 
 import z5py
 from sklearn.ensemble import RandomForestClassifier
@@ -59,7 +59,6 @@ def extract_feats_and_labels(path, aff_key, ws_key, gt_key, mask_key, lifted_nh,
     lifted_uv_ids = feat.make_filtered_lifted_nh(rag, n_labels, uv_ids, lifted_nh)
     graph = nifty.graph.undirectedGraph(n_labels)
     graph.insertEdges(uv_ids)
-    lifted_objective = nlmc.liftedMulticutObjective(graph)
 
     # TODO parallelize some of these
     print("Computing lifted features")
@@ -93,13 +92,14 @@ def extract_feats_and_labels(path, aff_key, ws_key, gt_key, mask_key, lifted_nh,
     return features[valid_edges], labels[valid_edges]
 
 
-def learn_rf(paths, save_path, lifted_nh,
-             aff_key='volumes/predictions/affinities',
-             ws_key='volumes/labels/watershed',
-             gt_key='volumes/labels/neuron_ids',
-             mask_key='volumes/labels/mask',
-             offsets=[[-1, 0, 0], [0, -1, 0], [0, 0, -1]],
-             n_threads=40, n_trees=200):
+def learn_lifted_rf(paths, save_path, lifted_nh,
+                    aff_key='volumes/predictions/affinities',
+                    ws_key='volumes/labels/watershed',
+                    gt_key='volumes/labels/neuron_ids',
+                    mask_key='volumes/labels/mask',
+                    offsets=[[-1, 0, 0], [0, -1, 0], [0, 0, -1]],
+                    n_threads=40, n_trees=200,
+                    max_depth=None):
     assert all(os.path.exists(path) for path in paths)
     features, labels = [], []
     for path in paths:
@@ -115,7 +115,8 @@ def learn_rf(paths, save_path, lifted_nh,
     assert len(features) == len(labels)
 
     print("Start fitting rf ...")
-    rf = RandomForestClassifier(n_jobs=n_threads, n_estimators=n_trees, class_weight='balanced')
+    rf = RandomForestClassifier(n_jobs=n_threads, n_estimators=n_trees,
+                                class_weight='balanced', max_depth=max_depth)
     rf.fit(features, labels)
     print("... done")
     rf.n_jobs = 1
