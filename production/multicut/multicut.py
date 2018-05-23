@@ -53,9 +53,9 @@ class MulticutTask(luigi.Task):
         from .. import util
 
         # copy the script to the temp folder and replace the shebang
-        script_path = os.path.join(self.tmp_folder, 'single_multicut.py')
+        script_path = os.path.join(self.tmp_folder, 'multicut.py')
         file_dir = os.path.dirname(os.path.abspath(__file__))
-        util.copy_and_replace(os.path.join(file_dir, 'single_multicut.py'), script_path)
+        util.copy_and_replace(os.path.join(file_dir, 'multicut.py'), script_path)
 
         with open(self.config_path) as f:
             config = json.load(f)
@@ -74,8 +74,8 @@ class MulticutTask(luigi.Task):
                            chunks=chunks, dtype='uint64', compression='gzip')
 
         config_path = os.path.join(self.tmp_folder, 'multicut_config.json')
-        command = '%s %s %s %s %s %s' % (script_path, self.path, self.aff_key, self.ws_key,
-                                         self.tmp_folder, config_path)
+        command = '%s %s %s %s %s %s %s' % (script_path, self.path, self.aff_key, self.ws_key,
+                                            self.out_key, self.tmp_folder, config_path)
         log_file = os.path.join(self.tmp_folder, 'logs', 'log_multicut')
         err_file = os.path.join(self.tmp_folder, 'error_logs', 'err_multicut.err')
         bsub_command = 'bsub -J multicut -We %i -o %s -e %s \'%s\'' % (self.time_estimate,

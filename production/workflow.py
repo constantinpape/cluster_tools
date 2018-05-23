@@ -8,6 +8,7 @@ from .relabel import RelabelWorkflow
 from .stitching import ConsensusStitchingWorkflow
 from .evaluation import SkeletonEvaluationTask
 from .util import make_dirs
+from .multicut import MulticutTask
 # from .util import DummyTask
 
 
@@ -66,7 +67,7 @@ class Workflow(luigi.WrapperTask):
                                                  # dependency=DummyTask(),
                                                  time_estimate=self.time_estimate,
                                                  run_local=self.run_local)
-        #
+
         if self.skeleton_keys:
             with open(self.config_path) as f:
                 n_threads = json.load(f)['n_threads']
@@ -123,17 +124,24 @@ class Workflow2DWS(luigi.WrapperTask):
                                        dependency=ws_task,
                                        time_estimate=self.time_estimate,
                                        run_local=self.run_local)
-        print("Here")
-        stitch_task = ConsensusStitchingWorkflow(path=self.path,
-                                                 aff_key=self.aff_key, ws_key=self.ws_key,
-                                                 out_key=self.seg_key, max_jobs=self.max_jobs,
-                                                 config_path=self.config_path,
-                                                 tmp_folder=self.tmp_folder_seg,
-                                                 dependency=relabel_task,
-                                                 # dependency=DummyTask(),
-                                                 time_estimate=self.time_estimate,
-                                                 run_local=self.run_local)
-        #
+        # stitch_task = ConsensusStitchingWorkflow(path=self.path,
+        #                                          aff_key=self.aff_key, ws_key=self.ws_key,
+        #                                          out_key=self.seg_key, max_jobs=self.max_jobs,
+        #                                          config_path=self.config_path,
+        #                                          tmp_folder=self.tmp_folder_seg,
+        #                                          dependency=relabel_task,
+        #                                          # dependency=DummyTask(),
+        #                                          time_estimate=self.time_estimate,
+        #                                          run_local=self.run_local)
+        # #
+        stitch_task = MulticutTask(path=self.path,
+                                   aff_key=self.aff_key, ws_key=self.ws_key,
+                                   out_key=self.seg_key,
+                                   config_path=self.config_path,
+                                   tmp_folder=self.tmp_folder_seg,
+                                   dependency=relabel_task,
+                                   time_estimate=self.time_estimate,
+                                   run_local=self.run_local)
         if self.skeleton_keys:
             with open(self.config_path) as f:
                 n_threads = json.load(f)['n_threads']
@@ -215,9 +223,9 @@ def write_default_config(path,
                    'lifted_nh': lifted_nh,
                    'n_threads': n_threads})
     if roi is not None:
-        assert len(roi == 2)
+        assert len(roi) == 2
         assert len(roi[0]) == len(roi[1]) == 3
-        config[roi] = roi
+        config['roi'] = roi
     with open(path, 'w') as f:
         json.dump(config, f)
 
