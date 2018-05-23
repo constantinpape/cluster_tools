@@ -1,7 +1,7 @@
 import os
 import json
 import luigi
-from production import Workflow
+from production import Workflow2DWS, write_default_config
 
 
 def write_config():
@@ -22,10 +22,15 @@ def write_config():
                    'size_filter': 25,
                    'n_threads': 16,
                    'merge_threshold': .8,
-                   'weight_edges': False,
+                   'weight_merge_edges': False,
+                   'weight_multicut_edges': False,
                    'affinity_offsets': [[-1, 0, 0],
                                         [0, -1, 0],
-                                        [0, 0, -1]]}, f)
+                                        [0, 0, -1]],
+                   'use_lmc': False,
+                   'rf_path': ['./rf_local_xy.pkl',
+                               './rf_local_z.pkl'],  # './lifted_rf.pkl',
+                   'lifted_nh': 2}, f)
 
 
 def run_components(path, tmp_folder):
@@ -35,15 +40,17 @@ def run_components(path, tmp_folder):
                '--path', path,
                '--aff-key', 'predictions/affs_glia',
                '--mask-key', 'masks/minfilter_mask',
-               '--ws-key', 'segmentation/wf_test',
-               '--seg-key', 'segmentation/wf_seg_test',
+               '--ws-key', 'segmentation/ws_test_2d',
+               '--seg-key', 'segmentation/mc_seg_test_ws2d_rf',
                '--max-jobs', '64',
                '--config-path', config_path,
-               '--tmp-folder', tmp_folder,
+               '--tmp-folder-ws', tmp_folder,
+               '--tmp-folder-seg', tmp_folder,
                '--time-estimate', '10',
-               '--run-local'], Workflow)
+               '--run-local'], Workflow2DWS)
 
-if __name__== '__main__':
+
+if __name__ == '__main__':
     write_config()
     sample = 'A+'
     path = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cremi_warped/sample%s.n5' % sample
