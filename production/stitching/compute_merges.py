@@ -117,6 +117,10 @@ def compute_merges(path, out_key, n_jobs, config_path, tmp_folder):
     merges = vote_ratio > merge_threshold
     merge_node_pairs = final_uv_ids[merges]
 
+    # debugging
+    # np.save(os.path.join(tmp_folder, 'merged_uv_ids.npy'), final_uv_ids)
+    # np.save(os.path.join(tmp_folder, 'merge_indicators'), merges)
+
     n_labels = int(final_uv_ids.max()) + 1
     ufd = nifty.ufd.ufd(n_labels)
 

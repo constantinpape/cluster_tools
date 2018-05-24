@@ -7,13 +7,16 @@ import json
 import pickle
 import subprocess
 
-import vigra
 import numpy as np
-import nifty
 import z5py
 import luigi
 from concurrent import futures
 from production import multicut
+
+import nifty
+
+# import vigra
+# import nifty.graph.rag as nrag
 
 
 # TODO more clean up (job config files)
@@ -43,8 +46,7 @@ class MergeVotesTask(luigi.Task):
     def requires(self):
         return self.dependency
 
-    def _prepare_jobs(self, n_jobs, n_blocks, config, prefix):
-        block_list = list(range(n_blocks))
+    def _prepare_jobs(self, n_jobs, block_list, config, prefix):
         for job_id in range(n_jobs):
             block_jobs = block_list[job_id::n_jobs]
             job_config = {'config': config,
@@ -121,7 +123,9 @@ class MergeVotesTask(luigi.Task):
             block_shift = config.pop('block_shift')
             # TODO support computation with roi
             if 'roi' in config:
-                have_roi = True
+                roi = config['roi']
+            else:
+                roi = None
 
         # find the shape and number of blocks
         f5 = z5py.File(self.path)
@@ -131,19 +135,33 @@ class MergeVotesTask(luigi.Task):
         f5.require_dataset(self.out_key, shape=shape,
                            chunks=chunks, dtype='uint64', compression='gzip')
 
+        # for debugging
+        f5.require_dataset('segmentation/debug_a', shape=shape,
+                           chunks=chunks, dtype='uint64', compression='gzip')
+        f5.require_dataset('segmentation/debug_b', shape=shape,
+                           chunks=chunks, dtype='uint64', compression='gzip')
+
         # prepare the jobs for the first (not shifted) blocking
         blocking1 = nifty.tools.blocking([0, 0, 0], shape, block_shape)
         n_blocks1 = blocking1.numberOfBlocks
-        n_jobs1 = min(n_blocks1, self.max_jobs)
         config.update({'block_shift': None})
-        self._prepare_jobs(n_jobs1, n_blocks1, config, 'a')
+        if roi is None:
+            block_list1 = list(range(n_blocks1))
+        else:
+            block_list1 = blocking1.getBlockIdsOverlappingBoundingBox(roi[0], roi[1], [0, 0, 0]).tolist()
+        n_jobs1 = min(len(block_list1), self.max_jobs)
+        self._prepare_jobs(n_jobs1, block_list1, config, 'a')
 
         blocking2 = nifty.tools.blocking([0, 0, 0], shape, block_shape,
                                          blockShift=block_shift)
         n_blocks2 = blocking2.numberOfBlocks
-        n_jobs2 = min(n_blocks2, self.max_jobs)
         config.update({'block_shift': block_shift})
-        self._prepare_jobs(n_jobs2, n_blocks2, config, 'b')
+        if roi is None:
+            block_list2 = list(range(n_blocks2))
+        else:
+            block_list2 = blocking2.getBlockIdsOverlappingBoundingBox(roi[0], roi[1], [0, 0, 0]).tolist()
+        n_jobs2 = min(len(block_list2), self.max_jobs)
+        self._prepare_jobs(n_jobs2, block_list2, config, 'b')
 
         print("Start blocks a")
         self._submit_jobs(n_jobs1, 'a')
@@ -184,7 +202,7 @@ class MergeVotesTask(luigi.Task):
 def process_block(ds_ws, ds_affs, blocking, block_id, offsets,
                   use_lifted=False, rf=None, lifted_nh=None,
                   weight_mulitcut_edges=False,
-                  weighting_exponent=1):
+                  weighting_exponent=1, ds_out=None):
 
     print("Process block", block_id)
     # load the segmentation
@@ -192,14 +210,18 @@ def process_block(ds_ws, ds_affs, blocking, block_id, offsets,
     bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
     ws = ds_ws[bb]
 
+    # FIXME this causes false merges and is broken
     # we map to a consecutive segmentation to speed up graph computations
-    ws, max_id, mapping = vigra.analysis.relabelConsecutive(ws, keep_zeros=True, start_label=1)
-    # if this block only contains a single element, return (usually 0 = ignore label) continue
-    if len(mapping) == 1:
-        return None
+    # ws, max_id, mapping = vigra.analysis.relabelConsecutive(ws, keep_zeros=True, start_label=1)
+    # # if this block only contains a single element, return (usually 0 = ignore label) continue
+    # if len(mapping) == 1:
+    #     return None
+    # ws = ws.astype('uint32')
+    # reverse_mapping = {val: key for key, val in mapping.items()}
+    # n_labels = int(max_id) + 1
+
     ws = ws.astype('uint32')
-    reverse_mapping = {val: key for key, val in mapping.items()}
-    n_labels = int(max_id) + 1
+    n_labels = int(ws.max()) + 1
 
     # load the affinities
     n_channels = len(offsets)
@@ -213,9 +235,9 @@ def process_block(ds_ws, ds_affs, blocking, block_id, offsets,
 
     if use_lifted:
         if rf is None:
-            uv_ids, edge_indicator, sizes = multicut.compute_lmc(ws, affs, offsets, n_labels,
-                                                                 weight_mulitcut_edges,
-                                                                 weighting_exponent)
+            uv_ids, merge_indicator, sizes = multicut.compute_lmc(ws, affs, offsets, n_labels,
+                                                                  weight_mulitcut_edges,
+                                                                  weighting_exponent)
 
         else:
             n_aff_chans = ds_affs.shape[0]
@@ -223,29 +245,41 @@ def process_block(ds_ws, ds_affs, blocking, block_id, offsets,
             glia = ds_affs[bb_glia]
             if glia.dtype == np.dtype('uint8'):
                 glia = glia.astype('float32') / 255.
-            uv_ids, edge_indicator, sizes = multicut.compute_lmc_learned(ws, affs, glia,
-                                                                         offsets, n_labels,
-                                                                         rf, lifted_nh,
-                                                                         weight_mulitcut_edges,
-                                                                         weighting_exponent)
+            uv_ids, merge_indicator, sizes = multicut.compute_lmc_learned(ws, affs, glia,
+                                                                          offsets, n_labels,
+                                                                          rf, lifted_nh,
+                                                                          weight_mulitcut_edges,
+                                                                          weighting_exponent)
     else:
         if rf is None:
-            uv_ids, edge_indicator, sizes = multicut.compute_mc(ws, affs,
-                                                                offsets, n_labels,
-                                                                weight_mulitcut_edges,
-                                                                weighting_exponent)
+            uv_ids, merge_indicator, sizes = multicut.compute_mc(ws, affs,
+                                                                 offsets, n_labels,
+                                                                 weight_mulitcut_edges,
+                                                                 weighting_exponent)
         else:
-            uv_ids, edge_indicator, sizes = multicut.compute_mc_learned(ws, affs,
-                                                                        offsets, n_labels,
-                                                                        weight_mulitcut_edges,
-                                                                        weighting_exponent, rf)
+            uv_ids, merge_indicator, sizes = multicut.compute_mc_learned(ws, affs,
+                                                                         offsets, n_labels,
+                                                                         weight_mulitcut_edges,
+                                                                         weighting_exponent, rf)
     # check for empty results
     if uv_ids is None:
         return None
 
+    # for debugging
+    # if ds_out is not None:
+    #     rag = nrag.gridRag(ws, numberOfLabels=n_labels, numberOfThreads=1)
+    #     ufd = nifty.ufd.ufd(n_labels)
+    #     uv_ids = rag.uvIds()
+    #     merge_pairs = uv_ids[merge_indicator.astype('bool')]
+    #     ufd.merge(merge_pairs)
+    #     node_labels = ufd.elementLabeling()
+    #     seg = nrag.projectScalarNodeDataToPixels(rag, node_labels)
+    #     ds_out[bb] = seg
+
+    # FIXME this causes false merges and is broken
     # map back to the original ids
-    uv_ids = nifty.tools.takeDict(reverse_mapping, uv_ids).astype('uint64')
-    return uv_ids, edge_indicator, sizes
+    # uv_ids = nifty.tools.takeDict(reverse_mapping, uv_ids).astype('uint64')
+    return uv_ids, merge_indicator, sizes
 
 
 def compute_merge_votes(path, aff_key, ws_key, job_id,
@@ -271,6 +305,9 @@ def compute_merge_votes(path, aff_key, ws_key, job_id,
     ds_affs = z5py.File(path)[aff_key]
     shape = ds_ws.shape
 
+    # # for debugging
+    # ds_out = z5py.File(path)['segmentation/debug_' + prefix]
+
     blocking = nifty.tools.blocking([0, 0, 0], list(shape), block_shape,
                                     blockShift=block_shift)
 
@@ -294,7 +331,7 @@ def compute_merge_votes(path, aff_key, ws_key, job_id,
                              blocking, block_id,
                              offsets,
                              use_lifted, rf, lifted_nh,
-                             weight_mulitcut_edges, weighting_exponent)
+                             weight_mulitcut_edges, weighting_exponent)  # ds_out=ds_out)
                for block_id in block_list]
     results = [res for res in results if res is not None]
 
@@ -310,6 +347,30 @@ def compute_merge_votes(path, aff_key, ws_key, job_id,
         # compute nominator and denominator of merge votes
         merged_uvs, merge_votes = nifty.tools.computeMergeVotes(uv_ids, indicators, sizes,
                                                                 weightEdges=weight_merge_edges)
+
+        # # debugging
+        # if ds_out is not None:
+        #     vote_ratio = merge_votes[:, 0].astype('float64') / merge_votes[:, 1]
+
+        #     merge_threshold = config['merge_threshold']
+        #     # merge all node pairs whose ratio is above the merge threshold
+        #     merges = vote_ratio > merge_threshold
+        #     n_labels = int(merged_uvs.max()) + 1
+        #     merge_node_pairs = merged_uvs[merges]
+
+        #     ufd = nifty.ufd.ufd(n_labels)
+
+        #     ufd.merge(merge_node_pairs)
+        #     node_labels = ufd.elementLabeling()
+        #     for block_id in block_list:
+        #         block = blocking.getBlock(block_id)
+        #         bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
+        #         ws = ds_ws[bb]
+        #         seg = nifty.tools.take(node_labels, ws)
+        #         try:
+        #             ds_out[bb] = seg
+        #         except RuntimeError:
+        #             pass
 
     # TODO should we also serialize the block-level results for better fault tolerance ?!
     # serialize the job level results
