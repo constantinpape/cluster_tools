@@ -30,15 +30,16 @@ def edge_indications(uv_ids, node_z):
 
 def accumulate_filter(rag, input_, filter_, sigma, edge_direction=2):
     response = np.concatenate([filter_(inp, sigma)[None] for inp in input_], axis=0)
+    eps = 0.001
     if response.ndim == 3:
         features = nrag.accumulateEdgeFeaturesFlat(rag, response,
-                                                   response.min(), response.max(),
+                                                   response.min(), response.max() + eps,
                                                    numberOfThreads=1,
                                                    zDirection=edge_direction)
     else:
         features = np.concatenate([nrag.accumulateEdgeFeaturesFlat(rag, response[..., c],
                                                                    response[..., c].min(),
-                                                                   response[..., c].max(),
+                                                                   response[..., c].max() + eps,
                                                                    numberOfThreads=1,
                                                                    zDirection=edge_direction)
                                    for c in range(response.shape[-1])],
