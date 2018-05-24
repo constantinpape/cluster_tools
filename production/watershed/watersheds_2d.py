@@ -152,7 +152,7 @@ class Watershed2dTask(luigi.Task):
         n_jobs = min(len(blocks_a), self.max_jobs)
         self._prepare_jobs(n_jobs, blocks_a, config, 'a')
         # add halo to config for second block list
-        config.update({'halo': [0, 1, 1]})
+        config.update({'second_pass_ws2d': True})
         self._prepare_jobs(n_jobs, blocks_b, config, 'b')
 
         # submit the jobs
@@ -188,7 +188,8 @@ class Watershed2dTask(luigi.Task):
 
 
 def compute_max_seeds(hmap, boundary_threshold,
-                      sigma, offset, mask, initial_seeds=None):
+                      sigma, offset, mask,
+                      initial_seeds=None):
 
     # we only compute the seeds on the smaller crop of the volume
     seeds = np.zeros_like(hmap, dtype='uint64')
@@ -271,59 +272,42 @@ def ws_block(ds_affs, ds_mask, ds_out,
     boundary_threshold = block_config['boundary_threshold']
     sigma_maxima = block_config['sigma_maxima']
     size_filter = block_config['size_filter']
-    if 'halo' in block_config:
-        with_halo = True
-        halo = block_config['halo']
-        block = blocking.getBlockWithHalo(block_id, halo)
-        bb = tuple(slice(beg, end)
-                   for beg, end in zip(block.innerBlock.begin, block.innerBlock.end))
-        outer_bb = tuple(slice(beg, end)
-                         for beg, end in zip(block.outerBlock.begin, block.outerBlock.end))
-        local_bb = tuple(slice(beg, end)
-                         for beg, end in zip(block.innerBlockLocal.begin, block.innerBlockLocal.end))
-    else:
-        with_halo = False
-        block = blocking.getBlock(block_id)
-        bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
+    # check if we are in the second pass (which means we already have seeds)
+    second_pass = 'second_pass_ws2d' in block_config
 
-    # load mask with halo if necessary
-    if with_halo:
-        mask = ds_mask[outer_bb].astype('bool')
+    # halo is hard-coded for now / 75 pixel should be enough
+    halo = [0, 75, 75]
+    block = blocking.getBlockWithHalo(block_id, halo)
 
-    else:
-        mask = ds_mask[bb].astype('bool')
+    outer_bb = tuple(slice(beg, end)
+                     for beg, end in zip(block.outerBlock.begin, block.outerBlock.end))
+    inner_bb = tuple(slice(beg, end)
+                     for beg, end in zip(block.innerBlock.begin, block.innerBlock.end))
+    local_bb = tuple(slice(beg, end)
+                     for beg, end in zip(block.innerBlockLocal.begin, block.innerBlockLocal.end))
+
+    # load the mask with halo if necessary
+    mask = ds_mask[outer_bb].astype('bool')
 
     # don't process empty blocks
-    if np.sum(mask) == 0:
+    if np.sum(mask[local_bb]) == 0:
         with open(res_file, 'w') as f:
             json.dump({'t': time.time() - t0}, f)
         return
 
-    bb_affs = (slice(1, 3),) + bb
+    # if this is the second pass, load the fragments
+    # we already have as seeds
+    if second_pass:
+        initial_seeds = ds_out[outer_bb]
+    else:
+        initial_seeds = None
 
     # load affinities and make heightmap for the watershed
+    bb_affs = (slice(1, 3),) + outer_bb
     affs = ds_affs[bb_affs]
     if affs.dtype == np.dtype('uint8'):
         affs = affs.astype('float32') / 255.
     affs = np.mean(1. - affs, axis=0)
-
-    # pad the affinities if we have halo
-    # and load the fragments from the neighbor blocks to use as seeds
-    if with_halo:
-        # calculate the correct padding
-        inner_block = block.innerBlock
-        outer_block = block.outerBlock
-        padding = tuple(((inner_beg - outer_beg), (outer_end - inner_end))
-                        for inner_beg, outer_beg, inner_end, outer_end in zip(inner_block.begin,
-                                                                              outer_block.begin,
-                                                                              inner_block.end,
-                                                                              outer_block.end))
-
-        affs = np.pad(affs, padding, 'constant')
-        assert affs.shape == mask.shape
-        initial_seeds = ds_out[outer_bb]
-    else:
-        initial_seeds = None
 
     # load the mask and make the invalid mask by inversion
     inv_mask = np.logical_not(mask)
@@ -337,7 +321,7 @@ def ws_block(ds_affs, ds_mask, ds_out,
     seeds, max_id = run_2d_ws(affs, seeds, inv_mask, size_filter)
 
     # write the result
-    ds_out[bb] = seeds[local_bb] if with_halo else seeds
+    ds_out[inner_bb] = seeds[local_bb]
     with open(res_file, 'w') as f:
         json.dump({'t': time.time() - t0}, f)
 
