@@ -39,7 +39,7 @@ class MapEdgesTask(luigi.Task):
         # make commands and submit the job
         script_path = os.path.join(self.tmp_folder, 'map_edge_ids.py')
         config_path = os.path.join(self.tmp_folder, 'map_edge_ids_s%i.json' % scale)
-        command = '%s %s %i %s %s' % (script_path, self.out_path, self.max_scale,
+        command = '%s %s %i %s %s' % (script_path, self.out_path, scale,
                                       config_path, self.tmp_folder)
         log_file = os.path.join(self.tmp_folder, 'logs', 'log_map_edge_ids_s%i' % scale)
         err_file = os.path.join(self.tmp_folder, 'error_logs', 'err_map_edge_ids_s%i' % scale)
@@ -113,7 +113,7 @@ class MapEdgesTask(luigi.Task):
                 json.dump({'times': times}, f)
         else:
             log_path = os.path.join(self.tmp_folder, 'map_edge_ids_partial.log')
-            with open(self.output().path, 'w') as f:
+            with open(log_path, 'w') as f:
                 json.dump({'processed_scales': processed_scales, 'times': times}, f)
             raise RuntimeError("MapEdgesTask failed for %i / %i scales, partial results serialized to %s" % (len(times),
                                                                                                              self.max_scale + 1,
@@ -140,7 +140,7 @@ def map_edge_ids(graph_path, scale, config_path, tmp_folder):
                                     blockShape=block_shape)
     input_key = 'graph'
 
-    block_prefix = 'sub_graphs/s%s/block_' % scale
+    block_prefix = 'sub_graphs/s%i/block_' % scale
     ndist.mapEdgeIdsForAllBlocks(graph_path, input_key,
                                  blockPrefix=block_prefix,
                                  numberOfBlocks=blocking.numberOfBlocks,
@@ -148,7 +148,7 @@ def map_edge_ids(graph_path, scale, config_path, tmp_folder):
 
     res_file = os.path.join(tmp_folder, 'mape_edge_ids_s%i' % scale)
     with open(res_file, 'w') as f:
-        json.dump({'t', time.time() - t0}, f)
+        json.dump({'t': time.time() - t0}, f)
 
 
 if __name__ == '__main__':

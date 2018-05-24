@@ -1,6 +1,7 @@
 import os
 import luigi
 from .graph import GraphWorkflow
+from .features import FeaturesWorkflow
 
 
 class BlockwiseMulticutWorkflow(luigi.Task):
@@ -19,6 +20,7 @@ class BlockwiseMulticutWorkflow(luigi.Task):
 
     def requires(self):
         graph_path = os.path.join(self.tmp_folder, 'graph.n5')
+        features_path = os.path.join(self.tmp_folder, 'features.n5')
         graph_task = GraphWorkflow(path=self.path,
                                    ws_key=self.ws_key,
                                    out_path=graph_path,
@@ -29,7 +31,19 @@ class BlockwiseMulticutWorkflow(luigi.Task):
                                    dependency=self.dependency,
                                    time_estimate=self.time_estimate,
                                    run_local=self.requires)
-        return graph_task
+        features_task = FeaturesWorkflow(path=self.path,
+                                         aff_key=self.aff_key,
+                                         ws_key=self.ws_key,
+                                         graph_path=graph_path,
+                                         out_path=features_path,
+                                         max_scale=self.max_scale,
+                                         max_jobs=self.max_jobs,
+                                         config_path=self.config_path,
+                                         tmp_folder=self.tmp_folder,
+                                         dependency=graph_task,
+                                         time_estimate=self.time_estimate,
+                                         run_local=self.requires)
+        return features_task
 
     # just write a dummy file
     def run(self):
