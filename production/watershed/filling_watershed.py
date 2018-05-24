@@ -151,7 +151,7 @@ class FillingWatershedTask(luigi.Task):
         n_jobs = min(len(blocks_a), self.max_jobs)
         self._prepare_jobs(n_jobs, blocks_a, config, 'a')
         # add halo to config for second block list
-        config.update({'halo': [0, 1, 1]})
+        config.update({'second_pass_filling_ws': True})
         self._prepare_jobs(n_jobs, blocks_b, config, 'b')
 
         # submit the jobs
@@ -262,53 +262,32 @@ def ws_block(ds_affs, ds_seeds, ds_mask,
 
     # get offset to make new seeds unique between blocks
     # (we need to relabel later to make processing efficient !)
-    offset +=  block_id * np.prod(blocking.blockShape)
+    offset += block_id * np.prod(blocking.blockShape)
 
     boundary_threshold = block_config['boundary_threshold2']
     sigma_maxima = block_config['sigma_maxima']
     size_filter = block_config['size_filter']
-    if 'halo' in block_config:
-        with_halo = True
-        halo = block_config['halo']
-        block = blocking.getBlockWithHalo(block_id, halo)
-        bb = tuple(slice(beg, end)
-                   for beg, end in zip(block.innerBlock.begin, block.innerBlock.end))
-        outer_bb = tuple(slice(beg, end)
-                         for beg, end in zip(block.outerBlock.begin, block.outerBlock.end))
-        local_bb = tuple(slice(beg, end)
-                         for beg, end in zip(block.innerBlockLocal.begin, block.innerBlockLocal.end))
-    else:
-        with_halo = False
-        block = blocking.getBlock(block_id)
-        bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
 
-    bb_affs = (slice(1, 3),) + bb
+    # halo is hard-coded for now / 100 pixel should be enough
+    halo = [0, 100, 100]
+    block = blocking.getBlockWithHalo(block_id, halo)
+
+    outer_bb = tuple(slice(beg, end)
+                     for beg, end in zip(block.outerBlock.begin, block.outerBlock.end))
+    inner_bb = tuple(slice(beg, end)
+                     for beg, end in zip(block.innerBlock.begin, block.innerBlock.end))
+    local_bb = tuple(slice(beg, end)
+                     for beg, end in zip(block.innerBlockLocal.begin, block.innerBlockLocal.end))
+
+    mask = ds_mask[outer_bb]
+    seeds = ds_seeds[outer_bb]
 
     # load affinities and make heightmap for the watershed
+    bb_affs = (slice(1, 3),) + outer_bb
     affs = ds_affs[bb_affs]
     if affs.dtype == np.dtype('uint8'):
         affs = affs.astype('float32') / 255.
     affs = np.mean(1. - affs, axis=0)
-
-    # load seeds and mask with halo if necessary and zero-pad hmap
-    if with_halo:
-        seeds = ds_seeds[outer_bb]
-        mask = ds_mask[outer_bb].astype('bool')
-
-        # calculate the correct padding
-        inner_block = block.innerBlock
-        outer_block = block.outerBlock
-        padding = tuple(((inner_beg - outer_beg), (outer_end - inner_end))
-                        for inner_beg, outer_beg, inner_end, outer_end in zip(inner_block.begin,
-                                                                              outer_block.begin,
-                                                                              inner_block.end,
-                                                                              outer_block.end))
-
-        affs = np.pad(affs, padding, 'constant')
-        assert affs.shape == seeds.shape == mask.shape
-    else:
-        seeds = ds_seeds[bb]
-        mask = ds_mask[bb].astype('bool')
 
     # load the mask and make the invalid mask by inversion
     inv_mask = np.logical_not(mask)
@@ -327,7 +306,7 @@ def ws_block(ds_affs, ds_seeds, ds_mask,
     seeds, max_id = run_2d_ws(affs, seeds, inv_mask, size_filter, offset)
 
     # write the result
-    ds_seeds[bb] = seeds[local_bb] if with_halo else seeds
+    ds_seeds[inner_bb] = seeds[local_bb]
     with open(res_file, 'w') as f:
         json.dump({'t': time.time() - t0}, f)
 

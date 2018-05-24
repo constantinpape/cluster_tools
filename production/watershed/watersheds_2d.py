@@ -276,7 +276,7 @@ def ws_block(ds_affs, ds_mask, ds_out,
     second_pass = 'second_pass_ws2d' in block_config
 
     # halo is hard-coded for now / 75 pixel should be enough
-    halo = [0, 75, 75]
+    halo = [0, 100, 100]
     block = blocking.getBlockWithHalo(block_id, halo)
 
     outer_bb = tuple(slice(beg, end)
