@@ -203,7 +203,7 @@ def compute_max_seeds(hmap, boundary_threshold,
         # add offset to the seeds
         seeds_z = seeds_z.astype('uint64')
         seeds_z[seeds_z != 0] += offset
-        offset = seeds_z.max() + 1
+        offset = int(seeds_z.max()) + 1
         # write seeds to the corresponding slice
         seeds[z] = seeds_z
     return seeds
@@ -280,7 +280,11 @@ def ws_block(ds_affs, ds_seeds, ds_mask,
                      for beg, end in zip(block.innerBlockLocal.begin, block.innerBlockLocal.end))
 
     mask = ds_mask[outer_bb]
-    seeds = ds_seeds[outer_bb]
+    # FIXME weird runtime error I don't understand
+    try:
+        seeds = ds_seeds[outer_bb]
+    except RuntimeError:
+        seeds = ds_seeds[inner_bb]
 
     # load affinities and make heightmap for the watershed
     bb_affs = (slice(1, 3),) + outer_bb
