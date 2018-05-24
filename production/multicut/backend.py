@@ -47,8 +47,8 @@ def run_mc(graph, probs, uv_ids,
 
     # get indicators for merge !
     # and return uv-ids, edge indicators and edge sizes
-    edge_indicator = (node_labels[uv_ids[:, 0]] == node_labels[uv_ids[:, 1]]).astype('uint8')
-    return node_labels, edge_indicator
+    merge_indicator = (node_labels[uv_ids[:, 0]] == node_labels[uv_ids[:, 1]]).astype('uint8')
+    return node_labels, merge_indicator
 
 
 def compute_mc_learned(ws, affs, offsets,
@@ -60,6 +60,8 @@ def compute_mc_learned(ws, affs, offsets,
                        numberOfLabels=n_labels,
                        numberOfThreads=1)
     uv_ids = rag.uvIds()
+    if uv_ids.size == 0:
+        return None, None, None
 
     # TODO add glia features ?
     rf_xy, rf_z = rf
@@ -75,12 +77,12 @@ def compute_mc_learned(ws, affs, offsets,
     graph = nifty.graph.undirectedGraph(n_labels)
     graph.insertEdges(uv_ids)
     # compute multicut edge results
-    _, edge_indicator = run_mc(graph, probs, uv_ids,
-                               with_ignore_edges=True,
-                               edge_sizes=sizes if weight_mulitcut_edges else None,
-                               weighting_exponent=weighting_exponent)
+    _, merge_indicator = run_mc(graph, probs, uv_ids,
+                                with_ignore_edges=True,
+                                edge_sizes=sizes if weight_mulitcut_edges else None,
+                                weighting_exponent=weighting_exponent)
 
-    return uv_ids, edge_indicator, sizes
+    return uv_ids, merge_indicator, sizes
 
 
 def compute_mc(ws, affs, offsets,
@@ -91,6 +93,8 @@ def compute_mc(ws, affs, offsets,
                        numberOfLabels=n_labels,
                        numberOfThreads=1)
     uv_ids = rag.uvIds()
+    if uv_ids.size == 0:
+        return None, None, None
 
     # compute the features and get edge probabilities (from mean affinities)
     # and edge sizes
@@ -102,12 +106,12 @@ def compute_mc(ws, affs, offsets,
     graph = nifty.graph.undirectedGraph(n_labels)
     graph.insertEdges(uv_ids)
     # compute multicut edge results
-    _, edge_indicator = run_mc(graph, probs, uv_ids,
-                               filter_ignore=True,
-                               edge_sizes=sizes if weight_mulitcut_edges else None,
-                               weighting_exponent=weighting_exponent)
+    _, merge_indicator = run_mc(graph, probs, uv_ids,
+                                with_ignore_edges=True,
+                                edge_sizes=sizes if weight_mulitcut_edges else None,
+                                weighting_exponent=weighting_exponent)
 
-    return uv_ids, edge_indicator, sizes
+    return uv_ids, merge_indicator, sizes
 
 
 def run_lmc(graph, local_uv_ids, lifted_uv_ids, local_probs, lifted_probs,
@@ -148,8 +152,8 @@ def run_lmc(graph, local_uv_ids, lifted_uv_ids, local_probs, lifted_probs,
 
     # get indicators for merge !
     # and return uv-ids, edge indicators and edge sizes
-    edge_indicator = (node_labels[local_uv_ids[:, 0]] == node_labels[local_uv_ids[:, 1]]).astype('uint8')
-    return node_labels, edge_indicator
+    merge_indicator = (node_labels[local_uv_ids[:, 0]] == node_labels[local_uv_ids[:, 1]]).astype('uint8')
+    return node_labels, merge_indicator
 
 
 def compute_lmc_learned(ws, affs, glia,
@@ -190,10 +194,10 @@ def compute_lmc_learned(ws, affs, glia,
 
     # we may not get any lifted edges, in this case, fall back to normal multicut
     if lifted_uv_ids.size == 0:
-        _, edge_indicator = run_mc(graph, local_probs, uv_ids,
-                                   weighting_exponent=weighting_exponent,
-                                   edge_sizes=sizes if weight_mulitcut_edges else None)
-        return uv_ids, edge_indicator, sizes
+        _, merge_indicator = run_mc(graph, local_probs, uv_ids,
+                                    weighting_exponent=weighting_exponent,
+                                    edge_sizes=sizes if weight_mulitcut_edges else None)
+        return uv_ids, merge_indicator, sizes
 
     # get features for the lifted edges
     lifted_feats = np.concatenate([  # feat.ucm_features(n_labels, lifted_objective, local_probs),
@@ -202,10 +206,10 @@ def compute_lmc_learned(ws, affs, glia,
                                    feat.region_features(ws, lifted_uv_ids, glia)], axis=1)
     lifted_probs = lifted_rf.predict_proba(lifted_feats)[:, 1]
 
-    _, edge_indicator = run_lmc(graph, uv_ids, lifted_uv_ids, local_probs, lifted_probs,
-                                local_sizes=sizes if weight_mulitcut_edges else None,
-                                weighting_exponent=weighting_exponent,
-                                with_ignore_edges=False)
+    _, merge_indicator = run_lmc(graph, uv_ids, lifted_uv_ids, local_probs, lifted_probs,
+                                 local_sizes=sizes if weight_mulitcut_edges else None,
+                                 weighting_exponent=weighting_exponent,
+                                 with_ignore_edges=False)
 
     # we don't weight, because we might just have few lifted edges
     # and this would downvote the local edges significantly
@@ -215,7 +219,7 @@ def compute_lmc_learned(ws, affs, glia,
     # local_costs *= (n_lifted / total)
     # lifted_costs *= (n_local / total)
 
-    return uv_ids, edge_indicator, sizes
+    return uv_ids, merge_indicator, sizes
 
 
 def compute_lmc(ws, affs,
@@ -246,11 +250,11 @@ def compute_lmc(ws, affs,
 
     # we may not get any lifted edges, in this case, fall back to normal multicut
     if lifted_uvs.size == 0:
-        edge_indicator = run_mc(graph, local_probs, uv_ids,
-                                weighting_exponent=weighting_exponent,
-                                edge_sizes=local_sizes if weight_mulitcut_edges else None,
-                                filter_ignore=True)
-        return uv_ids, edge_indicator, local_sizes
+        merge_indicator = run_mc(graph, local_probs, uv_ids,
+                                 weighting_exponent=weighting_exponent,
+                                 edge_sizes=local_sizes if weight_mulitcut_edges else None,
+                                 with_ignore_edges=True)
+        return uv_ids, merge_indicator, local_sizes
 
     # we don't weight, because we might just have few lifted edges
     # and this would downvote the local edges significantly
@@ -260,10 +264,10 @@ def compute_lmc(ws, affs,
     # local_costs *= (n_lifted / total)
     # lifted_costs *= (n_local / total)
 
-    _, edge_indicator = run_lmc(graph, uv_ids, lifted_uvs,
-                                local_probs, lifted_probs,
-                                local_sizes=local_sizes if weight_mulitcut_edges else None,
-                                lifted_sizes=lifted_sizes if weight_mulitcut_edges else None,
-                                weighting_exponent=weighting_exponent,
-                                filter_ignore=True)
-    return uv_ids, edge_indicator, local_sizes
+    _, merge_indicator = run_lmc(graph, uv_ids, lifted_uvs,
+                                 local_probs, lifted_probs,
+                                 local_sizes=local_sizes if weight_mulitcut_edges else None,
+                                 lifted_sizes=lifted_sizes if weight_mulitcut_edges else None,
+                                 weighting_exponent=weighting_exponent,
+                                 with_ignore_edges=True)
+    return uv_ids, merge_indicator, local_sizes

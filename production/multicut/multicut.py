@@ -38,7 +38,7 @@ class MulticutTask(luigi.Task):
     def requires(self):
         return self.dependency
 
-    def _collect_outputs(self, n_jobs, prefix):
+    def _collect_outputs(self):
         res_path = os.path.join(self.tmp_folder, 'multicut_time.json')
         try:
             assert os.path.exists(res_path)
@@ -74,6 +74,9 @@ class MulticutTask(luigi.Task):
                            chunks=chunks, dtype='uint64', compression='gzip')
 
         config_path = os.path.join(self.tmp_folder, 'multicut_config.json')
+        with open(config_path, 'w') as f:
+            json.dump(config, f)
+
         command = '%s %s %s %s %s %s %s' % (script_path, self.path, self.aff_key, self.ws_key,
                                             self.out_key, self.tmp_folder, config_path)
         log_file = os.path.join(self.tmp_folder, 'logs', 'log_multicut')
@@ -127,7 +130,7 @@ def _mc_impl(ws, affs, offsets,
     graph.insertEdges(uv_ids)
     # compute multicut edge results
     node_labels, _ = multicut.run_mc(graph, probs, uv_ids,
-                                     filter_ignore=True,
+                                     with_ignore_edges=True,
                                      edge_sizes=sizes if weight_mulitcut_edges else None,
                                      weighting_exponent=weighting_exponent)
     return nrag.projectScalarNodeDataToPixels(rag, node_labels)
@@ -162,7 +165,7 @@ def _mc_learned_impl(ws, affs, rfs,
     graph.insertEdges(uv_ids)
     # compute multicut edge results
     node_labels, _ = multicut.run_mc(graph, probs, uv_ids,
-                                     filter_ignore=True,
+                                     with_ignore_edges=True,
                                      edge_sizes=sizes if weight_mulitcut_edges else None,
                                      weighting_exponent=weighting_exponent)
     return nrag.projectScalarNodeDataToPixels(rag, node_labels)
@@ -174,8 +177,7 @@ def single_multicut(path, aff_key, ws_key, out_key,
     t0 = time.time()
     # load the blocks to be processed and the configuration from the input config file
     with open(config_path) as f:
-        input_config = json.load(f)
-    config = input_config['config']
+        config = json.load(f)
     offsets = config['affinity_offsets']
     weight_mulitcut_edges = config['weight_multicut_edges']
     weighting_exponent = config.get('weighting_exponent', 1.)
