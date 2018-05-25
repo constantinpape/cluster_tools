@@ -117,7 +117,7 @@ class MergeVotesTask(luigi.Task):
         with open(self.config_path) as f:
             config = json.load(f)
             block_shape = config['block_shape2']
-            chunks = tuple(config['chunks'])
+            # chunks = tuple(config['chunks'])
             # we need to pop the block shift from the config
             # because the first blocking is without block shift !
             block_shift = config.pop('block_shift')
@@ -131,15 +131,11 @@ class MergeVotesTask(luigi.Task):
         f5 = z5py.File(self.path)
         shape = f5[self.ws_key].shape
 
-        # make the output dataset
-        f5.require_dataset(self.out_key, shape=shape,
-                           chunks=chunks, dtype='uint64', compression='gzip')
-
         # for debugging
-        f5.require_dataset('segmentation/debug_a', shape=shape,
-                           chunks=chunks, dtype='uint64', compression='gzip')
-        f5.require_dataset('segmentation/debug_b', shape=shape,
-                           chunks=chunks, dtype='uint64', compression='gzip')
+        # f5.require_dataset('segmentation/debug_a', shape=shape,
+        #                    chunks=chunks, dtype='uint64', compression='gzip')
+        # f5.require_dataset('segmentation/debug_b', shape=shape,
+        #                    chunks=chunks, dtype='uint64', compression='gzip')
 
         # prepare the jobs for the first (not shifted) blocking
         blocking1 = nifty.tools.blocking([0, 0, 0], shape, block_shape)

@@ -8,27 +8,25 @@ from .relabel import RelabelWorkflow
 from .stitching import ConsensusStitchingWorkflow
 from .evaluation import SkeletonEvaluationTask
 from .util import make_dirs
+from .blockwise_multicut import BlockwiseMulticutWorkflow
 from .multicut import MulticutTask
+from .write import WriteAssignmentTask
 # from .util import DummyTask
 
 
-class Workflow(luigi.WrapperTask):
-
+class WatershedWorkflow(luigi.Task):
     # path to the n5 file and keys
     path = luigi.Parameter()
     aff_key = luigi.Parameter()
     mask_key = luigi.Parameter()
     ws_key = luigi.Parameter()
-    seg_key = luigi.Parameter()
     # maximal number of jobs that will be run in parallel
     max_jobs = luigi.IntParameter()
     # path to the configuration
     # TODO allow individual paths for individual blocks
     config_path = luigi.Parameter()
-    tmp_folder_ws = luigi.Parameter()
-    tmp_folder_seg = luigi.Parameter()
+    tmp_folder = luigi.Parameter()
     # for evaluation
-    skeleton_keys = luigi.ListParameter(default=[])
     # FIXME default does not work; this still needs to be specified
     # TODO different time estimates for different sub-tasks
     time_estimate = luigi.IntParameter(default=10)
@@ -36,67 +34,103 @@ class Workflow(luigi.WrapperTask):
 
     def requires(self):
         # make the tmp, log and err dicts if necessary
-        make_dirs(self.tmp_folder_ws)
-        make_dirs(self.tmp_folder_seg)
-
+        make_dirs(self.tmp_folder)
         components_task = ComponentsWorkflow(path=self.path, aff_key=self.aff_key,
                                              mask_key=self.mask_key, out_key=self.ws_key,
                                              max_jobs=self.max_jobs, config_path=self.config_path,
-                                             tmp_folder=self.tmp_folder_ws,
+                                             tmp_folder=self.tmp_folder,
                                              time_estimate=self.time_estimate,
                                              run_local=self.run_local)
         ws_task = FillingWatershedTask(path=self.path, aff_key=self.aff_key,
                                        seeds_key=self.ws_key, mask_key=self.mask_key,
                                        max_jobs=self.max_jobs, config_path=self.config_path,
-                                       tmp_folder=self.tmp_folder_ws,
+                                       tmp_folder=self.tmp_folder,
                                        dependency=components_task,
                                        time_estimate=self.time_estimate,
                                        run_local=self.run_local)
         relabel_task = RelabelWorkflow(path=self.path, key=self.ws_key,
                                        max_jobs=self.max_jobs, config_path=self.config_path,
-                                       tmp_folder=self.tmp_folder_ws,
+                                       tmp_folder=self.tmp_folder,
                                        dependency=ws_task,
                                        time_estimate=self.time_estimate,
                                        run_local=self.run_local)
-        stitch_task = ConsensusStitchingWorkflow(path=self.path,
-                                                 aff_key=self.aff_key, ws_key=self.ws_key,
-                                                 out_key=self.seg_key, max_jobs=self.max_jobs,
-                                                 config_path=self.config_path,
-                                                 tmp_folder=self.tmp_folder_seg,
-                                                 dependency=relabel_task,
-                                                 # dependency=DummyTask(),
-                                                 time_estimate=self.time_estimate,
-                                                 run_local=self.run_local)
+        return relabel_task
 
-        if self.skeleton_keys:
-            with open(self.config_path) as f:
-                n_threads = json.load(f)['n_threads']
-            eval_task = SkeletonEvaluationTask(path=self.path,
-                                               seg_key=self.seg_key,
-                                               skeleton_keys=self.skeleton_keys,
-                                               n_threads=n_threads,
-                                               tmp_folder=self.tmp_folder_seg,
-                                               dependency=stitch_task,
-                                               time_estimate=self.time_estimate,
-                                               run_local=self.run_local)
-            return eval_task
-        #
-        else:
-            return stitch_task
+    # dummy run and output
+    def run(self):
+        out_path = self.input().path
+        assert os.path.exists(out_path)
+        res_file = self.output().path
+        with open(res_file, 'w') as f:
+            f.write('Success')
+
+    def output(self):
+        out_path = os.path.join(self.tmp_folder, 'watershed_workflow.log')
+        return luigi.LocalTarget(out_path)
 
 
-class Workflow2DWS(luigi.WrapperTask):
+class Watersehd2dWorkflow(luigi.Task):
 
     # path to the n5 file and keys
     path = luigi.Parameter()
     aff_key = luigi.Parameter()
     mask_key = luigi.Parameter()
     ws_key = luigi.Parameter()
-    seg_key = luigi.Parameter()
     # maximal number of jobs that will be run in parallel
     max_jobs = luigi.IntParameter()
     # path to the configuration
     # TODO allow individual paths for individual blocks
+    config_path = luigi.Parameter()
+    tmp_folder = luigi.Parameter()
+    # FIXME default does not work; this still needs to be specified
+    # TODO different time estimates for different sub-tasks
+    time_estimate = luigi.IntParameter(default=10)
+    run_local = luigi.BoolParameter(default=False)
+
+    def requires(self):
+        # make the tmp, log and err dicts if necessary
+        make_dirs(self.tmp_folder)
+
+        ws_task = Watershed2dTask(path=self.path, aff_key=self.aff_key,
+                                  out_key=self.ws_key, mask_key=self.mask_key,
+                                  max_jobs=self.max_jobs, config_path=self.config_path,
+                                  tmp_folder=self.tmp_folder,
+                                  time_estimate=self.time_estimate,
+                                  run_local=self.run_local)
+        # return ws_task
+        relabel_task = RelabelWorkflow(path=self.path, key=self.ws_key,
+                                       max_jobs=self.max_jobs, config_path=self.config_path,
+                                       tmp_folder=self.tmp_folder,
+                                       dependency=ws_task,
+                                       time_estimate=self.time_estimate,
+                                       run_local=self.run_local)
+        return relabel_task
+
+    # dummy run and output
+    def run(self):
+        out_path = self.input().path
+        assert os.path.exists(out_path)
+        res_file = self.output().path
+        with open(res_file, 'w') as f:
+            f.write('Success')
+
+    def output(self):
+        out_path = os.path.join(self.tmp_folder, 'watershed_2d_workflow.log')
+        return luigi.LocalTarget(out_path)
+
+
+class SegmentationWorkflow(luigi.WrapperTask):
+
+    # path to the n5 file and keys
+    path = luigi.Parameter()
+    aff_key = luigi.Parameter()
+    mask_key = luigi.Parameter()
+    ws_key = luigi.Parameter()
+    node_labeling_key = luigi.Parameter()
+    seg_key = luigi.Parameter()
+    # maximal number of jobs that will be run in parallel
+    max_jobs = luigi.IntParameter()
+    # path to the configuration
     config_path = luigi.Parameter()
     tmp_folder_ws = luigi.Parameter()
     tmp_folder_seg = luigi.Parameter()
@@ -112,36 +146,53 @@ class Workflow2DWS(luigi.WrapperTask):
         make_dirs(self.tmp_folder_ws)
         make_dirs(self.tmp_folder_seg)
 
-        ws_task = Watershed2dTask(path=self.path, aff_key=self.aff_key,
-                                  out_key=self.ws_key, mask_key=self.mask_key,
-                                  max_jobs=self.max_jobs, config_path=self.config_path,
-                                  tmp_folder=self.tmp_folder_ws,
-                                  time_estimate=self.time_estimate,
-                                  run_local=self.run_local)
-        relabel_task = RelabelWorkflow(path=self.path, key=self.ws_key,
-                                       max_jobs=self.max_jobs, config_path=self.config_path,
-                                       tmp_folder=self.tmp_folder_ws,
-                                       dependency=ws_task,
-                                       time_estimate=self.time_estimate,
-                                       run_local=self.run_local)
-        # stitch_task = ConsensusStitchingWorkflow(path=self.path,
-        #                                          aff_key=self.aff_key, ws_key=self.ws_key,
-        #                                          out_key=self.seg_key, max_jobs=self.max_jobs,
-        #                                          config_path=self.config_path,
-        #                                          tmp_folder=self.tmp_folder_seg,
-        #                                          dependency=relabel_task,
-        #                                          # dependency=DummyTask(),
-        #                                          time_estimate=self.time_estimate,
-        #                                          run_local=self.run_local)
-        # #
-        stitch_task = MulticutTask(path=self.path,
-                                   aff_key=self.aff_key, ws_key=self.ws_key,
-                                   out_key=self.seg_key,
-                                   config_path=self.config_path,
-                                   tmp_folder=self.tmp_folder_seg,
-                                   dependency=relabel_task,
-                                   time_estimate=self.time_estimate,
-                                   run_local=self.run_local)
+        # get the tasks for watershed and stitching from the config
+        with open(self.config_path) as f:
+            config = json.load(f)
+            ws_task_key = config.get('ws_task', 'ws')
+            stitch_task_key = config.get('stitch_task', 'consensus_stitching')
+
+        ws_task_dict = {'ws': WatershedWorkflow,
+                        'ws_2d': Watersehd2dWorkflow}
+        assert ws_task_key in ws_task_dict, ws_task_key
+        ws = ws_task_dict[ws_task_key]
+
+        stitch_task_dict = {'consensus_stitching': ConsensusStitchingWorkflow,
+                            'multicut': MulticutTask,
+                            'blockwise_multicut': BlockwiseMulticutWorkflow}
+        assert stitch_task_key in stitch_task_dict
+        stitch = stitch_task_dict[stitch_task_key]
+
+        ws_task = ws(path=self.path,
+                     aff_key=self.aff_key,
+                     mask_key=self.mask_key,
+                     ws_key=self.ws_key,
+                     max_jobs=self.max_jobs,
+                     config_path=self.config_path,
+                     tmp_folder=self.tmp_folder_ws,
+                     time_estimate=self.time_estimate,
+                     run_local=self.run_local)
+        stitch_task = stitch(path=self.path,
+                             aff_key=self.aff_key,
+                             ws_key=self.ws_key,
+                             out_key=self.node_labeling_key,
+                             max_jobs=self.max_jobs,
+                             config_path=self.config_path,
+                             tmp_folder=self.tmp_folder_seg,
+                             dependency=ws_task,
+                             time_estimate=self.time_estimate,
+                             run_local=self.run_local)
+        write_task = WriteAssignmentTask(path=self.path,
+                                         in_key=self.ws_key,
+                                         out_key=self.seg_key,
+                                         config_path=self.config_path,
+                                         max_jobs=self.max_jobs,
+                                         tmp_folder=self.tmp_folder_seg,
+                                         identifier='write_' + ws_task_key + '_' + stitch_task_key,
+                                         dependency=stitch_task,
+                                         time_estimate=self.time_estimate,
+                                         run_local=self.run_local)
+
         if self.skeleton_keys:
             with open(self.config_path) as f:
                 n_threads = json.load(f)['n_threads']
@@ -150,13 +201,13 @@ class Workflow2DWS(luigi.WrapperTask):
                                                skeleton_keys=self.skeleton_keys,
                                                n_threads=n_threads,
                                                tmp_folder=self.tmp_folder_seg,
-                                               dependency=stitch_task,
+                                               dependency=write_task,
                                                time_estimate=self.time_estimate,
                                                run_local=self.run_local)
             return eval_task
         #
         else:
-            return stitch_task
+            return write_task
 
 
 def write_default_config(path,

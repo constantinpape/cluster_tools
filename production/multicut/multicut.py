@@ -27,6 +27,8 @@ class MulticutTask(luigi.Task):
     aff_key = luigi.Parameter()
     ws_key = luigi.Parameter()
     out_key = luigi.Parameter()
+    # dummy parameter to be consistent with other segmentation tasks
+    max_jobs = luigi.IntParameter()
     # path to the configuration
     config_path = luigi.Parameter()
     tmp_folder = luigi.Parameter()
@@ -59,19 +61,10 @@ class MulticutTask(luigi.Task):
 
         with open(self.config_path) as f:
             config = json.load(f)
-            chunks = tuple(config['chunks'])
             if 'roi' in config:
                 have_roi = True
 
         assert have_roi
-
-        # find the shape and number of blocks
-        f5 = z5py.File(self.path)
-        shape = f5[self.ws_key].shape
-
-        # make the output dataset
-        f5.require_dataset(self.out_key, shape=shape,
-                           chunks=chunks, dtype='uint64', compression='gzip')
 
         config_path = os.path.join(self.tmp_folder, 'multicut_config.json')
         with open(config_path, 'w') as f:
@@ -94,18 +87,14 @@ class MulticutTask(luigi.Task):
         t = self._collect_outputs()
         success = t is not None
 
-        if success:
-            out = self.output()
-            # TODO does 'out' support with block?
-            fres = out.open('w')
-            json.dump({'time': t}, fres)
-            fres.close()
+        out_path = self.output().path
+        success = os.path.exists(out_path)
 
-        else:
+        if not success:
             raise RuntimeError("MulticutTask failed")
 
     def output(self):
-        return luigi.LocalTarget(os.path.join(self.tmp_folder, 'multicut.log'))
+        return luigi.LocalTarget(os.path.join(self.path, self.out_key))
 
 
 def _mc_impl(ws, affs, offsets,
@@ -133,7 +122,7 @@ def _mc_impl(ws, affs, offsets,
                                      with_ignore_edges=True,
                                      edge_sizes=sizes if weight_mulitcut_edges else None,
                                      weighting_exponent=weighting_exponent)
-    return nrag.projectScalarNodeDataToPixels(rag, node_labels)
+    return node_labels
 
 
 def _mc_learned_impl(ws, affs, rfs,
@@ -168,12 +157,13 @@ def _mc_learned_impl(ws, affs, rfs,
                                      with_ignore_edges=True,
                                      edge_sizes=sizes if weight_mulitcut_edges else None,
                                      weighting_exponent=weighting_exponent)
-    return nrag.projectScalarNodeDataToPixels(rag, node_labels)
+    return node_labels
 
 
 def single_multicut(path, aff_key, ws_key, out_key,
                     tmp_folder, config_path):
 
+    from production.util import normalize_and_save_assignments
     t0 = time.time()
     # load the blocks to be processed and the configuration from the input config file
     with open(config_path) as f:
@@ -183,6 +173,7 @@ def single_multicut(path, aff_key, ws_key, out_key,
     weighting_exponent = config.get('weighting_exponent', 1.)
     roi = config['roi']
     rf_path = config.get('rf_path', None)
+    n_threads = config['n_threads']
 
     # TODO support lmc
     # use_lifted = config.get('use_lifted', False)
@@ -191,9 +182,9 @@ def single_multicut(path, aff_key, ws_key, out_key,
     # open all n5 datasets
     ds_ws = z5py.File(path)[ws_key]
     # hack for the threads ...
-    ds_ws.n_threads = 8
+    ds_ws.n_threads = n_threads
     ds_affs = z5py.File(path)[aff_key]
-    ds_affs.n_threads = 8
+    ds_affs.n_threads = n_threads
 
     # get the bounding box and load affinities and
     # watershed
@@ -222,16 +213,15 @@ def single_multicut(path, aff_key, ws_key, out_key,
 
     # compute the multicut result
     if rf is None:
-        seg = _mc_impl(ws, affs, offsets,
-                       weight_mulitcut_edges=weight_mulitcut_edges,
-                       weighting_exponent=weighting_exponent)
+        node_labels = _mc_impl(ws, affs, offsets,
+                               weight_mulitcut_edges=weight_mulitcut_edges,
+                               weighting_exponent=weighting_exponent)
     else:
-        seg = _mc_learned_impl(ws, affs, rf,
-                               weight_mulitcut_edges=False,
-                               weighting_exponent=1)
+        node_labels = _mc_learned_impl(ws, affs, rf,
+                                       weight_mulitcut_edges=False,
+                                       weighting_exponent=1)
 
-    ds_out = z5py.File(path)[out_key]
-    ds_out[bb] = seg
+    normalize_and_save_assignments(path, out_key, node_labels, n_threads)
 
     out_path = os.path.join(tmp_folder, 'multicut_time.json')
     with open(out_path, 'w') as f:

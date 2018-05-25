@@ -103,6 +103,7 @@ def global_problem(path,
                    max_scale,
                    config_path,
                    tmp_folder):
+    from production.util import normalize_and_save_assignments
     t0 = time.time()
     agglomerator_key = 'multicut_kl'
     agglomerator = AGGLOMERATORS[agglomerator_key]
@@ -133,15 +134,8 @@ def global_problem(path,
     node_labeling = agglomerator(graph, costs)
 
     # get the labeling of initial nodes
-    new_initial_node_labeling = node_labeling[initial_node_labeling]
-
-    f_out = z5py.File(path, use_zarr_format=False)
-    node_shape = (len(new_initial_node_labeling), )
-    chunks = (min(len(new_initial_node_labeling), 524288), )
-    ds_nodes = f_out.require_dataset(out_key, dtype='uint64',
-                                     shape=node_shape, chunks=chunks)
-    ds_nodes.n_threads = n_threads
-    ds_nodes[:] = new_initial_node_labeling
+    assignments = node_labeling[initial_node_labeling]
+    normalize_and_save_assignments(path, out_key, assignments, n_threads)
 
     res_path = os.path.join(tmp_folder, 'global_problem.log')
     with open(res_path, 'w') as f:

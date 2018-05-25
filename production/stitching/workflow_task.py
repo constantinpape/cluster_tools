@@ -3,7 +3,6 @@ import luigi
 
 from .compute_merge_votes import MergeVotesTask
 from .compute_merges import MergesTask
-from ..write import WriteAssignmentTask
 
 
 class ConsensusStitchingWorkflow(luigi.Task):
@@ -36,6 +35,7 @@ class ConsensusStitchingWorkflow(luigi.Task):
                                          time_estimate=self.time_estimate,
                                          run_local=self.run_local)
         merge_task = MergesTask(path=self.path,
+                                ws_key=self.ws_key,
                                 out_key=self.out_key,
                                 max_jobs=self.max_jobs,
                                 config_path=self.config_path,
@@ -43,26 +43,8 @@ class ConsensusStitchingWorkflow(luigi.Task):
                                 dependency=merge_vote_task,
                                 time_estimate=self.time_estimate,
                                 run_local=self.run_local)
-        write_task = WriteAssignmentTask(path=self.path,
-                                         in_key=self.ws_key,
-                                         out_key=self.out_key,
-                                         config_path=self.config_path,
-                                         max_jobs=self.max_jobs,
-                                         tmp_folder=self.tmp_folder,
-                                         identifier='write_consensus_stitching',
-                                         dependency=merge_task,
-                                         time_estimate=self.time_estimate,
-                                         run_local=self.run_local)
-        return write_task
-
-    # just write a dummy file
-    def run(self):
-        out_path = self.input().path
-        assert os.path.exists(out_path)
-        res_file = self.output().path
-        with open(res_file, 'w') as f:
-            f.write('Success')
+        return merge_task
 
     def output(self):
-        out_path = os.path.join(self.tmp_folder, 'consensus_stitching_workflow.log')
+        out_path = os.path.join(self.path, self.out_key)
         return luigi.LocalTarget(out_path)

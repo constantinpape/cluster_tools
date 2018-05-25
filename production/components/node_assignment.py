@@ -6,7 +6,7 @@ import argparse
 import os
 import numpy as np
 import subprocess
-# from concurrent import futures
+from concurrent import futures
 
 import vigra
 import nifty
@@ -41,6 +41,7 @@ class NodeAssignmentTask(luigi.Task):
         with open(self.config_path) as f:
             config = json.load(f)
             block_shape = config['block_shape']
+            n_threads = config['n_threads']
 
         f = z5py.File(self.path)
         ds = f[self.out_key]
@@ -50,13 +51,16 @@ class NodeAssignmentTask(luigi.Task):
 
         n_jobs = min(n_blocks, self.max_jobs)
 
+        # prepare the job
+        config_path = os.path.join(self.tmp_folder, 'node_assignment_config.json')
+        with open(config_path, 'w') as f:
+            json.dump({'n_threads': n_threads}, f)
         # submit the job
-        out_path = self.output().path
-        command = '%s %s %i %s' % (script_path, self.tmp_folder, n_jobs, out_path)
-        log_file = os.path.join(self.tmp_folder, 'logs', 'log_nde_assignment')
-        err_file = os.path.join(self.tmp_folder, 'error_logs', 'err_nde_assignment.err')
-        bsub_command = 'bsub -J nde_assignment -We %i -o %s -e %s \'%s\'' % (self.time_estimate,
-                                                                             log_file, err_file, command)
+        command = '%s %s %i %s' % (script_path, self.tmp_folder, n_jobs, config_path)
+        log_file = os.path.join(self.tmp_folder, 'logs', 'log_node_assignment')
+        err_file = os.path.join(self.tmp_folder, 'error_logs', 'err_node_assignment.err')
+        bsub_command = 'bsub -n %i -J nde_assignment -We %i -o %s -e %s \'%s\'' % (n_threads, self.time_estimate,
+                                                                                   log_file, err_file, command)
         if self.run_local:
             subprocess.call([command], shell=True)
         else:
@@ -67,25 +71,30 @@ class NodeAssignmentTask(luigi.Task):
             util.wait_for_jobs('papec')
 
         # check for correct execution
+        out_path = self.output().path
         success = os.path.exists(out_path)
         if not success:
             raise RuntimeError("Compute node assignment failed")
 
     def output(self):
-        return luigi.LocalTarget(os.path.join(self.tmp_folder, 'node_assignment.npy'))
+        return luigi.LocalTarget(os.path.join(self.tmp_folder, 'component_assignments.n5', 'assignments'))
 
 
-def compute_node_assignment(tmp_folder, n_jobs, out_path):
+def compute_node_assignment(tmp_folder, n_jobs, config_path):
 
+    from production.util import normalize_and_save_assignments
     t0 = time.time()
-    assignments = []
-    # TODO parallelize ?!
-    for job_id in range(n_jobs):
-        res_path = os.path.join(tmp_folder, 'node_assignments_job%i.npy' % job_id)
-        assignment = np.load(res_path)
-        if assignment.size > 0:
-            assignments.append(assignment)
-    assignments = np.concatenate(assignments, axis=0)
+
+    with open(config_path) as f:
+        n_threads = json.load(f)['n_threads']
+
+    with futures.ThreadPoolExecutor(n_threads) as tp:
+        tasks = [tp.submit(np.load,
+                           os.path.join(tmp_folder, 'node_assignments_job%i.npy' % job_id))
+                 for job_id in range(n_jobs)]
+        assignments = [t.result() for t in tasks]
+    assignments = np.concatenate([ass for ass in assignments if ass.size > 0],
+                                 axis=0)
     n_labels = int(assignments.max()) + 1
 
     # stitch the segmentation (node level)
@@ -94,8 +103,9 @@ def compute_node_assignment(tmp_folder, n_jobs, out_path):
     node_labels = ufd.elementLabeling()
     vigra.analysis.relabelConsecutive(node_labels, keep_zeros=True,
                                       start_label=1, out=node_labels)
+    normalize_and_save_assignments(os.path.join(tmp_folder, 'component_assignments.n5'), 'assignments',
+                                   node_labels, n_threads, offset_segment_labels=False)
 
-    np.save(out_path, node_labels)
     with open(os.path.join(tmp_folder, 'node_assignment_time.json'), 'w') as f:
         json.dump({'time': time.time() - t0}, f)
 
@@ -104,6 +114,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('tmp_folder', type=str)
     parser.add_argument('n_jobs', type=int)
-    parser.add_argument('out_path', type=str)
+    parser.add_argument('config_path', type=str)
     args = parser.parse_args()
-    compute_node_assignment(args.tmp_folder, args.n_jobs, args.out_path)
+    compute_node_assignment(args.tmp_folder, args.n_jobs, args.config_path)

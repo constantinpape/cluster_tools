@@ -29,8 +29,8 @@ class GraphWorkflow(luigi.Task):
                                            tmp_folder=self.tmp_folder, dependency=self.dependency,
                                            time_estimate=self.time_estimate,
                                            run_local=self.run_local)
+        scale_tasks = [initial_task]
         if self.max_scale > 0:
-            scale_tasks = [initial_task]
             for scale in range(self.max_scale):
                 scale_tasks.append(MergeSubgraphScalesTask(path=self.path, ws_key=self.ws_key,
                                                            out_path=self.out_path, scale=scale + 1,

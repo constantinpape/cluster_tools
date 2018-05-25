@@ -101,12 +101,17 @@ class WriteAssignmentTask(luigi.Task):
         with open(self.config_path) as f:
             config = json.load(f)
             block_shape = config['block_shape']
+            chunks = config['chunks']
             # TODO support computation with roi
             if 'roi' in config:
                 have_roi = True
 
-        # find the shape and number of blocks
-        shape = z5py.File(self.path)[self.in_key].shape
+        # make the output dataset
+        f5 = z5py.File(self.path)
+        shape = f5[self.in_key].shape
+        f5.require_dataset(self.out_key, shape=shape,
+                           chunks=tuple(chunks), dtype='uint64', compression='gzip')
+
         blocking = nifty.tools.blocking([0, 0, 0], list(shape), block_shape)
         n_blocks = blocking.numberOfBlocks
 
@@ -200,17 +205,18 @@ def write_assignments(path, in_key, out_key,
                       tmp_folder, job_id,
                       offset_path=''):
 
-    # load consecutive labeling from npy or
-    # dictionary labeling from pkl
-    file_type = assignment_path.split('.')[-1]
-    if file_type == 'npy':
-        node_labels = np.load(assignment_path)
-    elif file_type == 'pkl':
+    # load consecutive labeling from npy or n5
+    # or dictionary labeling from pkl
+    if os.path.isdir(assignment_path):
+        assignment_root, assignment_key = os.path.split(assignment_path)
+        # we only need to load the second axis, because the nodes
+        # are guaranteed to be consecutive
+        node_labels = z5py.File(assignment_root)[assignment_key][:, 1]
+    else:
+        assert assignment_path.split('.')[-1] == 'pkl'
         with open(assignment_path, 'rb') as f:
             node_labels = pickle.load(f)
         assert isinstance(node_labels, dict)
-    else:
-        raise RuntimeError("Unsupported file type for node assignment")
 
     with_offsets = offset_path != ''
     if with_offsets:
@@ -245,6 +251,14 @@ def write_assignments(path, in_key, out_key,
         else:
             t0 = write_block(ds_in, ds_out, blocking, block_id, node_labels)
         times.append(t0)
+
+    # write the max-id with job 0
+    if job_id == 0:
+        if isinstance(node_labels, dict):
+            max_id = np.max(list(node_labels.values()))
+        else:
+            max_id = node_labels.max()
+        ds_out.attrs['maxId'] = int(max_id)
 
     save_path = os.path.join(tmp_folder, 'write_assignments_job%i.json' % job_id)
     with open(save_path, 'w') as f:

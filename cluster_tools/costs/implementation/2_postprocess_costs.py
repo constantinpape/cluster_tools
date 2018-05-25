@@ -43,7 +43,7 @@ def make_costs(input_path, input_key,
         if weight_edges:
             # TODO the edge sizes might not be hardcoded to this feature
             # id in the future
-            feature_ds = z5py.File(features_path, features_key)
+            feature_ds = z5py.File(features_path)[features_key]
             edge_sizes = feature_ds[:, 9:10].squeeze()
             # set edge sizes of ignore edges to 1 (we don't want them to influence the weighting)
             edge_sizes[ignore_edges] = 1

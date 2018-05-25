@@ -6,6 +6,7 @@ import json
 import argparse
 from concurrent import futures
 import subprocess
+from shutil import rmtree
 
 import vigra
 import numpy as np
@@ -22,6 +23,7 @@ class MergesTask(luigi.Task):
 
     # path to the n5 file and keys
     path = luigi.Parameter()
+    ws_key = luigi.Parameter()
     out_key = luigi.Parameter()
     # maximal number of jobs that will be run in parallel
     max_jobs = luigi.IntParameter()
@@ -56,7 +58,7 @@ class MergesTask(luigi.Task):
 
         # find the shape and number of blocks
         f5 = z5py.File(self.path)
-        shape = f5[self.out_key].shape
+        shape = f5[self.ws_key].shape
         blocking = nifty.tools.blocking([0, 0, 0], shape, block_shape)
         n_blocks = blocking.numberOfBlocks
         n_jobs = min(n_blocks, self.max_jobs)
@@ -74,19 +76,30 @@ class MergesTask(luigi.Task):
             subprocess.call([bsub_command], shell=True)
             util.wait_for_jobs('papec')
 
+        # check if all output was produced
         out_path = self.output().path
-        success = os.path.exists(out_path)
+        try:
+            success = True
+            assert os.path.exists(out_path)
+            res_path = os.path.join(self.tmp_folder, 'time_consensus_stitching.json')
+            with open(res_path) as f:
+                json.load(f)['t']
+        except Exception:
+            success = False
+            # clean up output
+            rmtree(out_path)
 
         if not success:
             raise RuntimeError('MergesTask failed')
 
     def output(self):
-        out_path = os.path.join(self.tmp_folder, 'node_assignments_consensus_stitching.npy')
+        out_path = os.path.join(self.path, self.out_key)
         return luigi.LocalTarget(out_path)
 
 
 def compute_merges(path, out_key, n_jobs, config_path, tmp_folder):
 
+    from production.util import normalize_and_save_assignments
     t0 = time.time()
     prefixes = ['a', 'b']
     with open(config_path) as f:
@@ -126,15 +139,10 @@ def compute_merges(path, out_key, n_jobs, config_path, tmp_folder):
 
     ufd.merge(merge_node_pairs)
     node_labels = ufd.elementLabeling()
-    max_id = vigra.analysis.relabelConsecutive(node_labels, keep_zeros=True,
-                                               start_label=1, out=node_labels)[1]
-    # write the number of labels to file
-    ds = z5py.File(path)[out_key]
-    ds.attrs["maxId"] = max_id
+    vigra.analysis.relabelConsecutive(node_labels, keep_zeros=True,
+                                      start_label=1, out=node_labels)
 
-    out_path = os.path.join(tmp_folder, 'node_assignments_consensus_stitching.npy')
-    np.save(out_path, node_labels)
-
+    normalize_and_save_assignments(path, out_key, node_labels, n_threads)
     res_path = os.path.join(tmp_folder, 'time_consensus_stitching.json')
     with open(res_path, 'w') as f:
         json.dump({'t': time.time() - t0}, f)
