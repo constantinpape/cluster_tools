@@ -211,6 +211,8 @@ class SegmentationWorkflow(luigi.WrapperTask):
 
 
 def write_default_config(path,
+                         ws_task='ws',
+                         stitch_task='consensus_stitching',
                          # parameters for block shapes / shifts and chunks
                          block_shape=[50, 512, 512],
                          chunks=[25, 256, 256],
@@ -254,7 +256,13 @@ def write_default_config(path,
         assert isinstance(rf_path, (list, tuple))
         assert all(os.path.exists(rfp) for rfp in rf_path)
 
-    config.update({'block_shape': block_shape,
+    assert ws_task in ('ws', 'ws_2d'), ws_task
+    assert stitch_task in ('consensus_stitching', 'multicut',
+                           'blockwise_multicut'), stitch_task
+
+    config.update({'ws_task': ws_task,
+                   'stitch_task': stitch_task,
+                   'block_shape': block_shape,
                    'block_shape2': block_shape2,
                    'block_shift': block_shift,
                    'chunks': chunks,
