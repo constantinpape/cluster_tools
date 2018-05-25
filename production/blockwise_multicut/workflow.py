@@ -2,6 +2,7 @@ import os
 import luigi
 from .graph import GraphWorkflow
 from .features import FeaturesWorkflow
+from .costs import CostsTask
 
 
 class BlockwiseMulticutWorkflow(luigi.Task):
@@ -21,6 +22,7 @@ class BlockwiseMulticutWorkflow(luigi.Task):
     def requires(self):
         graph_path = os.path.join(self.tmp_folder, 'graph.n5')
         features_path = os.path.join(self.tmp_folder, 'features.n5')
+        costs_path = os.path.join(self.tmp_folder, 'costs.n5')
         graph_task = GraphWorkflow(path=self.path,
                                    ws_key=self.ws_key,
                                    out_path=graph_path,
@@ -43,7 +45,15 @@ class BlockwiseMulticutWorkflow(luigi.Task):
                                          dependency=graph_task,
                                          time_estimate=self.time_estimate,
                                          run_local=self.requires)
-        return features_task
+        costs_task = CostsTask(features_path=features_path,
+                               graph_path=graph_path,
+                               out_path=costs_path,
+                               config_path=self.config_path,
+                               tmp_folder=self.tmp_folder,
+                               dependency=features_task,
+                               time_estimate=self.time_estimate,
+                               run_local=self.requires)
+        return costs_task
 
     # just write a dummy file
     def run(self):
@@ -54,4 +64,5 @@ class BlockwiseMulticutWorkflow(luigi.Task):
             f.write('Success')
 
     def output(self):
-        return luigi.LocalTarget(os.path.join(self.tmp_folder, 'blockwise_multicut_workflow.log'))
+        return luigi.LocalTarget(os.path.join(self.tmp_folder,
+                                              'blockwise_multicut_workflow.log'))
