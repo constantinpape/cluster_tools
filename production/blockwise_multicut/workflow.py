@@ -3,6 +3,7 @@ import luigi
 from .graph import GraphWorkflow
 from .features import FeaturesWorkflow
 from .costs import CostsTask
+from .multicut import MulticutWorkflow
 
 
 class BlockwiseMulticutWorkflow(luigi.Task):
@@ -32,7 +33,7 @@ class BlockwiseMulticutWorkflow(luigi.Task):
                                    tmp_folder=self.tmp_folder,
                                    dependency=self.dependency,
                                    time_estimate=self.time_estimate,
-                                   run_local=self.requires)
+                                   run_local=self.run_local)
         features_task = FeaturesWorkflow(path=self.path,
                                          aff_key=self.aff_key,
                                          ws_key=self.ws_key,
@@ -44,7 +45,7 @@ class BlockwiseMulticutWorkflow(luigi.Task):
                                          tmp_folder=self.tmp_folder,
                                          dependency=graph_task,
                                          time_estimate=self.time_estimate,
-                                         run_local=self.requires)
+                                         run_local=self.run_local)
         costs_task = CostsTask(features_path=features_path,
                                graph_path=graph_path,
                                out_path=costs_path,
@@ -52,8 +53,20 @@ class BlockwiseMulticutWorkflow(luigi.Task):
                                tmp_folder=self.tmp_folder,
                                dependency=features_task,
                                time_estimate=self.time_estimate,
-                               run_local=self.requires)
-        return costs_task
+                               run_local=self.run_local)
+        # multicut needs to be run with less jobs
+        # TODO don't hardcode
+        max_jobs_mc = 4
+        mc_task = MulticutWorkflow(graph_path=graph_path,
+                                   costs_path=costs_path,
+                                   max_scale=self.max_scale,
+                                   max_jobs=max_jobs_mc,
+                                   config_path=self.config_path,
+                                   tmp_folder=self.tmp_folder,
+                                   dependency=costs_task,
+                                   time_estimate=self.time_estimate,
+                                   run_local=self.run_local)
+        return mc_task
 
     # just write a dummy file
     def run(self):
