@@ -57,7 +57,9 @@ class BlockwiseMulticutWorkflow(luigi.Task):
         # multicut needs to be run with less jobs
         # TODO don't hardcode
         max_jobs_mc = 4
-        mc_task = MulticutWorkflow(graph_path=graph_path,
+        mc_task = MulticutWorkflow(path=self.path,
+                                   out_key='node_labels/labeling_test',  # TODO make parameter
+                                   graph_path=graph_path,
                                    costs_path=costs_path,
                                    max_scale=self.max_scale,
                                    max_jobs=max_jobs_mc,

@@ -23,7 +23,6 @@ class ReduceProblemTask(luigi.Task):
     graph_path = luigi.Parameter()
     costs_path = luigi.Parameter()
     scale = luigi.IntParameter()
-    max_jobs = luigi.IntParameter()
     config_path = luigi.Parameter()
     tmp_folder = luigi.Parameter()
     dependency = luigi.TaskParameter()
@@ -33,6 +32,75 @@ class ReduceProblemTask(luigi.Task):
 
     def requires(self):
         return self.dependency
+
+    def run(self):
+        from production import util
+
+        # copy the script to the temp folder and replace the shebang
+        script_path = os.path.join(self.tmp_folder, 'reduce_problem.py')
+        file_dir = os.path.dirname(os.path.abspath(__file__))
+        util.copy_and_replace(os.path.join(file_dir, 'reduce_problem.py'),
+                              script_path)
+
+        with open(self.config_path) as f:
+            config = json.load(f)
+            block_shape = config['block_shape']
+            n_threads = config['n_threads']
+            # TODO support computation with roi
+            if 'roi' in config:
+                roi = config['roi']
+            else:
+                roi = None
+
+        # prepare the job config
+        job_config = {'block_shape': block_shape,
+                      'n_threads': n_threads}
+        config_path = os.path.join(self.tmp_folder,
+                                   'reduce_problem_config_s%i.json' % self.scale)
+        with open(config_path, 'w') as f:
+            json.dump(job_config, f)
+
+        command = '%s %s %s %i %s %s' % (script_path, self.graph_path,
+                                         self.costs_path, self.scale,
+                                         config_path, self.tmp_folder)
+        log_file = os.path.join(self.tmp_folder,
+                                'logs', 'log_reduce_problem_s%i' % self.scale)
+        err_file = os.path.join(self.tmp_folder,
+                                'error_logs', 'err_reduce_problem_s%i.err' % self.scale)
+        bsub_command = ('bsub -n %i -J reduce_problem ' % n_threads +
+                        '-We %i -o %s -e %s \'%s\'' % (self.time_estimate,
+                                                       log_file, err_file, command))
+        if self.run_local:
+            subprocess.call([command], shell=True)
+        else:
+            subprocess.call([bsub_command], shell=True)
+            util.wait_for_jobs('papec')
+
+        ds_graph = z5py.File(self.graph_path)['graph']
+        nodes = ds_graph.attrs['numberOfNodes']
+        edges = ds_graph.attrs['numberOfEdges']
+        # check the output
+        try:
+            with open(self.output().path) as f:
+                res = json.load(f)
+                t = res['t']
+                new_nodes = res['new_nodes']
+                new_edges = res['new_edges']
+            print("Reduce problem finished in", t, "s")
+            print("Reduced number of nodes from", nodes, "to", new_nodes)
+            print("Reduced number of edges from", edges, "to", new_edges)
+            success = True
+        except Exception:
+            success = False
+
+        # write output file if we succeed, otherwise write partial
+        # success to different file and raise exception
+        if not success:
+            raise RuntimeError("ReduceProblemTask failed")
+
+    def output(self):
+        res_file = os.path.join(self.tmp_folder, 'reduce_problem_s%i.log' % self.scale)
+        return luigi.LocalTarget(res_file)
 
 
 def merge_nodes(tmp_folder, scale, n_blocks, n_nodes, uv_ids,
@@ -107,8 +175,8 @@ def serialize_new_problem(graph_path, n_new_nodes, new_uv_ids,
     #     g_out = f_graph['s%i' % next_scale]
     # if 'sub_graphs' not in g_out:
     #     g_out.create_group('sub_graphs')
-    g_out = f_graph.create_group('s%i' % next_scale)
-    g_out.create_group('sub_graphs')
+    g_out = f_graph.require_group('s%i' % next_scale)
+    g_out.require_group('sub_graphs')
 
     # TODO this should be handled by symlinks
     if scale == 0:
@@ -139,14 +207,16 @@ def serialize_new_problem(graph_path, n_new_nodes, new_uv_ids,
     g_out.attrs['numberOfEdges'] = n_new_edges
 
     shape_edges = (n_new_edges, 2)
-    ds_edges = g_out.create_dataset('edges', dtype='uint64',
-                                    shape=shape_edges, chunks=shape_edges)
+    ds_edges = g_out.require_dataset('edges', dtype='uint64',
+                                     shape=shape_edges, chunks=shape_edges)
+    ds_edges.n_threads = n_threads
     ds_edges[:] = new_uv_ids
 
     nodes = np.unique(new_uv_ids)
     shape_nodes = (len(nodes),)
-    ds_nodes = g_out.create_dataset('nodes', dtype='uint64',
-                                    shape=shape_nodes, chunks=shape_nodes)
+    ds_nodes = g_out.require_dataset('nodes', dtype='uint64',
+                                     shape=shape_nodes, chunks=shape_nodes)
+    ds_nodes.n_threads = n_threads
     ds_nodes[:] = nodes
 
     # serialize the node labeling
@@ -158,11 +228,9 @@ def serialize_new_problem(graph_path, n_new_nodes, new_uv_ids,
 
     # serialize the new costs
     shape_costs = (n_new_edges,)
-    if 'costs' not in g_out:
-        ds_costs = g_out.create_dataset('costs', dtype='float32',
-                                        shape=shape_costs, chunks=shape_costs)
-    else:
-        ds_costs = g_out['costs']
+    ds_costs = g_out.require_dataset('costs', dtype='float32',
+                                     shape=shape_costs, chunks=shape_costs)
+    ds_costs.n_threads = n_threads
     ds_costs[:] = new_costs
 
     return n_new_edges

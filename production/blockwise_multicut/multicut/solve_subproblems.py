@@ -98,7 +98,7 @@ class SolveSubproblemTask(luigi.Task):
 
         with open(self.config_path) as f:
             config = json.load(f)
-            block_shape = config['block_shape']
+            initial_block_shape = config['block_shape']
             n_threads = config['n_threads']
             # TODO support computation with roi
             if 'roi' in config:
@@ -107,12 +107,14 @@ class SolveSubproblemTask(luigi.Task):
                 roi = None
 
         # get number of blocks
+        factor = 2**self.scale
+        block_shape = [factor * bs for bs in initial_block_shape]
         shape = z5py.File(self.graph_path).attrs['shape']
         blocking = nifty.tools.blocking([0, 0, 0], shape, block_shape)
         n_blocks = blocking.numberOfBlocks
         # find the actual number of jobs and prepare job configs
         n_jobs = min(n_blocks, self.max_jobs)
-        self._prepare_jobs(n_jobs, n_blocks, block_shape, n_threads)
+        self._prepare_jobs(n_jobs, n_blocks, initial_block_shape, n_threads)
 
         # submit the jobs
         if self.run_local:
@@ -143,7 +145,7 @@ class SolveSubproblemTask(luigi.Task):
             json.dump({'times': times}, fres)
             fres.close()
         else:
-            log_path = os.path.join(self.tmp_folder, 'solve_subproblems_partial.json')
+            log_path = os.path.join(self.tmp_folder, 'solve_subproblems_s%i_partial.json' % self.scale)
             with open(log_path, 'w') as out:
                 json.dump({'times': times,
                            'processed_blocks': processed_blocks}, out)
@@ -154,7 +156,7 @@ class SolveSubproblemTask(luigi.Task):
                                                                      log_path))
 
     def output(self):
-        return luigi.LocalTarget(os.path.join(self.tmp_folder, 'solve_subproblems.log'))
+        return luigi.LocalTarget(os.path.join(self.tmp_folder, 'solve_subproblems_s%i.log' % self.scale))
 
 
 def solve_block_subproblem(block_id,
@@ -262,7 +264,7 @@ def solve_subproblems(graph_path,
         block_prefix = os.path.join(graph_path, 'sub_graphs', 's0', 'block_')
     else:
         graph_path_ = os.path.join(tmp_folder, 'merged_graph.n5', 's%i' % scale)
-        block_prefix = os.path.join(graph_path_, 's%i' % scale, 'sub_graphs', 'block_')
+        block_prefix = os.path.join(graph_path_, 'sub_graphs', 'block_')
 
     # TODO parallelize ?!
     # load the complete graph
