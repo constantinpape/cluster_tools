@@ -107,7 +107,7 @@ def compute_node_assignment(tmp_folder, n_jobs, config_path):
                                    node_labels, n_threads, offset_segment_labels=False)
 
     with open(os.path.join(tmp_folder, 'node_assignment_time.json'), 'w') as f:
-        json.dump({'time': time.time() - t0}, f)
+        json.dump({'t': time.time() - t0}, f)
 
 
 if __name__ == '__main__':
