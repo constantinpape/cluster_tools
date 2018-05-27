@@ -112,7 +112,9 @@ class FillingWatershedTask(luigi.Task):
     def _collect_outputs(self, n_blocks):
         times = []
         processed_blocks = []
-        for block_id in range(n_blocks):
+        # support integeres and lists as input
+        block_list = range(n_blocks) if isinstance(n_blocks, int) else n_blocks
+        for block_id in block_list:
             res_file = os.path.join(self.tmp_folder, 'filling_watershed_block%i.json' % block_id)
             try:
                 with open(res_file) as f:
@@ -124,21 +126,10 @@ class FillingWatershedTask(luigi.Task):
                 continue
         return processed_blocks, times
 
-    def run(self):
-        from .. import util
-
-        # copy the script to the temp folder and replace the shebang
-        file_dir = os.path.dirname(os.path.abspath(__file__))
-        util.copy_and_replace(os.path.join(file_dir, 'filling_watershed.py'),
-                              os.path.join(self.tmp_folder, 'filling_watershed.py'))
-
-        with open(self.config_path) as f:
-            config = json.load(f)
-            block_shape = config['block_shape']
-            # TODO support computation with roi
-            if 'roi' in config:
-                have_roi = True
-
+    # normal run of the workflow
+    # TODO support ROI
+    def _normal_run(self, config, block_shape):
+        print("Starting normal run")
         # get the shape
         f5 = z5py.File(self.path)
         shape = f5[self.seeds_key].shape
@@ -178,9 +169,79 @@ class FillingWatershedTask(luigi.Task):
             with open(log_path, 'w') as out:
                 json.dump({'times': times,
                            'processed_blocks': processed_blocks}, out)
-            raise RuntimeError("FillingWatershedTask failed, %i / %i blocks processed, serialized partial results to %s" % (len(processed_blocks),
-                                                                                                                            n_blocks,
-                                                                                                                            log_path))
+            raise RuntimeError("FillingWatershedTask failed, %i / %i blocks processed," % (len(processed_blocks),
+                                                                                           n_blocks)
+                               + "serialized partial results to %s" % log_path)
+
+    # second run to process failed blocks
+    def _second_run(self, config, block_list):
+        # number of failed blocks
+        n_blocks = len(block_list)
+        print("Starting salvage run for", n_blocks, "blocks")
+
+        # find the actual number of jobs and prepare job configs
+        n_jobs = min(n_blocks, self.max_jobs)
+
+        # prepare and run the jobs
+        # add halo to the config
+        config.update({'second_pass_filling_ws': True})
+        self._prepare_jobs(n_jobs, block_list, config, 'second_run')
+        self._submit_jobs(n_jobs, 'second_run')
+
+        # check the outputs
+        processed_blocks, times = self._collect_outputs(block_list)
+        assert len(processed_blocks) == len(times)
+        success = len(processed_blocks) == n_blocks
+        n_processed = len(processed_blocks)
+
+        # load and update previous results
+        log_path = os.path.join(self.tmp_folder, 'filling_watershed_partial.json')
+        with open(log_path) as f:
+            results = json.load(f)
+        times = results['times'] + times
+        processed_blocks = results['processed_blocks'] + processed_blocks
+
+        # write output file if we succeed, otherwise write partial
+        # success to different file and raise exception
+        if success:
+            out = self.output()
+            # TODO does 'out' support with block?
+            fres = out.open('w')
+            json.dump({'times': times}, fres)
+            fres.close()
+        else:
+            log_path = os.path.join(self.tmp_folder, 'filling_watershed_partial.json')
+            with open(log_path, 'w') as out:
+                json.dump({'times': times,
+                           'processed_blocks': processed_blocks}, out)
+            raise RuntimeError("FillingWatershedTask failed, %i / %i blocks processed," % (n_processed,
+                                                                                           n_blocks)
+                               + "serialized partial results to %s" % log_path)
+
+    def run(self):
+        from .. import util
+
+        # copy the script to the temp folder and replace the shebang
+        file_dir = os.path.dirname(os.path.abspath(__file__))
+        util.copy_and_replace(os.path.join(file_dir, 'filling_watershed.py'),
+                              os.path.join(self.tmp_folder, 'filling_watershed.py'))
+
+        with open(self.config_path) as f:
+            config = json.load(f)
+            block_shape = config['block_shape']
+            # TODO support computation with roi
+            if 'roi' in config:
+                have_roi = True
+            if 'failed_blocks_filling_ws' in config:
+                second_run = True
+                block_list = config['failed_blocks_filling_ws']
+            else:
+                second_run = False
+
+        if second_run:
+            self._second_run(config, block_list)
+        else:
+            self._normal_run(config, block_shape)
 
     def output(self):
         return luigi.LocalTarget(os.path.join(self.tmp_folder, 'filling_watershed.log'))
@@ -249,7 +310,8 @@ def run_2d_ws(hmap, seeds, mask, size_filter, offset):
 
 def ws_block(ds_affs, ds_seeds, ds_mask,
              blocking, block_id, block_config,
-             empty_blocks, tmp_folder, offset):
+             empty_blocks, tmp_folder, offset,
+             second_pass):
 
     print("Processing block", block_id)
     res_file = os.path.join(tmp_folder, 'filling_watershed_block%i.json' % block_id)
@@ -280,11 +342,6 @@ def ws_block(ds_affs, ds_seeds, ds_mask,
                      for beg, end in zip(block.innerBlockLocal.begin, block.innerBlockLocal.end))
 
     mask = ds_mask[outer_bb]
-    # FIXME weird runtime error I don't understand
-    try:
-        seeds = ds_seeds[outer_bb]
-    except RuntimeError:
-        seeds = ds_seeds[inner_bb]
 
     # load affinities and make heightmap for the watershed
     bb_affs = (slice(1, 3),) + outer_bb
@@ -301,16 +358,37 @@ def ws_block(ds_affs, ds_seeds, ds_mask,
     # in the extended seeds
     max_seeds = compute_max_seeds(affs, boundary_threshold, sigma_maxima, offset)
 
-    # add maxima seeds where we don't have seeds from the distance transform components
-    # and where we are not in the invalid mask
-    unlabeled_in_seeds = np.logical_and(seeds == 0, mask)
-    seeds[unlabeled_in_seeds] += max_seeds[unlabeled_in_seeds]
+    # load surrounding seeds in the second pass and
+    # add them to the new seeds, to get a segmentatin without blocking artefacts
+    if second_pass:
+        # FIXME weird runtime error I don't understand
+        # where seeds cannot be read from the larger bounding box
+        # this only happens very rarely, so as a quick fix, we just
+        # restrict the block to the inner bounding box.
+        # This will produce blocking artifacts for this block, but
+        # won't harm the overall results otherwise
+        try:
+            seeds = ds_seeds[outer_bb]
+            seed_bb = local_bb
+        except RuntimeError:
+            seeds = ds_seeds[inner_bb]
+            mask = mask[local_bb]
+            affs = affs[(slice(None),) + local_bb]
+            seed_bb = np.s_[:]
+        # add maxima seeds where we don't have seeds from the distance transform components
+        # and where we are not in the invalid mask
+        unlabeled_in_seeds = np.logical_and(seeds == 0, mask)
+        seeds[unlabeled_in_seeds] += max_seeds[unlabeled_in_seeds]
+
+    else:
+        seeds = max_seeds
+        seed_bb = np.s_[:]
 
     # run the watershed
     seeds, max_id = run_2d_ws(affs, seeds, inv_mask, size_filter, offset)
 
     # write the result
-    ds_seeds[inner_bb] = seeds[local_bb]
+    ds_seeds[inner_bb] = seeds[seed_bb]
     with open(res_file, 'w') as f:
         json.dump({'t': time.time() - t0}, f)
 
@@ -335,13 +413,15 @@ def filling_ws(path, aff_key, seed_key, mask_key,
         offset_config = json.load(f)
         empty_blocks = offset_config['empty_blocks']
         offset = offset_config['n_labels']
+        second_pass = 'second_pass_filling_ws' in config
 
     shape = ds_seeds.shape
     blocking = nifty.tools.blocking([0, 0, 0], list(shape), list(block_shape))
 
     [ws_block(ds_affs, ds_seeds, ds_mask,
               blocking, int(block_id), config,
-              empty_blocks, tmp_folder, offset) for block_id in block_list]
+              empty_blocks, tmp_folder, offset, second_pass)
+     for block_id in block_list]
 
 
 if __name__ == '__main__':

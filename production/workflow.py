@@ -318,3 +318,13 @@ def write_dt_components_config(path,
                    'sigma': sigma})
     with open(path, 'w') as f:
         json.dump(config, f)
+
+
+# write additional config, e.g. for salvage runs
+def write_additional_config(path, **additional_config):
+    assert os.path.isfile(path), path
+    with open(path) as f:
+        config = json.load(f)
+    config.update(**additional_config)
+    with open(path, 'w') as f:
+        json.dump(config, f)
