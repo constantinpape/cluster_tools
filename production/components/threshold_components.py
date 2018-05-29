@@ -43,11 +43,11 @@ class ThresholdTask(luigi.Task):
         config_path = os.path.join(self.tmp_folder, 'threshold_config_job%i.json' % job_id)
         command = '%s %s %s %s %s %i %s %s' % (script_path, self.path, self.aff_key, self.mask_key, self.out_key,
                                                job_id, config_path, self.tmp_folder)
-        log_file = os.path.join(self.tmp_folder, 'logs', 'log_threshold_block_%i' % job_id)
-        err_file = os.path.join(self.tmp_folder, 'error_logs', 'err_threshold_block_%i.err' % job_id)
-        bsub_command = 'bsub -J threshold_block_%i -We %i -o %s -e %s \'%s\'' % (job_id,
-                                                                                 self.time_estimate,
-                                                                                 log_file, err_file, command)
+        log_file = os.path.join(self.tmp_folder, 'logs', 'log_threshold_job_%i' % job_id)
+        err_file = os.path.join(self.tmp_folder, 'error_logs', 'err_threshold_job_%i.err' % job_id)
+        bsub_command = 'bsub -J threshold_job_%i -We %i -o %s -e %s \'%s\'' % (job_id,
+                                                                               self.time_estimate,
+                                                                               log_file, err_file, command)
         if self.run_local:
             subprocess.call([command], shell=True)
         else:
@@ -94,8 +94,8 @@ class ThresholdTask(luigi.Task):
             block_shape = config['block_shape']
             chunks = tuple(config['chunks'])
             # TODO support computation with roi
-            if 'roi' in config:
-                have_roi = True
+            # if 'roi' in config:
+            #     have_roi = True
 
         # find the shape and number of blocks
         f = z5py.File(self.path)
@@ -146,9 +146,9 @@ class ThresholdTask(luigi.Task):
                 json.dump({'n_components': n_components,
                            'times': times,
                            'processed_blocks': processed_blocks}, out)
-            raise RuntimeError("ThresholdTask failed, %i / %i blocks processed, serialized partial results to %s" % (len(processed_blocks),
-                                                                                                                     n_blocks,
-                                                                                                                     log_path))
+            raise RuntimeError("ThresholdTask failed, %i / %i blocks processed," (len(processed_blocks),
+                                                                                  n_blocks) +
+                               "serialized partial results to %s" % log_path)
 
     def output(self):
         return luigi.LocalTarget(os.path.join(self.tmp_folder, 'threshold.log'))
@@ -178,6 +178,32 @@ def compute_dt_threshold(affs, mask, boundary_threshold,
     affs = vigra.filters.distanceTransform(affs, pixel_pitch=resolution)[local_bb]
     # return conected components of areas larger than the distance threshold
     return vigra.analysis.labelVolumeWithBackground((affs > distance_threshold).view('uint8'))
+
+
+# load affinities or other map
+def load_affinities(ds_affs, bb, aff_slices, invert_channels):
+    if aff_slices is None:
+        assert ds_affs.ndim == 3
+        affs = ds_affs[bb]
+    else:
+        assert ds_affs.ndim == 4
+        # load the affinities from the slices specified in the config
+        affs = []
+        for aff_slice, inv_channel in zip(aff_slices, invert_channels):
+            aff = ds_affs[aff_slice + bb]
+            if aff.dtype == np.dtype('uint8'):
+                aff = aff.astype('float32') / 255.
+            if inv_channel:
+                aff = 1. - aff
+            if aff.ndim == 3:
+                aff = aff[None]
+            affs.append(aff)
+        affs = np.concatenate(affs, axis=0)
+
+    # make max projection, threshold and extract connected components
+    if affs.ndim == 4:
+        affs = np.max(affs, axis=0)
+    return affs
 
 
 def threshold_dt_blocks(ds_affs, ds_mask, ds_out, blocking, block_id, config):
@@ -211,27 +237,12 @@ def threshold_dt_blocks(ds_affs, ds_mask, ds_out, blocking, block_id, config):
     if np.sum(mask) == 0:
         return 0, time.time() - t0
 
-    # load the affinities from the slices specified in the config
-    affs = []
-    for aff_slice, inv_channel in zip(aff_slices, invert_channels):
-        aff = ds_affs[aff_slice + bb]
-        if aff.dtype == np.dtype('uint8'):
-            aff = aff.astype('float32') / 255.
-        if inv_channel:
-            aff = 1. - aff
-        if aff.ndim == 3:
-            aff = aff[None]
-        affs.append(aff)
-    affs = np.concatenate(affs, axis=0)
-
-    # make max projection, threshold and extract connected components
-    affs = np.max(affs, axis=0)
     local_bb = tuple(slice(beg, end) for beg, end in zip(block.innerBlockLocal.begin,
                                                          block.innerBlockLocal.end))
+    affs = load_affinities(ds_affs, bb, aff_slices, invert_channels)
     affs = compute_dt_threshold(affs, mask, boundary_threshold,
                                 distance_threshold, resolution, sigma,
                                 local_bb)
-    # affs = compute_threshold(affs, mask, boundary_threshold)
 
     # write the result to the out volume,
     inner_bb = tuple(slice(beg, end) for beg, end in zip(block.innerBlock.begin,
@@ -247,9 +258,9 @@ def threshold_default_blocks(ds_affs, ds_mask, ds_out, blocking, block_id, confi
 
     # get parameters from the config object
     boundary_threshold = config['boundary_threshold']
-    aff_slices = config['aff_slices']
+    aff_slices = config.get('aff_slices', None)
     aff_slices = [(slice(sl[0], sl[1]),) for sl in aff_slices]
-    invert_channels = config['invert_channels']
+    invert_channels = config.get('invert_channels', None)
     assert len(aff_slices) == len(invert_channels)
 
     # get block bounding box
@@ -264,21 +275,7 @@ def threshold_default_blocks(ds_affs, ds_mask, ds_out, blocking, block_id, confi
     if np.sum(mask) == 0:
         return 0, time.time() - t0
 
-    # load the affinities from the slices specified in the config
-    affs = []
-    for aff_slice, inv_channel in zip(aff_slices, invert_channels):
-        aff = ds_affs[aff_slice + bb]
-        if aff.dtype == np.dtype('uint8'):
-            aff = aff.astype('float32') / 255.
-        if inv_channel:
-            aff = 1. - aff
-        if aff.ndim == 3:
-            aff = aff[None]
-        affs.append(aff)
-    affs = np.concatenate(affs, axis=0)
-
-    # make max projection, threshold and extract connected components
-    affs = np.max(affs, axis=0)
+    affs = load_affinities(ds_affs, bb, aff_slices, invert_channels)
     affs = compute_threshold(affs, mask, boundary_threshold)
 
     # write the result to the out volume,
