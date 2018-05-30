@@ -382,7 +382,7 @@ def ws_block(ds_affs, ds_seeds, ds_mask,
 
     else:
         seeds = max_seeds
-        seed_bb = np.s_[:]
+        seed_bb = local_bb
 
     # run the watershed
     seeds, max_id = run_2d_ws(affs, seeds, inv_mask, size_filter, offset)
