@@ -1,4 +1,5 @@
 import os
+import json
 import luigi
 from .find_uniques import FindUniquesTask
 from .find_labeling import FindLabelingTask
@@ -25,6 +26,8 @@ class RelabelWorkflow(luigi.Task):
     run_local = luigi.BoolParameter(default=False)
 
     def requires(self):
+        with open(self.config_path) as f:
+            n_jobs_write = json.load(f).get('n_jobs_write', 50)
         uniques_task = FindUniquesTask(path=self.path,
                                        key=self.key,
                                        max_jobs=self.max_jobs,
@@ -35,6 +38,7 @@ class RelabelWorkflow(luigi.Task):
                                        run_local=self.run_local)
         labels_task = FindLabelingTask(path=self.path,
                                        key=self.key,
+                                       max_jobs=self.max_jobs,
                                        config_path=self.config_path,
                                        tmp_folder=self.tmp_folder,
                                        dependency=uniques_task,
@@ -44,7 +48,7 @@ class RelabelWorkflow(luigi.Task):
                                          in_key=self.key,
                                          out_key=self.key,
                                          config_path=self.config_path,
-                                         max_jobs=self.max_jobs,
+                                         max_jobs=n_jobs_write,
                                          tmp_folder=self.tmp_folder,
                                          identifier='write_relabel',
                                          dependency=labels_task,

@@ -46,32 +46,32 @@ class FindUniquesTask(luigi.Task):
         script_path = os.path.join(self.tmp_folder, 'find_uniques.py')
         assert os.path.exists(script_path)
         config_path = os.path.join(self.tmp_folder, 'find_uniques_config_job%i.json' % job_id)
-        command = '%s %s %s %s %s' % (script_path, self.path, self.key,
-                                      config_path, self.tmp_folder)
-        log_file = os.path.join(self.tmp_folder, 'logs', 'log_uniques_block_%i' % job_id)
-        err_file = os.path.join(self.tmp_folder, 'error_logs', 'err_uniques_block_%i.err' % job_id)
-        bsub_command = 'bsub -J uniques_block_%i -We %i -o %s -e %s \'%s\'' % (job_id,
-                                                                               self.time_estimate,
-                                                                               log_file, err_file, command)
+        command = '%s %s %s %i %s %s' % (script_path, self.path, self.key, job_id,
+                                         config_path, self.tmp_folder)
+        log_file = os.path.join(self.tmp_folder, 'logs', 'log_uniques_job_%i' % job_id)
+        err_file = os.path.join(self.tmp_folder, 'error_logs', 'err_uniques_job_%i.err' % job_id)
+        bsub_command = 'bsub -J uniques_job_%i -We %i -o %s -e %s \'%s\'' % (job_id,
+                                                                             self.time_estimate,
+                                                                             log_file, err_file, command)
         if self.run_local:
             subprocess.call([command], shell=True)
         else:
             subprocess.call([bsub_command], shell=True)
 
-    def _collect_outputs(self, n_blocks):
+    def _collect_outputs(self, n_jobs):
         times = []
-        processed_blocks = []
-        for block_id in range(n_blocks):
-            res_file = os.path.join(self.tmp_folder, 'times_uniques_block%i.json' % block_id)
+        processed_jobs = []
+        for job_id in range(n_jobs):
+            res_file = os.path.join(self.tmp_folder, 'times_uniques_job%i.json' % job_id)
             try:
                 with open(res_file) as f:
                     res = json.load(f)
                     times.append(res['t'])
-                processed_blocks.append(block_id)
+                processed_jobs.append(job_id)
                 os.remove(res_file)
             except Exception:
                 continue
-        return processed_blocks, times
+        return processed_jobs, times
 
     def run(self):
         from .. import util
@@ -85,8 +85,8 @@ class FindUniquesTask(luigi.Task):
             config = json.load(f)
             block_shape = config['block_shape']
             # TODO support computation with roi
-            if 'roi' in config:
-                have_roi = True
+            # if 'roi' in config:
+            #     have_roi = True
 
         # find the shape and number of blocks
         shape = z5py.File(self.path)[self.key].shape
@@ -113,9 +113,9 @@ class FindUniquesTask(luigi.Task):
             util.wait_for_jobs('papec')
 
         # check the job outputs
-        processed_blocks, times = self._collect_outputs(n_blocks)
-        assert len(processed_blocks) == len(times)
-        success = len(processed_blocks) == n_blocks
+        processed_jobs, times = self._collect_outputs(n_jobs)
+        assert len(processed_jobs) == len(times)
+        success = len(processed_jobs) == n_jobs
 
         # write output file if we succeed, otherwise write partial
         # success to different file and raise exception
@@ -129,10 +129,10 @@ class FindUniquesTask(luigi.Task):
             log_path = os.path.join(self.tmp_folder, 'find_uniques_partial.json')
             with open(log_path, 'w') as out:
                 json.dump({'times': times,
-                           'processed_blocks': processed_blocks}, out)
-            raise RuntimeError("FindUniquesTask failed, %i / %i blocks processed, serialized partial results to %s" % (len(processed_blocks),
-                                                                                                                       n_blocks,
-                                                                                                                       log_path))
+                           'processed_jobs': processed_jobs}, out)
+            raise RuntimeError("FindUniquesTask failed, %i / %i jobs processed," % (len(processed_jobs),
+                                                                                    n_jobs) +
+                               "serialized partial results to %s" % log_path)
 
     def output(self):
         out_file = os.path.join(self.tmp_folder, 'find_uniques.json')
@@ -140,18 +140,23 @@ class FindUniquesTask(luigi.Task):
 
 
 def uniques_in_block(block_id, blocking, ds, tmp_folder):
-    t0 = time.time()
+    # t0 = time.time()
     block = blocking.getBlock(block_id)
     bb = tuple(slice(b, e) for b, e in zip(block.begin, block.end))
     labels = ds[bb]
-    uniques = np.unique(labels)
-    np.save(os.path.join(tmp_folder, 'uniques_block_%i.npy' % block_id), uniques)
-    res_path = os.path.join(tmp_folder, 'times_uniques_block%i.json' % block_id)
-    with open(res_path, 'w') as f:
-        json.dump({'t': time.time() - t0}, f)
+    # uniques = np.unique(labels)
+    uniques = nifty.tools.unique(labels)
+    # too many files !!!
+    # np.save(os.path.join(tmp_folder, 'uniques_block_%i.npy' % block_id), uniques)
+    # res_path = os.path.join(tmp_folder, 'times_uniques_block%i.json' % block_id)
+    # with open(res_path, 'w') as f:
+    #     json.dump({'t': time.time() - t0}, f)
+    return uniques
 
 
-def find_uniques(labels_path, labels_key, config_file, tmp_folder):
+def find_uniques(labels_path, labels_key, job_id, config_file, tmp_folder):
+    print("Running job", job_id)
+    t0 = time.time()
     ds_labels = z5py.File(labels_path, use_zarr_format=False)[labels_key]
     shape = ds_labels.shape
 
@@ -164,17 +169,26 @@ def find_uniques(labels_path, labels_key, config_file, tmp_folder):
                                     roiEnd=list(shape),
                                     blockShape=block_shape)
 
-    [uniques_in_block(block_id, blocking, ds_labels, tmp_folder) for block_id in block_list]
+    uniques = [uniques_in_block(block_id, blocking, ds_labels, tmp_folder)
+               for block_id in block_list]
+    uniques = nifty.tools.unique(np.concatenate(uniques))
+    np.save(os.path.join(tmp_folder, 'uniques_job_%i.npy' % job_id), uniques)
+    res_path = os.path.join(tmp_folder, 'times_uniques_job%i.json' % job_id)
+    with open(res_path, 'w') as f:
+        json.dump({'t': time.time() - t0}, f)
+    print("done")
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("labels_path", type=str)
     parser.add_argument("labels_key", type=str)
+    parser.add_argument("job_id", type=int)
 
     parser.add_argument("config_file", type=str)
     parser.add_argument("tmp_folder", type=str)
 
     args = parser.parse_args()
     find_uniques(args.labels_path, args.labels_key,
+                 args.job_id,
                  args.config_file, args.tmp_folder)

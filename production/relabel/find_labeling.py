@@ -10,7 +10,7 @@ import subprocess
 import numpy as np
 import vigra
 import z5py
-import nifty
+# import nifty
 import luigi
 
 
@@ -22,6 +22,7 @@ class FindLabelingTask(luigi.Task):
     key = luigi.Parameter()
     # path to the configuration
     # TODO allow individual paths for individual blocks
+    max_jobs = luigi.IntParameter()
     config_path = luigi.Parameter()
     tmp_folder = luigi.Parameter()
     dependency = luigi.TaskParameter()
@@ -32,15 +33,21 @@ class FindLabelingTask(luigi.Task):
     def requires(self):
         return self.dependency
 
-    def _submit_job(self, block_shape):
+    # def _submit_job(self, block_shape):
+    def _submit_job(self, n_jobs, n_threads):
         script_path = os.path.join(self.tmp_folder, 'find_labeling.py')
         assert os.path.exists(script_path)
+        # command = '%s %s %s %s %s' % (script_path, self.path, self.key,
+        #                               self.tmp_folder, ' '.join(map(str, block_shape)))
         command = '%s %s %s %s %s' % (script_path, self.path, self.key,
-                                      self.tmp_folder, ' '.join(map(str, block_shape)))
+                                      self.tmp_folder, n_jobs)
         log_file = os.path.join(self.tmp_folder, 'logs', 'log_find_labeling')
-        err_file = os.path.join(self.tmp_folder, 'error_logs', 'err_find_abeling')
-        bsub_command = 'bsub -J find_labeling -We %i -o %s -e %s \'%s\'' % (self.time_estimate,
-                                                                            log_file, err_file, command)
+        err_file = os.path.join(self.tmp_folder, 'error_logs', 'err_find_labeling')
+        bsub_command = 'bsub -n %i -J find_labeling -We %i -o %s -e %s \'%s\'' % (n_threads,
+                                                                                  self.time_estimate,
+                                                                                  log_file,
+                                                                                  err_file,
+                                                                                  command)
         if self.run_local:
             subprocess.call([command], shell=True)
         else:
@@ -56,12 +63,16 @@ class FindLabelingTask(luigi.Task):
 
         with open(self.config_path) as f:
             config = json.load(f)
-            block_shape = config['block_shape']
+            n_threads = config['n_threads']
+            # block_shape = config['block_shape']
             # TODO support computation with roi
-            if 'roi' in config:
-                have_roi = True
+            # if 'roi' in config:
+            #     have_roi = True
 
-        self._submit_job(block_shape)
+        # self._submit_job(block_shape)
+        # TODO find proper n_jobs
+        n_jobs = self.max_jobs
+        self._submit_job(n_jobs, n_threads)
         # wait till all jobs are finished
         if not self.run_local:
             util.wait_for_jobs('papec')
@@ -81,19 +92,24 @@ class FindLabelingTask(luigi.Task):
 
 
 # TODO this could be parallelized
-def find_labeling(labels_path, labels_key, tmp_folder, block_shape, n_threads=1):
+# def find_labeling(labels_path, labels_key, tmp_folder, block_shape, n_threads=1):
+def find_labeling(labels_path, labels_key, tmp_folder, n_jobs, n_threads=1):
     t0 = time.time()
     ds_labels = z5py.File(labels_path, use_zarr_format=False)[labels_key]
-    shape = ds_labels.shape
+    # shape = ds_labels.shape
 
-    blocking = nifty.tools.blocking(roiBegin=[0, 0, 0],
-                                    roiEnd=list(shape),
-                                    blockShape=block_shape)
+    # blocking = nifty.tools.blocking(roiBegin=[0, 0, 0],
+    #                                 roiEnd=list(shape),
+    #                                 blockShape=block_shape)
+    # uniques = np.concatenate([np.load(os.path.join(tmp_folder, 'uniques_block_%i.npy' % block_id))
+    #                           for block_id in range(blocking.numberOfBlocks)])
+    # uniques = np.unique(uniques).astype('uint64', copy=False)
 
-    uniques = np.concatenate([np.load(os.path.join(tmp_folder, 'uniques_block_%i.npy' % block_id))
-                              for block_id in range(blocking.numberOfBlocks)])
-    uniques = np.unique(uniques).astype('uint64', copy=False)
-    _, max_id, mapping = vigra.analysis.relabelConsecutive(uniques, keep_zeros=True, start_label=1)
+    uniques = np.concatenate([np.load(os.path.join(tmp_folder, 'uniques_job_%i.npy' % job_id))
+                              for job_id in range(n_jobs)])
+    _, max_id, mapping = vigra.analysis.relabelConsecutive(uniques,
+                                                           keep_zeros=True,
+                                                           start_label=1)
 
     ds_labels.attrs['maxId'] = max_id
 
@@ -110,11 +126,13 @@ if __name__ == '__main__':
     parser.add_argument("labels_key", type=str)
 
     parser.add_argument("tmp_folder", type=str)
-    parser.add_argument("block_shape", nargs=3, type=int)
+    # parser.add_argument("block_shape", nargs=3, type=int)
+    parser.add_argument("n_jobs", type=int)
     parser.add_argument("--n_threads", type=int, default=1)
 
     args = parser.parse_args()
     find_labeling(args.labels_path, args.labels_key,
                   args.tmp_folder,
-                  list(args.block_shape),
+                  # list(args.block_shape),
+                  args.n_jobs,
                   args.n_threads)
