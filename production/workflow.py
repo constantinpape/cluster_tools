@@ -35,9 +35,11 @@ class WatershedWorkflow(luigi.Task):
     def requires(self):
         # make the tmp, log and err dicts if necessary
         make_dirs(self.tmp_folder)
+
         components_task = ComponentsWorkflow(path=self.path, aff_key=self.aff_key,
                                              mask_key=self.mask_key, out_key=self.ws_key,
-                                             max_jobs=self.max_jobs, config_path=self.config_path,
+                                             max_jobs=self.max_jobs,
+                                             config_path=self.config_path,
                                              tmp_folder=self.tmp_folder,
                                              time_estimate=self.time_estimate,
                                              run_local=self.run_local)
@@ -49,7 +51,8 @@ class WatershedWorkflow(luigi.Task):
                                        time_estimate=self.time_estimate,
                                        run_local=self.run_local)
         relabel_task = RelabelWorkflow(path=self.path, key=self.ws_key,
-                                       max_jobs=self.max_jobs, config_path=self.config_path,
+                                       max_jobs=self.max_jobs,
+                                       config_path=self.config_path,
                                        tmp_folder=self.tmp_folder,
                                        dependency=ws_task,
                                        time_estimate=self.time_estimate,
@@ -151,6 +154,7 @@ class SegmentationWorkflow(luigi.WrapperTask):
             config = json.load(f)
             ws_task_key = config.get('ws_task', 'ws')
             stitch_task_key = config.get('stitch_task', 'consensus_stitching')
+            n_jobs_write = config.get('n_jobs_write', 50)
 
         ws_task_dict = {'ws': WatershedWorkflow,
                         'ws_2d': Watersehd2dWorkflow}
@@ -186,7 +190,7 @@ class SegmentationWorkflow(luigi.WrapperTask):
                                          in_key=self.ws_key,
                                          out_key=self.seg_key,
                                          config_path=self.config_path,
-                                         max_jobs=self.max_jobs,
+                                         max_jobs=n_jobs_write,
                                          tmp_folder=self.tmp_folder_seg,
                                          identifier='write_' + ws_task_key + '_' + stitch_task_key,
                                          dependency=stitch_task,

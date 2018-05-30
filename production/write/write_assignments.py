@@ -43,17 +43,17 @@ class WriteAssignmentTask(luigi.Task):
     def requires(self):
         return self.dependency
 
-    def _prepare_jobs(self, n_jobs, n_blocks, block_shape):
-        block_list = list(range(n_blocks))
+    def _prepare_jobs(self, n_jobs, block_list, block_shape, n_threads):
         for job_id in range(n_jobs):
             block_jobs = block_list[job_id::n_jobs]
             job_config = {'block_shape': block_shape,
-                          'block_list': block_jobs}
+                          'block_list': block_jobs,
+                          'n_threads': n_threads}
             config_path = os.path.join(self.tmp_folder, 'write_assignments_config_job%i.json' % job_id)
             with open(config_path, 'w') as f:
                 json.dump(job_config, f)
 
-    def _submit_job(self, job_id, assignment_path):
+    def _submit_job(self, job_id, assignment_path, n_threads):
         script_path = os.path.join(self.tmp_folder, 'write_assignments.py')
         config_path = os.path.join(self.tmp_folder, 'write_assignments_config_job%i.json' % job_id)
         if self.offset_path == '':
@@ -67,9 +67,12 @@ class WriteAssignmentTask(luigi.Task):
                                                                     self.offset_path)
         log_file = os.path.join(self.tmp_folder, 'logs', 'log_write_assignments_%i' % job_id)
         err_file = os.path.join(self.tmp_folder, 'error_logs', 'err_write_assignments_%i.err' % job_id)
-        bsub_command = 'bsub -J write_assignments_%i -We %i -o %s -e %s \'%s\'' % (job_id,
-                                                                                   self.time_estimate,
-                                                                                   log_file, err_file, command)
+        bsub_command = 'bsub -n %i -J write_assignments_%i -We %i -o %s -e %s \'%s\'' % (n_threads,
+                                                                                         job_id,
+                                                                                         self.time_estimate,
+                                                                                         log_file,
+                                                                                         err_file,
+                                                                                         command)
         if self.run_local:
             subprocess.call([command], shell=True)
         else:
@@ -102,9 +105,8 @@ class WriteAssignmentTask(luigi.Task):
             config = json.load(f)
             block_shape = config['block_shape']
             chunks = config['chunks']
-            # TODO support computation with roi
-            if 'roi' in config:
-                have_roi = True
+            n_threads = config['n_threads']
+            roi = config.get('roi', None)
 
         # make the output dataset
         f5 = z5py.File(self.path)
@@ -113,11 +115,18 @@ class WriteAssignmentTask(luigi.Task):
                            chunks=tuple(chunks), dtype='uint64', compression='gzip')
 
         blocking = nifty.tools.blocking([0, 0, 0], list(shape), block_shape)
-        n_blocks = blocking.numberOfBlocks
+        if roi is None:
+            n_blocks = blocking.numberOfBlocks
+            block_list = list(range(n_blocks))
+        else:
+            block_list = blocking.getBlockIdsOverlappingBoundingBox(roi[0],
+                                                                    roi[1],
+                                                                    [0, 0, 0]).tolist()
+            n_blocks = len(block_list)
 
         # find the actual number of jobs and prepare job configs
         n_jobs = min(n_blocks, self.max_jobs)
-        self._prepare_jobs(n_jobs, n_blocks, block_shape)
+        self._prepare_jobs(n_jobs, block_list, block_shape, n_threads)
 
         # get the block offset path from out dependency
         assignment_path = self.input().path
@@ -126,12 +135,14 @@ class WriteAssignmentTask(luigi.Task):
         if self.run_local:
             # this only works in python 3 ?!
             with futures.ProcessPoolExecutor(n_jobs) as tp:
-                tasks = [tp.submit(self._submit_job, job_id, assignment_path)
+                tasks = [tp.submit(self._submit_job, job_id, assignment_path, n_threads)
                          for job_id in range(n_jobs)]
                 [t.result() for t in tasks]
+            # for job_id in range(n_jobs):
+            #     self._submit_job(job_id, assignment_path, n_threads)
         else:
             for job_id in range(n_jobs):
-                self._submit_job(job_id, assignment_path)
+                self._submit_job(job_id, assignment_path, n_threads)
 
         # wait till all jobs are finished
         if not self.run_local:
@@ -155,9 +166,9 @@ class WriteAssignmentTask(luigi.Task):
             with open(log_path, 'w') as out:
                 json.dump({'times': times,
                            'processed_blocks': processed_blocks}, out)
-            raise RuntimeError("WriteAssignmentTask failed, %i / %i blocks processed, serialized partial results to %s" % (len(processed_blocks),
-                                                                                                                           n_blocks,
-                                                                                                                           log_path))
+            raise RuntimeError("WriteAssignmentTask failed, %i / %i blocks processed," % (len(processed_blocks),
+                                                                                          n_blocks) +
+                               "serialized partial results to %s" % log_path)
 
     def output(self):
         return luigi.LocalTarget(os.path.join(self.tmp_folder,
@@ -182,6 +193,7 @@ def write_block_with_offsets(ds_in, ds_out, blocking, block_id, node_labels, off
 
 
 def write_block(ds_in, ds_out, blocking, block_id, node_labels):
+    print("writing block", block_id)
     t0 = time.time()
     block = blocking.getBlock(block_id)
     bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
@@ -194,8 +206,13 @@ def write_block(ds_in, ds_out, blocking, block_id, node_labels):
     if isinstance(node_labels, np.ndarray):
         seg = nifty.tools.take(node_labels, seg)
     else:
-        seg = nifty.tools.takeDict(node_labels, seg)
+        # this copys the dict and hence is extremely RAM hungry
+        # seg = nifty.tools.takeDict(node_labels, seg)
+        this_labels = nifty.tools.unique(seg)
+        this_assignment = {label: node_labels[label] for label in this_labels}
+        seg = nifty.tools.takeDict(this_assignment, seg)
     ds_out[bb] = seg
+    print("done", block_id)
     return time.time() - t0
 
 
@@ -205,18 +222,28 @@ def write_assignments(path, in_key, out_key,
                       tmp_folder, job_id,
                       offset_path=''):
 
+    with open(config_path) as f:
+        input_config = json.load(f)
+        block_shape = input_config['block_shape']
+        block_ids = input_config['block_list']
+        n_threads = input_config['n_threads']
+
+    print("Loading assignments")
     # load consecutive labeling from npy or n5
     # or dictionary labeling from pkl
     if os.path.isdir(assignment_path):
         assignment_root, assignment_key = os.path.split(assignment_path)
         # we only need to load the second axis, because the nodes
         # are guaranteed to be consecutive
-        node_labels = z5py.File(assignment_root)[assignment_key][:, 1]
+        ds_labels = z5py.File(assignment_root)[assignment_key]
+        ds_labels.n_threads = n_threads
+        node_labels = ds_labels[:, 1]
     else:
         assert assignment_path.split('.')[-1] == 'pkl'
         with open(assignment_path, 'rb') as f:
             node_labels = pickle.load(f)
         assert isinstance(node_labels, dict)
+    print("done")
 
     with_offsets = offset_path != ''
     if with_offsets:
@@ -224,11 +251,6 @@ def write_assignments(path, in_key, out_key,
             offset_config = json.load(f)
             offsets = offset_config['offsets']
             empty_blocks = offset_config['empty_blocks']
-
-    with open(config_path) as f:
-        input_config = json.load(f)
-        block_shape = input_config['block_shape']
-        block_ids = input_config['block_list']
 
     f = z5py.File(path)
     ds_in = f[in_key]
@@ -240,17 +262,18 @@ def write_assignments(path, in_key, out_key,
 
     # write all the blocks
     times = []
-    for block_id in block_ids:
-        if with_offsets:
-            t0 = 0 if block_id in empty_blocks else write_block_with_offsets(ds_in,
-                                                                             ds_out,
-                                                                             blocking,
-                                                                             block_id,
-                                                                             node_labels,
-                                                                             offsets)
-        else:
-            t0 = write_block(ds_in, ds_out, blocking, block_id, node_labels)
-        times.append(t0)
+
+    if with_offsets:
+        with futures.ThreadPoolExecutor(n_threads) as tp:
+            tasks = [tp.submit(write_block_with_offsets, ds_in, ds_out,
+                               blocking, block_id, node_labels, offsets)
+                     for block_id in block_ids if block_id not in empty_blocks]
+            times = [t.result() for t in tasks]
+    else:
+        with futures.ThreadPoolExecutor(n_threads) as tp:
+            tasks = [tp.submit(write_block, ds_in, ds_out,
+                               blocking, block_id, node_labels) for block_id in block_ids]
+            times = [t.result() for t in tasks]
 
     # write the max-id with job 0
     if job_id == 0:
