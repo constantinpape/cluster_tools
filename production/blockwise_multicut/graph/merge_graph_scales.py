@@ -33,8 +33,7 @@ class MergeSubgraphScalesTask(luigi.Task):
     def requires(self):
         return self.dependency
 
-    def _prepare_jobs(self, n_jobs, n_blocks, block_shape):
-        block_list = list(range(n_blocks))
+    def _prepare_jobs(self, n_jobs, block_list, block_shape):
         for job_id in range(n_jobs):
             block_jobs = block_list[job_id::n_jobs]
             job_config = {'block_shape': block_shape,
@@ -58,10 +57,10 @@ class MergeSubgraphScalesTask(luigi.Task):
         else:
             subprocess.call([bsub_command], shell=True)
 
-    def _collect_outputs(self, n_blocks):
+    def _collect_outputs(self, block_list):
         times = []
         processed_blocks = []
-        for block_id in range(n_blocks):
+        for block_id in block_list:
             res_file = os.path.join(self.tmp_folder, 'graph_scale%i_block%i.json' % (self.scale, block_id))
             try:
                 with open(res_file) as f:
@@ -84,11 +83,7 @@ class MergeSubgraphScalesTask(luigi.Task):
         with open(self.config_path) as f:
             config = json.load(f)
             init_block_shape = config['block_shape']
-            # TODO support computation with roi
-            if 'roi' in config:
-                roi = config['roi']
-            else:
-                roi = None
+            roi = config.get('roi', None)
 
         block_shape = [bs * 2**self.scale for bs in init_block_shape]
 
@@ -99,11 +94,19 @@ class MergeSubgraphScalesTask(luigi.Task):
         f_graph.attrs['shape'] = shape
 
         blocking = nifty.tools.blocking([0, 0, 0], shape, block_shape)
-        n_blocks = blocking.numberOfBlocks
+        # check if we have a ROI and adapt the block list if we do
+        if roi is None:
+            n_blocks = blocking.numberOfBlocks
+            block_list = list(range(n_blocks))
+        else:
+            block_list = blocking.getBlockIdsOverlappingBoundingBox(roi[0],
+                                                                    roi[1],
+                                                                    [0, 0, 0]).tolist()
+            n_blocks = len(block_list)
 
         # find the actual number of jobs and prepare job configs
         n_jobs = min(n_blocks, self.max_jobs)
-        self._prepare_jobs(n_jobs, n_blocks, init_block_shape)
+        self._prepare_jobs(n_jobs, block_list, init_block_shape)
 
         # submit the jobs
         if self.run_local:
@@ -120,7 +123,7 @@ class MergeSubgraphScalesTask(luigi.Task):
             util.wait_for_jobs('papec')
 
         # check the job outputs
-        processed_blocks, times = self._collect_outputs(n_blocks)
+        processed_blocks, times = self._collect_outputs(block_list)
         assert len(processed_blocks) == len(times)
         success = len(processed_blocks) == n_blocks
 
@@ -137,9 +140,9 @@ class MergeSubgraphScalesTask(luigi.Task):
             with open(log_path, 'w') as out:
                 json.dump({'times': times,
                            'processed_blocks': processed_blocks}, out)
-            raise RuntimeError("MergeGraphScalesTask failed, %i / %i blocks processed, serialized partial results to %s" % (len(processed_blocks),
-                                                                                                                            n_blocks,
-                                                                                                                            log_path))
+            raise RuntimeError("MergeGraphScalesTask failed, %i / %i blocks processed, " % (len(processed_blocks),
+                                                                                            n_blocks) +
+                               "serialized partial results to %s" % log_path)
 
     def output(self):
         return luigi.LocalTarget(os.path.join(self.tmp_folder, 'merge_graph_scale%i.log' % self.scale))

@@ -46,15 +46,12 @@ class ReduceProblemTask(luigi.Task):
             config = json.load(f)
             block_shape = config['block_shape']
             n_threads = config['n_threads']
-            # TODO support computation with roi
-            if 'roi' in config:
-                roi = config['roi']
-            else:
-                roi = None
+            roi = config.get('roi', None)
 
         # prepare the job config
         job_config = {'block_shape': block_shape,
-                      'n_threads': n_threads}
+                      'n_threads': n_threads,
+                      'roi': roi}
         config_path = os.path.join(self.tmp_folder,
                                    'reduce_problem_config_s%i.json' % self.scale)
         with open(config_path, 'w') as f:
@@ -103,7 +100,7 @@ class ReduceProblemTask(luigi.Task):
         return luigi.LocalTarget(res_file)
 
 
-def merge_nodes(tmp_folder, scale, n_blocks, n_nodes, uv_ids,
+def merge_nodes(tmp_folder, scale, block_list, n_nodes, uv_ids,
                 initial_node_labeling, n_threads):
     n_edges = len(uv_ids)
 
@@ -111,7 +108,7 @@ def merge_nodes(tmp_folder, scale, n_blocks, n_nodes, uv_ids,
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(np.load, os.path.join(tmp_folder,
                                                  'subproblem_s%i_%i.npy' % (scale, block_id)))
-                 for block_id in range(n_blocks)]
+                 for block_id in block_list]
         res = [t.result() for t in tasks]
         cut_edge_ids = np.concatenate([re for re in res if re.size])
     cut_edge_ids = np.unique(cut_edge_ids).astype('uint64')
@@ -129,14 +126,28 @@ def merge_nodes(tmp_folder, scale, n_blocks, n_nodes, uv_ids,
     merge_edges[ignore_edges] = False
 
     # merge node pairs with ufd
+    # FIXME if we process roi's, the number of nodes is underestimated gravely
+    n_nodes = int(uv_ids.max()) + 1
+
+    # TODO try relabeling consecutively here to increase processing speed
+    # the issue is that we have to do awkward things to get out the complete node
+    # labeling again ...
+    # uv_ids, n_nodes, mapping = vigra.analysis.relabelConsecutive(uv_ids)
+    # inv_mappin = {val: key for key, val in mapping.items()}
+
     ufd = nifty.ufd.ufd(n_nodes)
     merge_pairs = uv_ids[merge_edges]
     ufd.merge(merge_pairs)
 
     # get the node results and label them consecutively
     node_labeling = ufd.elementLabeling()
-    node_labeling, max_new_id, _ = relabelConsecutive(node_labeling)
+    node_labeling, max_new_id, _ = relabelConsecutive(node_labeling, keep_zeros=True, start_label=1)
     n_new_nodes = max_new_id + 1
+
+    # TODO this is not all we need to do
+    # full_node_labeling = np.arange(n_nodes_total, dtype='uint64')
+    # node_ids = list(mapping.keys())
+    # full_node_labeling[node_ids] = node_labeling
 
     # get the labeling of initial nodes
     if initial_node_labeling is None:
@@ -164,7 +175,7 @@ def serialize_new_problem(graph_path, n_new_nodes, new_uv_ids,
                           node_labeling, edge_labeling,
                           new_costs, new_initial_node_labeling,
                           shape, scale, initial_block_shape,
-                          tmp_folder, n_threads):
+                          tmp_folder, n_threads, roi):
 
     next_scale = scale + 1
     merged_graph_path = os.path.join(tmp_folder, 'merged_graph.n5')
@@ -195,9 +206,18 @@ def serialize_new_problem(graph_path, n_new_nodes, new_uv_ids,
     new_factor = 2**(scale + 1)
     new_block_shape = [new_factor * bs for bs in initial_block_shape]
 
+    shape = z5py.File(graph_path).attrs['shape']
+    blocking = nifty.tools.blocking([0, 0, 0], shape, new_block_shape)
+    if roi is None:
+        new_block_ids = list(range(blocking.numberOfBlocks))
+    else:
+        new_block_ids = blocking.getBlockIdsOverlappingBoundingBox(roi[0], roi[1],
+                                                                   [0, 0, 0]).tolist()
+
+    print("Serializing new graph")
     ndist.serializeMergedGraph(block_in_prefix, shape,
                                block_shape, new_block_shape,
-                               n_new_nodes,
+                               new_block_ids, n_new_nodes,
                                node_labeling, edge_labeling,
                                block_out_prefix, n_threads)
 
@@ -247,6 +267,7 @@ def reduce_problem(graph_path,
         config = json.load(f)
         n_threads = config['n_threads']
         initial_block_shape = config['block_shape']
+        roi = config.get('roi', None)
 
     # get the number of nodes and uv-ids at this scale level
     # as well as the initial node labeling
@@ -270,10 +291,17 @@ def reduce_problem(graph_path,
     # get the new node assignment
     factor = 2**scale
     block_shape = [factor * bs for bs in initial_block_shape]
-    n_blocks = nifty.tools.blocking([0, 0, 0], shape, block_shape).numberOfBlocks
+    blocking = nifty.tools.blocking([0, 0, 0], shape, block_shape)
+
+    if roi is None:
+        block_list = range(blocking.numberOfBlocks)
+    else:
+        block_list = blocking.getBlockIdsOverlappingBoundingBox(roi[0], roi[1],
+                                                                [0, 0, 0]).tolist()
+
     n_new_nodes, node_labeling, new_initial_node_labeling = merge_nodes(tmp_folder,
                                                                         scale,
-                                                                        n_blocks,
+                                                                        block_list,
                                                                         n_nodes,
                                                                         uv_ids,
                                                                         initial_node_labeling,
@@ -282,12 +310,13 @@ def reduce_problem(graph_path,
     new_uv_ids, edge_labeling, new_costs = get_new_edges(uv_ids, node_labeling,
                                                          costs, cost_accumulation, n_threads)
 
+    # FIXME this segfaults if we process a roi
     # serialize the input graph and costs for the next scale level
     n_new_edges = serialize_new_problem(graph_path, n_new_nodes, new_uv_ids,
                                         node_labeling, edge_labeling,
                                         new_costs, new_initial_node_labeling,
                                         shape, scale, initial_block_shape,
-                                        tmp_folder, n_threads)
+                                        tmp_folder, n_threads, roi)
     res_file = os.path.join(tmp_folder, 'reduce_problem_s%i.log' % scale)
     with open(res_file, 'w') as f:
         json.dump({'t': time.time() - t0,

@@ -32,8 +32,7 @@ class InitialSubgraphTask(luigi.Task):
     def requires(self):
         return self.dependency
 
-    def _prepare_jobs(self, n_jobs, n_blocks, block_shape):
-        block_list = list(range(n_blocks))
+    def _prepare_jobs(self, n_jobs, block_list, block_shape):
         for job_id in range(n_jobs):
             block_jobs = block_list[job_id::n_jobs]
             job_config = {'block_shape': block_shape,
@@ -57,10 +56,10 @@ class InitialSubgraphTask(luigi.Task):
         else:
             subprocess.call([bsub_command], shell=True)
 
-    def _collect_outputs(self, n_blocks):
+    def _collect_outputs(self, block_list):
         times = []
         processed_blocks = []
-        for block_id in range(n_blocks):
+        for block_id in block_list:
             res_file = os.path.join(self.tmp_folder, 'initial_subgraph_block%i.json' % block_id)
             try:
                 with open(res_file) as f:
@@ -83,11 +82,7 @@ class InitialSubgraphTask(luigi.Task):
         with open(self.config_path) as f:
             config = json.load(f)
             block_shape = config['block_shape']
-            # TODO support computation with roi
-            if 'roi' in config:
-                roi = config['roi']
-            else:
-                roi = None
+            roi = config.get('roi', None)
 
         # get the shape and blocking
         ws = z5py.File(self.path)[self.ws_key]
@@ -96,11 +91,19 @@ class InitialSubgraphTask(luigi.Task):
         f_graph.attrs['shape'] = shape
 
         blocking = nifty.tools.blocking([0, 0, 0], shape, block_shape)
-        n_blocks = blocking.numberOfBlocks
+        # check if we have a ROI and adapt the block list if we do
+        if roi is None:
+            n_blocks = blocking.numberOfBlocks
+            block_list = list(range(n_blocks))
+        else:
+            block_list = blocking.getBlockIdsOverlappingBoundingBox(roi[0],
+                                                                    roi[1],
+                                                                    [0, 0, 0]).tolist()
+            n_blocks = len(block_list)
 
         # find the actual number of jobs and prepare job configs
         n_jobs = min(n_blocks, self.max_jobs)
-        self._prepare_jobs(n_jobs, n_blocks, block_shape)
+        self._prepare_jobs(n_jobs, block_list, block_shape)
 
         # submit the jobs
         if self.run_local:
@@ -117,7 +120,7 @@ class InitialSubgraphTask(luigi.Task):
             util.wait_for_jobs('papec')
 
         # check the job outputs
-        processed_blocks, times = self._collect_outputs(n_blocks)
+        processed_blocks, times = self._collect_outputs(block_list)
         assert len(processed_blocks) == len(times)
         success = len(processed_blocks) == n_blocks
 
@@ -134,15 +137,16 @@ class InitialSubgraphTask(luigi.Task):
             with open(log_path, 'w') as out:
                 json.dump({'times': times,
                            'processed_blocks': processed_blocks}, out)
-            raise RuntimeError("InitialSubgraphTask failed, %i / %i blocks processed, serialized partial results to %s" % (len(processed_blocks),
-                                                                                                                           n_blocks,
-                                                                                                                           log_path))
+            raise RuntimeError("InitialSubgraphTask failed, %i / %i blocks processed, " % (len(processed_blocks),
+                                                                                           n_blocks) +
+                               "serialized partial results to %s" % log_path)
 
     def output(self):
         return luigi.LocalTarget(os.path.join(self.tmp_folder, 'initial_subgraph.log'))
 
 
 def extract_subgraph_from_roi(block_id, blocking, labels_path, labels_key, graph_path):
+    print("Processign block", block_id)
     t0 = time.time()
     halo = [1, 1, 1]
     block = blocking.getBlockWithHalo(block_id, halo)
@@ -156,6 +160,7 @@ def extract_subgraph_from_roi(block_id, blocking, labels_path, labels_key, graph
     ndist.computeMergeableRegionGraph(labels_path, labels_key,
                                       begin, end,
                                       graph_path, block_key)
+    print("done", block_id)
     return time.time() - t0
 
 

@@ -37,8 +37,7 @@ class SolveSubproblemTask(luigi.Task):
     def requires(self):
         return self.dependency
 
-    def _prepare_jobs(self, n_jobs, n_blocks, block_shape, n_threads):
-        block_list = list(range(n_blocks))
+    def _prepare_jobs(self, n_jobs, block_list, block_shape, n_threads):
         for job_id in range(n_jobs):
             block_jobs = block_list[job_id::n_jobs]
             job_config = {'block_shape': block_shape,
@@ -72,10 +71,10 @@ class SolveSubproblemTask(luigi.Task):
         else:
             subprocess.call([bsub_command], shell=True)
 
-    def _collect_outputs(self, n_blocks):
+    def _collect_outputs(self, block_list):
         times = []
         processed_blocks = []
-        for block_id in range(n_blocks):
+        for block_id in block_list:
             res_file = os.path.join(self.tmp_folder,
                                     'subproblem_s%i_%i.log' % (self.scale, block_id))
             try:
@@ -100,21 +99,27 @@ class SolveSubproblemTask(luigi.Task):
             config = json.load(f)
             initial_block_shape = config['block_shape']
             n_threads = config['n_threads']
-            # TODO support computation with roi
-            if 'roi' in config:
-                roi = config['roi']
-            else:
-                roi = None
+            roi = config.get('roi', None)
 
         # get number of blocks
         factor = 2**self.scale
         block_shape = [factor * bs for bs in initial_block_shape]
         shape = z5py.File(self.graph_path).attrs['shape']
         blocking = nifty.tools.blocking([0, 0, 0], shape, block_shape)
-        n_blocks = blocking.numberOfBlocks
+
+        # check if we have a roi and adjuse the block list if we do
+        if roi is None:
+            n_blocks = blocking.numberOfBlocks
+            block_list = list(range(n_blocks))
+        else:
+            block_list = blocking.getBlockIdsOverlappingBoundingBox(roi[0],
+                                                                    roi[1],
+                                                                    [0, 0, 0]).tolist()
+            n_blocks = len(block_list)
+
         # find the actual number of jobs and prepare job configs
         n_jobs = min(n_blocks, self.max_jobs)
-        self._prepare_jobs(n_jobs, n_blocks, initial_block_shape, n_threads)
+        self._prepare_jobs(n_jobs, block_list, initial_block_shape, n_threads)
 
         # submit the jobs
         if self.run_local:
@@ -125,14 +130,14 @@ class SolveSubproblemTask(luigi.Task):
                 [t.result() for t in tasks]
         else:
             for job_id in range(n_jobs):
-                self._submit_job(job_id)
+                self._submit_job(job_id, n_threads)
 
         # wait till all jobs are finished
         if not self.run_local:
             util.wait_for_jobs('papec')
 
         # check the job outputs
-        processed_blocks, times = self._collect_outputs(n_blocks)
+        processed_blocks, times = self._collect_outputs(block_list)
         assert len(processed_blocks) == len(times)
         success = len(processed_blocks) == n_blocks
 

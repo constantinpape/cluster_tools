@@ -43,14 +43,10 @@ class MergeFeaturesTask(luigi.Task):
             config = json.load(f)
             block_shape = config['block_shape']
             n_threads = config['n_threads']
-            # TODO support computation with roi
-            if 'roi' in config:
-                roi = config['roi']
-            else:
-                roi = None
+            roi = config.get('roi', None)
 
         # write job config
-        job_config = {'block_shape': block_shape, 'n_threads': n_threads}
+        job_config = {'block_shape': block_shape, 'n_threads': n_threads, 'roi': roi}
         config_path = os.path.join(self.tmp_folder, 'merge_features_config.json')
         with open(config_path, 'w') as f:
             json.dump(job_config, f)
@@ -92,21 +88,35 @@ def merge_features(graph_path, out_path, config_path, tmp_folder):
         config = json.load(f)
         block_shape = config['block_shape']
         n_threads = config['n_threads']
+        roi = config.get('roi', None)
+
     shape = z5py.File(graph_path).attrs['shape']
     blocking = nifty.tools.blocking([0, 0, 0],
                                     shape, block_shape)
-    n_blocks = blocking.numberOfBlocks
 
     subgraph_prefix = os.path.join(graph_path, 'sub_graphs', 's0', 'block_')
-    print(subgraph_prefix)
     features_tmp_prefix = os.path.join(out_path, 'blocks', 'block_')
-    ndist.mergeFeatureBlocks(subgraph_prefix,
-                             features_tmp_prefix,
-                             os.path.join(out_path, out_key),
-                             numberOfBlocks=n_blocks,
-                             edgeIdBegin=edge_begin,
-                             edgeIdEnd=edge_end,
-                             numberOfThreads=n_threads)
+    # adjust to roi if necessary
+    if roi is None:
+        n_blocks = blocking.numberOfBlocks
+        ndist.mergeAllFeatureBlocks(subgraph_prefix,
+                                    features_tmp_prefix,
+                                    os.path.join(out_path, out_key),
+                                    numberOfBlocks=n_blocks,
+                                    edgeIdBegin=edge_begin,
+                                    edgeIdEnd=edge_end,
+                                    numberOfThreads=n_threads)
+    else:
+        block_list = blocking.getBlockIdsOverlappingBoundingBox(roi[0],
+                                                                roi[1],
+                                                                [0, 0, 0]).tolist()
+        ndist.mergeFeatureBlocks(subgraph_prefix,
+                                 features_tmp_prefix,
+                                 os.path.join(out_path, out_key),
+                                 blockIds=block_list,
+                                 edgeIdBegin=edge_begin,
+                                 edgeIdEnd=edge_end,
+                                 numberOfThreads=n_threads)
 
     res_file = os.path.join(tmp_folder, 'merge_features.log')
     with open(res_file, 'w') as f:

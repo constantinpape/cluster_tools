@@ -34,8 +34,7 @@ class InitialFeaturesTask(luigi.Task):
     def requires(self):
         return self.dependency
 
-    def _prepare_jobs(self, n_jobs, n_blocks, offsets):
-        block_list = list(range(n_blocks))
+    def _prepare_jobs(self, n_jobs, block_list, offsets):
         for job_id in range(n_jobs):
             block_jobs = block_list[job_id::n_jobs]
             job_config = {'affinity_offsets': offsets,
@@ -89,13 +88,9 @@ class InitialFeaturesTask(luigi.Task):
             config = json.load(f)
             block_shape = config['block_shape']
             offsets = config['affinity_offsets']
-            # TODO support computation with roi
-            if 'roi' in config:
-                roi = config['roi']
-            else:
-                roi = None
+            roi = config.get('roi', None)
 
-        # hardconded keys
+        # hardcoded keys
         graph_key = 'graph'
         out_key = 'features'
 
@@ -114,10 +109,18 @@ class InitialFeaturesTask(luigi.Task):
 
         # get number of blocks
         blocking = nifty.tools.blocking([0, 0, 0], shape, block_shape)
-        n_blocks = blocking.numberOfBlocks
+        # check if we have a roi and adjuse the block list if we do
+        if roi is None:
+            n_blocks = blocking.numberOfBlocks
+            block_list = list(range(n_blocks))
+        else:
+            block_list = blocking.getBlockIdsOverlappingBoundingBox(roi[0],
+                                                                    roi[1],
+                                                                    [0, 0, 0]).tolist()
+            n_blocks = len(block_list)
         # find the actual number of jobs and prepare job configs
         n_jobs = min(n_blocks, self.max_jobs)
-        self._prepare_jobs(n_jobs, n_blocks, offsets)
+        self._prepare_jobs(n_jobs, block_list, offsets)
 
         # submit the jobs
         if self.run_local:
@@ -151,9 +154,9 @@ class InitialFeaturesTask(luigi.Task):
             with open(log_path, 'w') as out:
                 json.dump({'times': times,
                            'processed_jobs': processed_jobs}, out)
-            raise RuntimeError("InitialFeatureTask failed, %i / %i jobs processed, serialized partial results to %s" % (len(processed_jobs),
-                                                                                                                        n_jobs,
-                                                                                                                        log_path))
+            raise RuntimeError("InitialFeatureTask failed, %i / %i jobs processed," % (len(processed_jobs),
+                                                                                       n_jobs) +
+                               "serialized partial results to %s" % log_path)
 
     def output(self):
         return luigi.LocalTarget(os.path.join(self.tmp_folder, 'initial_features.log'))

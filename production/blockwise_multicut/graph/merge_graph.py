@@ -42,15 +42,12 @@ class MergeGraphTask(luigi.Task):
             config = json.load(f)
             init_block_shape = config['block_shape']
             n_threads = config['n_threads']
-            # TODO support computation with roi
-            if 'roi' in config:
-                roi = config['roi']
-            else:
-                roi = None
+            roi = config.get('roi', None)
 
         # make config for the job
         config = {'block_shape': init_block_shape,
-                  'n_threads': n_threads}
+                  'n_threads': n_threads,
+                  'roi': roi}
         config_path = os.path.join(self.tmp_folder, 'merge_graph.json')
         with open(config_path, 'w') as f:
             json.dump(config, f)
@@ -91,6 +88,7 @@ def merge_graph(graph_path, last_scale, config_file, tmp_folder):
         config = json.load(f)
         initial_block_shape = config['block_shape']
         n_threads = config['n_threads']
+        roi = config.get('roi', None)
 
     factor = 2**last_scale
     block_shape = [factor * bs for bs in initial_block_shape]
@@ -101,9 +99,15 @@ def merge_graph(graph_path, last_scale, config_file, tmp_folder):
                                     roiEnd=list(shape),
                                     blockShape=block_shape)
 
+    if roi is None:
+        block_list = list(range(blocking.numberOfBlocks))
+    else:
+        block_list = blocking.getBlockIdsOverlappingBoundingBox(roi[0],
+                                                                roi[1],
+                                                                [0, 0, 0]).tolist()
+
     block_prefix = 'sub_graphs/s%i/block_' % last_scale
     output_key = 'graph'
-    block_list = list(range(blocking.numberOfBlocks))
     ndist.mergeSubgraphs(graph_path,
                          blockPrefix=block_prefix,
                          blockIds=block_list,

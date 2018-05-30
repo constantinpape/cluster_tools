@@ -79,15 +79,12 @@ class MapEdgesTask(luigi.Task):
             config = json.load(f)
             init_block_shape = config['block_shape']
             n_threads = config['n_threads']
-            # TODO support computation with roi
-            if 'roi' in config:
-                roi = config['roi']
-            else:
-                roi = None
+            roi = config.get('roi', None)
 
         # make config for the job
         config = {'block_shape': init_block_shape,
-                  'n_threads': n_threads}
+                  'n_threads': n_threads,
+                  'roi': roi}
         for scale in range(self.max_scale + 1):
             self._prepare_job(scale, config)
 
@@ -115,9 +112,8 @@ class MapEdgesTask(luigi.Task):
             log_path = os.path.join(self.tmp_folder, 'map_edge_ids_partial.log')
             with open(log_path, 'w') as f:
                 json.dump({'processed_scales': processed_scales, 'times': times}, f)
-            raise RuntimeError("MapEdgesTask failed for %i / %i scales, partial results serialized to %s" % (len(times),
-                                                                                                             self.max_scale + 1,
-                                                                                                             log_path))
+            raise RuntimeError("MapEdgesTask failed for %i / %i scales," % (len(times), self.max_scale + 1) +
+                               "partial results serialized to %s" % log_path)
 
     def output(self):
         return luigi.LocalTarget(os.path.join(self.tmp_folder, 'map_edge_ids.log'))
@@ -130,6 +126,7 @@ def map_edge_ids(graph_path, scale, config_path, tmp_folder):
         config = json.load(f)
         initial_block_shape = config['block_shape']
         n_threads = config['n_threads']
+        roi = config.get('roi', None)
     factor = 2**scale
     block_shape = [factor * bs for bs in initial_block_shape]
 
@@ -141,10 +138,21 @@ def map_edge_ids(graph_path, scale, config_path, tmp_folder):
     input_key = 'graph'
 
     block_prefix = 'sub_graphs/s%i/block_' % scale
-    ndist.mapEdgeIdsForAllBlocks(graph_path, input_key,
-                                 blockPrefix=block_prefix,
-                                 numberOfBlocks=blocking.numberOfBlocks,
-                                 numberOfThreads=n_threads)
+    if roi is None:
+        n_blocks = blocking.numberOfBlocks
+        ndist.mapEdgeIdsForAllBlocks(graph_path, input_key,
+                                     blockPrefix=block_prefix,
+                                     numberOfBlocks=n_blocks,
+                                     numberOfThreads=n_threads)
+
+    else:
+        block_list = blocking.getBlockIdsOverlappingBoundingBox(roi[0],
+                                                                roi[1],
+                                                                [0, 0, 0]).tolist()
+        ndist.mapEdgeIds(graph_path, input_key,
+                         blockPrefix=block_prefix,
+                         blockIds=block_list,
+                         numberOfThreads=n_threads)
 
     res_file = os.path.join(tmp_folder, 'mape_edge_ids_s%i' % scale)
     with open(res_file, 'w') as f:
