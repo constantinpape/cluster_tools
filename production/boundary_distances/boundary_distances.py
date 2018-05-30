@@ -9,6 +9,7 @@ from concurrent import futures
 
 import numpy as np
 import vigra
+from scipy.ndimage.filters import maximum_filter
 
 import luigi
 import nifty
@@ -22,7 +23,8 @@ class BoundaryDistanceTask(luigi.Task):
     seg_key = luigi.Parameter()
     out_key = luigi.Parameter()
     id_list = luigi.ListParameter()
-    max_workers = luigi.IntParameter()
+    config_path = luigi.Parameter()
+    max_jobs = luigi.IntParameter()
     tmp_folder = luigi.Parameter()
     dependency = luigi.TaskParameter(default=DummyTask())
     time_estimate = luigi.IntParameter(default=10)
@@ -37,7 +39,7 @@ class BoundaryDistanceTask(luigi.Task):
         for job_id in range(n_jobs):
             block_jobs = block_list[job_id::n_jobs]
             job_config = {'block_list': block_jobs, **config}
-            config_path = os.path.join(self.tmp_folder, 'boundary_disance_config_job%i.json' % job_id)
+            config_path = os.path.join(self.tmp_folder, 'boundary_distances_config_job%i.json' % job_id)
             with open(config_path, 'w') as f:
                 json.dump(job_config, f)
 
@@ -102,8 +104,9 @@ class BoundaryDistanceTask(luigi.Task):
         n_blocks = blocking.numberOfBlocks
 
         # make the output dataset
-        f.require_dataset(self.out_key, shape=shape,
-                          chunks=chunks, dtype='float32', compression='gzip')
+        ds = f.require_dataset(self.out_key, shape=shape,
+                               chunks=chunks, dtype='float32', compression='gzip')
+        ds.attrs['id_list'] = self.id_list
 
         # find the actual number of jobs and prepare job configs
         n_jobs = min(n_blocks, self.max_jobs)
@@ -168,7 +171,7 @@ def boundary_distances_block(block_id, blocking,
     local_bb = tuple(slice(beg, end) for beg, end in zip(block.innerBlockLocal.begin, block.innerBlockLocal.end))
 
     seg = ds_seg[outer_bb]
-    inner_seg = seg[inner_bb]
+    inner_seg = seg[local_bb]
 
     # check if any of the ids of interest are in the segmentation
     sub_ids = np.unique(inner_seg)
@@ -177,35 +180,43 @@ def boundary_distances_block(block_id, blocking,
     if len(sub_ids) == 0:
         with open(log_path, 'w') as f:
             json.dump({'t': time.time() - t0}, f)
+        return
 
-    # FIXME would be nice to have a 3d fucntion in vigra
+    # FIXME would be nice to have a 3d function in vigra
     # alternatively, we could also shift the segmentation
     # along the 3 axesand substract
     # (currently we don't treat z boundaries correctly)
     # compute the region boundaries
-    boundaries = np.zeros_like(seg, dtype='uint8')
+    boundaries = np.zeros_like(seg, dtype='uint32')
     for z in range(seg.shape[0]):
-        boundaries[z] = vigra.analysis.regionImageToEdgeImage(seg[z]).astype('uint8')
+        boundaries[z] = vigra.analysis.regionImageToEdgeImage(seg[z]).astype('uint32')
 
     # compute the distance trafo
     dt = vigra.filters.distanceTransform(boundaries, pixel_pitch=resolution)
 
     # calculate maxima of the distance transform
     maxima = vigra.analysis.localMaxima3D(dt, marker=1,
-                                          allowAtBorder=True, allowPlateaus=True).astype('uint8')
+                                          allowAtBorder=True, allowPlateaus=True).astype('uint32')
 
     # iterate over the objects of interest in the subvolume and write out their boundary distance
     output = np.zeros_like(inner_seg, dtype='float32')
+    # TODO this corresponds to a 2 micron max filter size
+    # dunno what makes sense
+    max_filter_size = (50, 512, 512)
     for sub_id in sub_ids:
         id_mask = seg == sub_id
         non_id_mask = np.logical_not(id_mask)
 
         this_dt = maxima.copy()
+        # this_dt = dt.copy()
         this_dt[non_id_mask] = 0
-        vigra.filters.distanceTransform(this_dt, pixel_pitch=resolution, output=this_dt)
+
+        # this_dt = vigra.filters.distanceTransform(this_dt, pixel_pitch=resolution)
+        # this_dt = maximum_filter(this_dt, size=max_filter_size, mode='constant')
+        this_dt = vigra.filters.gaussianSmoothing(this_dt)
 
         id_mask = id_mask[local_bb]
-        output[id_mask] = this_dt[local_bb]
+        output[id_mask] = this_dt[local_bb][id_mask]
 
     ds_out[inner_bb] = output
     with open(log_path, 'w') as f:
@@ -247,5 +258,5 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     boundary_distances(args.path, args.seg_key,
-                       args.out_keys, args.config_path,
+                       args.out_key, args.config_path,
                        args.tmp_folder)
