@@ -13,6 +13,7 @@ import luigi
 from concurrent import futures
 from production import multicut
 
+import vigra
 import nifty
 
 # import vigra
@@ -121,11 +122,7 @@ class MergeVotesTask(luigi.Task):
             # we need to pop the block shift from the config
             # because the first blocking is without block shift !
             block_shift = config.pop('block_shift')
-            # TODO support computation with roi
-            if 'roi' in config:
-                roi = config['roi']
-            else:
-                roi = None
+            roi = config.get('roi', None)
 
         # find the shape and number of blocks
         f5 = z5py.File(self.path)
@@ -207,17 +204,18 @@ def process_block(ds_ws, ds_affs, blocking, block_id, offsets,
     ws = ds_ws[bb]
 
     # FIXME this causes false merges and is broken
+    # THis should work ! but need to double check it !
     # we map to a consecutive segmentation to speed up graph computations
-    # ws, max_id, mapping = vigra.analysis.relabelConsecutive(ws, keep_zeros=True, start_label=1)
-    # # if this block only contains a single element, return (usually 0 = ignore label) continue
-    # if len(mapping) == 1:
-    #     return None
-    # ws = ws.astype('uint32')
-    # reverse_mapping = {val: key for key, val in mapping.items()}
-    # n_labels = int(max_id) + 1
-
+    ws, max_id, mapping = vigra.analysis.relabelConsecutive(ws, keep_zeros=True, start_label=1)
+    # if this block only contains a single element, return (usually 0 = ignore label) continue
+    if len(mapping) == 1:
+        return None
     ws = ws.astype('uint32')
-    n_labels = int(ws.max()) + 1
+    reverse_mapping = {val: key for key, val in mapping.items()}
+    n_labels = int(max_id) + 1
+
+    # ws = ws.astype('uint32')
+    # n_labels = int(ws.max()) + 1
 
     # load the affinities
     n_channels = len(offsets)
@@ -228,6 +226,15 @@ def process_block(ds_ws, ds_affs, blocking, block_id, offsets,
     if affs.dtype == np.dtype('uint8'):
         affs = affs.astype('float32') / 255.
     affs = 1. - affs
+
+    # FIXME this just splits everything
+    # add glia to all affinity channels to prevent merges
+    # glia_bb = (slice(n_channels - 1, n_channels), ) + bb
+    # glia = ds_affs[glia_bb]
+    # if glia.dtype == np.dtype('uint8'):
+    #     glia = glia.astype('float32') / 255.
+    # affs += glia
+    # affs = np.clip(affs, 0, 1)
 
     if use_lifted:
         if rf is None:
@@ -274,7 +281,8 @@ def process_block(ds_ws, ds_affs, blocking, block_id, offsets,
 
     # FIXME this causes false merges and is broken
     # map back to the original ids
-    # uv_ids = nifty.tools.takeDict(reverse_mapping, uv_ids).astype('uint64')
+    uv_ids = uv_ids.astype('uint64')
+    uv_ids = nifty.tools.takeDict(reverse_mapping, uv_ids)
     return uv_ids, merge_indicator, sizes
 
 

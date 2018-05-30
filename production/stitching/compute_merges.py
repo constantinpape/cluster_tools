@@ -7,6 +7,7 @@ import argparse
 from concurrent import futures
 import subprocess
 from shutil import rmtree
+import gc
 
 import vigra
 import numpy as np
@@ -52,15 +53,17 @@ class MergesTask(luigi.Task):
             config = json.load(f)
             block_shape = config['block_shape2']
             n_threads = config['n_threads']
-            # TODO support computation with roi
-            if 'roi' in config:
-                have_roi = True
+            roi = config.get('roi', None)
 
         # find the shape and number of blocks
         f5 = z5py.File(self.path)
         shape = f5[self.ws_key].shape
         blocking = nifty.tools.blocking([0, 0, 0], shape, block_shape)
-        n_blocks = blocking.numberOfBlocks
+        if roi is None:
+            n_blocks = blocking.numberOfBlocks
+        else:
+            block_list = blocking.getBlockIdsOverlappingBoundingBox(roi[0], roi[1], [0, 0, 0])
+            n_blocks = len(block_list)
         n_jobs = min(n_blocks, self.max_jobs)
 
         command = '%s %s %s %i %s %s' % (script_path, self.path, self.out_key,
@@ -108,6 +111,7 @@ def compute_merges(path, out_key, n_jobs, config_path, tmp_folder):
         n_threads = config['n_threads']
 
     # load in parallel - why not
+    print("Loading uv-ids...")
     paths = [os.path.join(tmp_folder, 'compute_merge_uvs_%s_%i.npy' % (prefix, job_id))
              for prefix in prefixes for job_id in range(n_jobs)]
     with futures.ThreadPoolExecutor(n_threads) as tp:
@@ -115,6 +119,7 @@ def compute_merges(path, out_key, n_jobs, config_path, tmp_folder):
         results = [t.result() for t in tasks]
         uv_ids = np.concatenate([res for res in results if res.size], axis=0)
 
+    print("Loading merge votes...")
     paths = [os.path.join(tmp_folder, 'compute_merge_votes_%s_%i.npy' % (prefix, job_id))
              for prefix in prefixes for job_id in range(n_jobs)]
     with futures.ThreadPoolExecutor(n_threads) as tp:
@@ -122,8 +127,15 @@ def compute_merges(path, out_key, n_jobs, config_path, tmp_folder):
         results = [t.result() for t in tasks]
         votes = np.concatenate([res for res in results if res.size], axis=0)
 
+    print("Merging uv-ids and votes")
     # merge the votes of all blocks and compute the vote ratio
     final_uv_ids, final_votes = nifty.tools.mergeMergeVotes(uv_ids, votes)
+
+    # clean up
+    del uv_ids
+    del votes
+    gc.collect()
+
     vote_ratio = final_votes[:, 0].astype('float64') / final_votes[:, 1]
 
     # merge all node pairs whose ratio is above the merge threshold
@@ -135,6 +147,7 @@ def compute_merges(path, out_key, n_jobs, config_path, tmp_folder):
     # np.save(os.path.join(tmp_folder, 'merge_indicators'), merges)
 
     n_labels = int(final_uv_ids.max()) + 1
+    print("Number of labels:", n_labels)
     ufd = nifty.ufd.ufd(n_labels)
 
     ufd.merge(merge_node_pairs)
