@@ -10,9 +10,9 @@ import numpy as np
 import vigra
 import nifty.tools as nt
 
-import cluster_tools.volume_util as vu
+import cluster_tools.utils.volume_utils as vu
+import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
-from cluster_tools.functional_api import log_job_success, log_block_success, log, load_global_config
 
 
 #
@@ -36,7 +36,7 @@ class FindLabelingBase(luigi.Task):
 
     def run(self):
         # get the global config and init configs
-        shebang, block_shape, roi_begin, roi_end = load_global_config(self.global_config_path)
+        shebang, block_shape, roi_begin, roi_end = fu.load_global_config(self.global_config_path)
         self.init(shebang)
 
         # get shape and make block config
@@ -81,8 +81,8 @@ class FindLabelingLSF(FindLabelingBase, LSFTask):
 
 def find_labeling(job_id, config_path):
 
-    log("start processing job %i" % job_id)
-    log("reading config from %s" % config_path)
+    fu.log("start processing job %i" % job_id)
+    fu.log("reading config from %s" % config_path)
 
     with open(config_path, 'r') as f:
         config = json.load(f)
@@ -103,11 +103,11 @@ def find_labeling(job_id, config_path):
         f[input_key].attrs['maxId'] = max_id
 
     save_path = os.path.join(tmp_folder, 'relabeling.pkl')
-    log("saving results to %s" % save_path)
+    fu.log("saving results to %s" % save_path)
     with open(save_path, 'wb') as f:
         pickle.dump(mapping, f)
     # log success
-    log_job_success(job_id)
+    fu.log_job_success(job_id)
 
 
 if __name__ == '__main__':

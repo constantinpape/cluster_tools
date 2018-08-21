@@ -9,9 +9,9 @@ import numpy as np
 import vigra
 import nifty.tools as nt
 
-import cluster_tools.volume_util as vu
+import cluster_tools.utils.volume_utils as vu
+import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
-from cluster_tools.functional_api import log_job_success, log_block_success, log, load_global_config
 
 
 #
@@ -46,7 +46,7 @@ class WatershedBase(luigi.Task):
 
     def run(self):
         # get the global config and init configs
-        shebang, block_shape, roi_begin, roi_end = load_global_config(self.global_config_path)
+        shebang, block_shape, roi_begin, roi_end = fu.load_global_config(self.global_config_path)
         self.init(shebang)
 
         # get shape and make block config
@@ -264,7 +264,7 @@ def _apply_watershed_with_seeds(input_, dt, offset, initial_seeds, config):
 
 
 def _ws_block(blocking, block_id, ds_in, ds_out, config, pass_):
-    log("start processing block %i" % block_id)
+    fu.log("start processing block %i" % block_id)
 
     # read the input config
     halo = list(config.get('halo', [0, 0, 0]))
@@ -320,12 +320,12 @@ def _ws_block(blocking, block_id, ds_in, ds_out, config, pass_):
         ds_out[output_bb] = ws[inner_bb]
 
     # log block success
-    log_block_success(block_id)
+    fu.log_block_success(block_id)
 
 
 def watershed(job_id, config_path):
-    log("start processing job %i" % job_id)
-    log("reading config from %s" % config_path)
+    fu.log("start processing job %i" % job_id)
+    fu.log("reading config from %s" % config_path)
     with open(config_path, 'r') as f:
         config = json.load(f)
 
@@ -360,7 +360,7 @@ def watershed(job_id, config_path):
         for block_id in block_list:
             _ws_block(blocking, block_id, ds_in, ds_out, config, pass_)
     # log success
-    log_job_success(job_id)
+    fu.log_job_success(job_id)
 
 
 if __name__ == '__main__':

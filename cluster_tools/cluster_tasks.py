@@ -10,6 +10,8 @@ from datetime import datetime
 
 import luigi
 
+from .utils.function_utils import tail
+
 
 class BaseClusterTask(luigi.Task):
     """
@@ -51,6 +53,8 @@ class BaseClusterTask(luigi.Task):
     max_jobs = luigi.IntParameter()
     # path for the global configuration
     global_config_path = luigi.Parameter()
+    # number of threads per job
+    threads_per_job = luigi.IntParameter(default=1)
 
     #
     # API
@@ -73,8 +77,7 @@ class BaseClusterTask(luigi.Task):
         job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
         for job_id in range(n_jobs):
             log_file = os.path.join(self.tmp_folder, 'logs', '%s_%i.log' % (job_name, job_id))
-            # woot, there is no native tail in python ???
-            last_line = check_output(['tail', '-1', log_file]).decode()[:-1]
+            last_line = tail(log_file)[0]
             # get rid of the datetime prefix
             msg = " ".join(last_line.split()[2:])
             if msg == "processed job %i" % job_id:
@@ -194,8 +197,6 @@ class SlurmTask(BaseClusterTask):
     (tested on EMBL cluster)
     """
     # TODO remvoe these as luigi parameter and put into global config
-    # number of cores per job
-    cores_per_job = luigi.IntParameter(default=1)
     # memory limit (TODO write proper parser)
     mem_limit = luigi.Parameter(default='1G')
     # time limit (TODO write proper parser)
@@ -214,7 +215,7 @@ class SlurmTask(BaseClusterTask):
                           "#SBATCH -t %s\n"
                           "#SBATCH -o %s\n"
                           "#SBATCH -e %s\n"
-                          "%s %s") % (self.cores_per_job, self.mem_limit,
+                          "%s %s") % (self.threads_per_job, self.mem_limit,
                                       self.time_limit,
                                       os.path.join(self.tmp_folder, 'logs',
                                                    '%s_$1.log' % job_name),
@@ -280,8 +281,6 @@ class LSFTask(BaseClusterTask):
     """
 
     # TODO remvoe these as luigi parameter and put into global config
-    # number of cores per job
-    cores_per_job = luigi.IntParameter(default=1)
     # time limit in minutes (TODO write proper parser)
     time_limit = luigi.Parameter(default='60')
 
@@ -301,7 +300,7 @@ class LSFTask(BaseClusterTask):
                                     '%s_%i.log' % (job_name, job_id))
             err_file = os.path.join(self.tmp_folder, 'error_logs',
                                     '%s_%i.err' % (job_name, job_id))
-            bsub_command = 'bsub -n %i -J %s_%i -We %s -o %s -e %s \'%s\'' % (self.cores_per_job,
+            bsub_command = 'bsub -n %i -J %s_%i -We %s -o %s -e %s \'%s\'' % (self.threads_per_job,
                                                                               self.task_name,
                                                                               job_id,
                                                                               self.time_limit,

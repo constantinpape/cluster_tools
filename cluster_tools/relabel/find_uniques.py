@@ -9,9 +9,9 @@ import numpy as np
 import vigra
 import nifty.tools as nt
 
-import cluster_tools.volume_util as vu
+import cluster_tools.utils.volume_utils as vu
+import cluster_tools.utils.functional_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
-from cluster_tools.functional_api import log_job_success, log_block_success, log, load_global_config
 
 
 class FindUniquesBase(luigi.Task):
@@ -30,7 +30,7 @@ class FindUniquesBase(luigi.Task):
 
     def run(self):
         # get the global config and init configs
-        shebang, block_shape, roi_begin, roi_end = load_global_config(self.global_config_path)
+        shebang, block_shape, roi_begin, roi_end = fu.load_global_config(self.global_config_path)
         self.init(shebang)
 
         # get shape and make block config
@@ -78,7 +78,7 @@ class FindUniquesLSF(FindUniquesBase, LSFTask):
 
 
 def uniques_in_block(block_id, blocking, ds):
-    log("start processing block %i" % block_id)
+    fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
     bb = tuple(slice(b, e) for b, e in zip(block.begin, block.end))
     labels = ds[bb]
@@ -86,13 +86,13 @@ def uniques_in_block(block_id, blocking, ds):
     # uniques = np.unique(labels)
     uniques = nifty.tools.unique(labels)
     # log block success
-    log_block_success(block_id)
+    fu.log_block_success(block_id)
     return uniques
 
 
 def find_uniques(job_id, config_path):
-    log("start processing job %i" % job_id)
-    log("reading config from %s" % config_path)
+    fu.log("start processing job %i" % job_id)
+    fu.log("reading config from %s" % config_path)
 
     # read the config
     with open(config_file) as f:
@@ -116,10 +116,10 @@ def find_uniques(job_id, config_path):
     # TODO why don't we use numpy unique ???
     uniques = nt.unique(np.concatenate(uniques))
     save_path = os.path.join(tmp_folder, 'find_uniques_job_%i.npy' % job_id)
-    log("saving results to %s" % save_path)
+    fu.log("saving results to %s" % save_path)
     np.save(save_path, uniques)
     # log success
-    log_job_success(job_id)
+    fu.log_job_success(job_id)
 
 
 if __name__ == '__main__':

@@ -8,7 +8,7 @@ import numpy as np
 try:
     import cluster_tools
 except ImportError:
-    sys.path.append('..')
+    sys.path.append('../..')
     import cluster_tools
 
 
