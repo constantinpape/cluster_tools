@@ -33,5 +33,13 @@ class RelabelWorkflow(luigi.Task):
 
         write_task = getattr(write_tasks,
                              self._get_task_name('Write'))
-        t3 = write_task()
+        t3 = write_task(tmp_folder=self.tmp_folder,
+                        max_jobs=self.max_jobs,
+                        global_config_path=self.global_config_path,
+                        input_path=self.input_path,
+                        input_key=self.input_key,
+                        output_path=self.input_path,
+                        output_key=self.input_key,
+                        identifier='relabel',
+                        dependency=t2)
         return t3
