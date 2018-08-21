@@ -30,9 +30,8 @@ def blocks_in_volume(shape, block_shape,
     if roi_begin is None:
         return list(range(blocking_.numberOfBlocks))
     else:
-        # TODO intersect blocking with roi and return the
-        # block ids
-        pass
+        # TODO intersect blocking with roi and return the block ids
+        raise NotImplementedError("Roi not implemented")
 
 
 def block_to_bb(block):
@@ -57,5 +56,41 @@ def normalize(input_):
     return input_
 
 
-def apply_size_filter(segmentation, input_, size_filter):
-    pass
+def apply_size_filter(segmentation, input_, size_filter, exclude=None):
+    ids, sizes = np.unique(segmentation, return_counts=True)
+    filter_ids = ids[sizes < size_filter]
+    if exclude is not None:
+        filter_ids = filter_ids[np.logical_not(np.in1d(filter_ids, exclude))]
+    filter_mask = np.in1d(segmentation, filter_ids).reshape(segmentation.shape)
+    segmentation[filter_mask] = 0
+    _, max_id = vigra.analysis.watershedsNew(input_, seeds=segmentation, out=segmentation)
+    return segmentation, max_id
+
+
+# TODO is there a more efficient way to do this?
+# TODO support roi
+def make_checkerboard_block_lists(blocking, roi_begin=None, roi_end=None):
+    assert (roi_begin is None) == (roi_end is None)
+    if roi_begin is not None:
+        raise NotImplementedError("Roi not implemented")
+    blocks_a = [0]
+    blocks_b = []
+    all_blocks = [0]
+
+    def recurse(current_block, insert_list):
+        other_list = blocks_a if insert_list is blocks_b else blocks_b
+        for dim in range(3):
+            ngb_id = blocking.getNeighborId(current_block, dim, False)
+            if ngb_id != -1:
+                if ngb_id not in all_blocks:
+                    insert_list.append(ngb_id)
+                    all_blocks.append(ngb_id)
+                    recurse(ngb_id, other_list)
+
+    recurse(0, blocks_b)
+    all_blocks = blocks_a + blocks_b
+    expected = set(range(blocking.numberOfBlocks))
+    assert len(all_blocks) == len(expected), "%i, %i" % (len(all_blocks), len(expected))
+    assert len(set(all_blocks) - expected) == 0
+    assert len(blocks_a) == len(blocks_b), "%i, %i" % (len(blocks_a), len(blocks_b))
+    return blocks_a, blocks_b

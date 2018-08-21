@@ -1,0 +1,6 @@
+{"block_shape": [10, 256, 256],
+ "shebang": "#! /home/cpape/Work/software/conda/miniconda3/envs/affogato/bin/python",
+ "apply_dt_2d": true,
+ "apply_ws_2d": true,
+ "is_2pass": true,
+ "halo": [0, 25, 25]}

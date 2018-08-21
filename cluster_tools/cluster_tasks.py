@@ -49,33 +49,28 @@ class BaseClusterTask(luigi.Task):
     tmp_folder = luigi.Parameter()
     # maximum number of concurrent jobs
     max_jobs = luigi.IntParameter()
-    # TODO these shouldn't be luigi parameter
-    # name of the task
-    # task_name = luigi.Parameter()
-    # path to the python executable
-    # shebang = luigi.Parameter()
 
     #
     # API
     #
 
-    def init(self):
+    def init(self, shebang):
         """
         Init tmp dir and python scripts.
 
         Should be the first call in `run`.
         """
         self._make_dirs()
-        self._write_script_file()
+        self._write_script_file(shebang)
 
-    def check_jobs(self, n_jobs):
+    def check_jobs(self, n_jobs, job_prefix=None):
         """
         Check for jobs that ran successfully
         """
         success_list = []
+        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
         for job_id in range(n_jobs):
-            log_file = os.path.join(self.tmp_folder, 'logs', '%s_job%i.log' % (self.task_name,
-                                                                               job_id))
+            log_file = os.path.join(self.tmp_folder, 'logs', '%s_%i.log' % (job_name, job_id))
             # woot, there is no native tail in python ???
             last_line = check_output(['tail', '-1', log_file]).decode()[:-1]
             # get rid of the datetime prefix
@@ -102,13 +97,13 @@ class BaseClusterTask(luigi.Task):
     # Must implement API
     #
 
-    def prepare_jobs(self, n_jobs, block_list, **config):
+    def prepare_jobs(self, n_jobs, block_list, config, job_prefix=None):
         raise NotImplementedError("BaseClusterTask does not implement any functionality")
 
-    def submit_jobs(self, n_jobs):
+    def submit_jobs(self, n_jobs, job_prefix=None):
         raise NotImplementedError("BaseClusterTask does not implement any functionality")
 
-    def wait_for_jobs(self):
+    def wait_for_jobs(self, job_prefix=None):
         raise NotImplementedError("BaseClusterTask does not implement any functionality")
 
     #
@@ -121,8 +116,11 @@ class BaseClusterTask(luigi.Task):
         with open(log_file, 'a') as f:
             f.write('%s: %s\n' % (str(datetime.now()), msg))
 
-    def _config_path(self, job_id):
-        return os.path.join(self.tmp_folder, self.task_name + '_job_%s.config' % str(job_id))
+    def _config_path(self, job_id, job_prefix=None):
+        if job_prefix is None:
+            return os.path.join(self.tmp_folder, self.task_name + '_job_%s.config' % str(job_id))
+        else:
+            return os.path.join(self.tmp_folder, self.task_name + '_job_%s_%s.config' % (job_prefix, str(job_id)))
 
     # make the tmpdir and logdirs
     def _make_dirs(self):
@@ -139,22 +137,22 @@ class BaseClusterTask(luigi.Task):
         self._write_log('created tmp-folder and log dirs @ %s' % self.tmp_folder)
 
     # TODO allow config for individual blocks
-    def _write_job_config(self, n_jobs, block_list, **config):
+    def _write_job_config(self, n_jobs, block_list, config, job_prefix=None):
         # write the configurations for all jobs to the tmp folder
         for job_id in range(n_jobs):
             block_jobs = block_list[job_id::n_jobs]
             job_config = {'block_list': block_jobs, **config}
-            config_path = self._config_path(job_id)
+            config_path = self._config_path(job_id, job_prefix)
             with open(config_path, 'w') as f:
                 json.dump(job_config, f)
         self._write_log('written config for %i jobs' % n_jobs)
 
     # copy the python script to the temp folder and replace the shebang
-    def _write_script_file(self):
+    def _write_script_file(self, shebang):
         assert os.path.exists(self.src_file), self.src_file
         trgt_file = os.path.join(self.tmp_folder, self.task_name + '.py')
         shutil.copy(self.src_file, trgt_file)
-        self._replace_shebang(trgt_file, self.shebang)
+        self._replace_shebang(trgt_file, shebang)
         self._make_executable(trgt_file)
         self._write_log('copied python script from %s to %s' % (self.src_file, trgt_file))
 
@@ -185,9 +183,10 @@ class SlurmTask(BaseClusterTask):
     # time limit (TODO write proper parser)
     time_limit = luigi.Parameter(default='0-1:00')
 
-    def _write_slurm_file(self):
+    def _write_slurm_file(self, job_prefix=None):
         trgt_file = os.path.join(self.tmp_folder, self.task_name + '.py')
-        config_tmpl = self._config_path('$1')
+        config_tmpl = self._config_path('$1', job_prefix)
+        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
         # TODO set the job-name so that we can parse the squeue output properly
         slurm_template = ("#!/bin/bash\n"
                           "#SBATCH -A groupname\n"
@@ -200,27 +199,28 @@ class SlurmTask(BaseClusterTask):
                           "%s %s") % (self.cores_per_job, self.mem_limit,
                                       self.time_limit,
                                       os.path.join(self.tmp_folder, 'logs',
-                                                   '%s_job$1.log' % self.task_name),
+                                                   '%s_$1.log' % job_name),
                                       os.path.join(self.tmp_folder, 'error_logs',
-                                                   '%s_job$1.err' % self.task_name),
+                                                   '%s_$1.err' % job_name),
                                       trgt_file, config_tmpl)
-        script_path = os.path.join(self.tmp_folder, 'slurm_%s.sh' % self.task_name)
+        script_path = os.path.join(self.tmp_folder, 'slurm_%s.sh' % job_name)
         with open(script_path, 'w') as f:
             f.write(script_path)
 
-    def prepare_jobs(self, n_jobs, block_list, **config):
+    def prepare_jobs(self, n_jobs, block_list, config, job_prefix=None):
         # write the job configs
-        self._write_job_config(n_jobs, block_list, **config)
+        self._write_job_config(n_jobs, block_list, config, job_prefix)
         # write the slurm script file
-        self._write_slurm_file()
+        self._write_slurm_file(job_prefix)
 
-    def submit_jobs(self, n_jobs):
-        script_path = os.path.join(self.tmp_folder, 'slurm_%s.sh' % self.task_name)
+    def submit_jobs(self, n_jobs, job_prefix=None):
+        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
+        script_path = os.path.join(self.tmp_folder, 'slurm_%s.sh' % job_name)
         for job_id in range(n_jobs):
             call(['sbatch', script_path, str(job_id)])
 
     # TODO
-    def wait_for_jobs(self):
+    def wait_for_jobs(self, job_prefix=None):
         pass
 
 
@@ -230,27 +230,28 @@ class LocalTask(BaseClusterTask):
     test purposes
     """
 
-    def prepare_jobs(self, n_jobs, block_list, **config):
+    def prepare_jobs(self, n_jobs, block_list, config, job_prefix=None):
         # write the job configs
-        self._write_job_config(n_jobs, block_list, **config)
+        self._write_job_config(n_jobs, block_list, config, job_prefix)
 
-    def _submit(self, job_id):
+    def _submit(self, job_id, job_prefix):
         script_path = os.path.join(self.tmp_folder, self.task_name + '.py')
+        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
         log_file = os.path.join(self.tmp_folder, 'logs',
-                                '%s_job%i.log' % (self.task_name, job_id))
+                                '%s_%i.log' % (job_name, job_id))
         err_file = os.path.join(self.tmp_folder, 'error_logs',
-                                '%s_job%i.err' % (self.task_name, job_id))
-        config_file = self._config_path(job_id)
+                                '%s_%i.err' % (job_name, job_id))
+        config_file = self._config_path(job_id, job_prefix)
         with open(log_file, 'w') as f_out, open(err_file, 'w') as f_err:
             call([script_path, config_file], stdout=f_out, stderr=f_err)
 
-    def submit_jobs(self, n_jobs):
+    def submit_jobs(self, n_jobs, job_prefix=None):
         with futures.ProcessPoolExecutor(n_jobs) as pp:
-            tasks = [pp.submit(self._submit, job_id) for job_id in range(n_jobs)]
+            tasks = [pp.submit(self._submit, job_id, job_prefix) for job_id in range(n_jobs)]
             [t.result() for t in tasks]
 
     # don't need to wait for process pool
-    def wait_for_jobs(self):
+    def wait_for_jobs(self, job_prefix=None):
         pass
 
 
@@ -264,21 +265,22 @@ class LSFTask(BaseClusterTask):
     # time limit in minutes (TODO write proper parser)
     time_limit = luigi.Parameter(default='60')
 
-    def prepare_jobs(self, n_jobs, block_list, **config):
+    def prepare_jobs(self, n_jobs, block_list, config, job_prefix=None):
         # write the job configs
-        self._write_job_config(n_jobs, block_list, **config)
+        self._write_job_config(n_jobs, block_list, config, job_prefix)
 
-    def submit_jobs(self, n_jobs):
+    def submit_jobs(self, n_jobs, job_prefix=None):
         script_path = os.path.join(self.tmp_folder, self.task_name + '.py')
         assert os.path.exists(script_path), script_path
+        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
 
         for job_id in range(n_jobs):
-            config_file = self._config_path(job_id)
+            config_file = self._config_path(job_id, job_prefix)
             command = '%s %s' % (script_path, config_file)
             log_file = os.path.join(self.tmp_folder, 'logs',
-                                    '%s_job%i.log' % (self.task_name, job_id))
+                                    '%s_%i.log' % (job_name, job_id))
             err_file = os.path.join(self.tmp_folder, 'error_logs',
-                                    '%s_job%i.err' % (self.task_name, job_id))
+                                    '%s_%i.err' % (job_name, job_id))
             bsub_command = 'bsub -n %i -J %s_%i -We %s -o %s -e %s \'%s\'' % (self.cores_per_job,
                                                                               self.task_name,
                                                                               job_id,
@@ -287,7 +289,7 @@ class LSFTask(BaseClusterTask):
                                                                               command)
             call([bsub_command], shell=True)
 
-    def wait_for_jobs(self):
+    def wait_for_jobs(self, job_prefix=None):
         # TODO move to some config
         wait_time = 10
         max_wait_time = None
