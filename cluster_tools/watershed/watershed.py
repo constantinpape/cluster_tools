@@ -33,7 +33,6 @@ class WatershedBase(luigi.Task):
     output_key = luigi.Parameter()
 
     # configuration paths
-    global_config_path = luigi.Parameter()
     ws_config_path = luigi.Parameter()
 
     def _watershed_pass(self, n_jobs, block_list, ws_config, prefix=None):
@@ -92,7 +91,6 @@ class WatershedBase(luigi.Task):
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
             n_jobs = min(len(block_list), self.max_jobs)
             self._watershed_pass(n_jobs, block_list, ws_config)
-
 
 
 class WatershedLocal(WatershedBase, LocalTask):

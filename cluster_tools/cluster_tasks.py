@@ -49,6 +49,8 @@ class BaseClusterTask(luigi.Task):
     tmp_folder = luigi.Parameter()
     # maximum number of concurrent jobs
     max_jobs = luigi.IntParameter()
+    # path for the global configuration
+    global_config_path = luigi.Parameter()
 
     #
     # API
@@ -136,8 +138,12 @@ class BaseClusterTask(luigi.Task):
         mkdir(os.path.join(self.tmp_folder, 'error_logs'))
         self._write_log('created tmp-folder and log dirs @ %s' % self.tmp_folder)
 
-    # TODO allow config for individual blocks
-    def _write_job_config(self, n_jobs, block_list, config, job_prefix=None):
+    def _write_single_job_config(self, config, job_prefix):
+        config_path = self._config_path(job_id, job_prefix)
+        with open(config_path, 'w') as f:
+            json.dump(job_config, f)
+
+    def _write_multiple_job_configs(self, n_jobs, block_list, config, job_prefix):
         # write the configurations for all jobs to the tmp folder
         for job_id in range(n_jobs):
             block_jobs = block_list[job_id::n_jobs]
@@ -145,6 +151,17 @@ class BaseClusterTask(luigi.Task):
             config_path = self._config_path(job_id, job_prefix)
             with open(config_path, 'w') as f:
                 json.dump(job_config, f)
+
+    # TODO allow config for individual blocks
+    def _write_job_config(self, n_jobs, block_list, config, job_prefix=None):
+        # check f we have a reduce style block, that is
+        # not distributed over blocks
+        if block_list is None:
+            assert n_jobs == 1
+            self._write_single_job_config(config, job_prefix)
+        # otherwise, we have multiple jobs distributed over blocks
+        else:
+            self._write_multiple_job_configs(n_jobs, block_list, config, job_prefix)
         self._write_log('written config for %i jobs' % n_jobs)
 
     # copy the python script to the temp folder and replace the shebang
@@ -176,6 +193,7 @@ class SlurmTask(BaseClusterTask):
     Task for cluster with Slurm scheduling system
     (tested on EMBL cluster)
     """
+    # TODO remvoe these as luigi parameter and put into global config
     # number of cores per job
     cores_per_job = luigi.IntParameter(default=1)
     # memory limit (TODO write proper parser)
@@ -260,6 +278,8 @@ class LSFTask(BaseClusterTask):
     Task for cluster with LSF scheduling system
     (tested on Janelia cluster)
     """
+
+    # TODO remvoe these as luigi parameter and put into global config
     # number of cores per job
     cores_per_job = luigi.IntParameter(default=1)
     # time limit in minutes (TODO write proper parser)
@@ -308,3 +328,29 @@ class LSFTask(BaseClusterTask):
                     # TODO cancel jobs with pattern
                     print("MAX WAIT TIME EXCEEDED")
                     break
+
+
+class WorkflowBase(luigi.Task):
+    """
+    Base class for a workflow task, that just chains together
+    a workflow of multiple tasks.
+    """
+    # temporary folder for configurations etc
+    tmp_folder = luigi.Parameter()
+    # maximum number of concurrent jobs
+    max_jobs = luigi.IntParameter()
+    # path for the global configuration
+    global_config_path = luigi.Parameter()
+    # TODO max number of threads per job ?
+    # target can be local, slurm, lsf (case insensitive)
+    target = luigi.Parameter()
+
+    _target_dict = {'lsf': 'LSF', 'slurm': 'Slurm', 'local': 'Local'}
+
+    def _get_task_name(self, task_base_name):
+        target_postfix = self._target_dict[self.target.lower()]
+        return task_base_name + target_postfix
+
+    def output(self):
+        # we just mirror the target of the last task
+        return luigi.LocalTarget(self.input().path)
