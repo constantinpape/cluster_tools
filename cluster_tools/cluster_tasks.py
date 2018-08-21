@@ -3,6 +3,7 @@ import shutil
 import stat
 import json
 import time
+import fileinput
 from concurrent import futures
 from subprocess import call, check_output
 from datetime import datetime
@@ -46,11 +47,13 @@ class BaseClusterTask(luigi.Task):
     """
     # temporary folder for configurations etc
     tmp_folder = luigi.Parameter()
+    # maximum number of concurrent jobs
+    max_jobs = luigi.IntParameter()
     # TODO these shouldn't be luigi parameter
     # name of the task
-    task_name = luigi.Parameter()
+    # task_name = luigi.Parameter()
     # path to the python executable
-    shebang = luigi.Parameter()
+    # shebang = luigi.Parameter()
 
     #
     # API
@@ -74,7 +77,7 @@ class BaseClusterTask(luigi.Task):
             log_file = os.path.join(self.tmp_folder, 'logs', '%s_job%i.log' % (self.task_name,
                                                                                job_id))
             # woot, there is no native tail in python ???
-            last_line = check_output(['tail', '-1', log_file])[:-1]
+            last_line = check_output(['tail', '-1', log_file]).decode()[:-1]
             # get rid of the datetime prefix
             msg = " ".join(last_line.split()[2:])
             if msg == "processed job %i" % job_id:
@@ -89,6 +92,7 @@ class BaseClusterTask(luigi.Task):
             # rename log file due to fail
             shutil.move(self.output().path,
                         os.path.join(self.tmp_folder, self.task_name + '_failed.log'))
+            raise RuntimeError("Task: %s failed for %i / %i jobs" % (self.task_name, len(failed_jobs), n_jobs))
 
     # part of the luigi API
     def output(self):
@@ -115,10 +119,10 @@ class BaseClusterTask(luigi.Task):
     def _write_log(self, msg):
         log_file = self.output().path
         with open(log_file, 'a') as f:
-            f.write('%s: %s' % (str(datetime.now(), msg)))
+            f.write('%s: %s\n' % (str(datetime.now()), msg))
 
     def _config_path(self, job_id):
-        return os.path.join(self.tmp_folder, self.task_name + '_job%s.config' % str(job_id))
+        return os.path.join(self.tmp_folder, self.task_name + '_job_%s.config' % str(job_id))
 
     # make the tmpdir and logdirs
     def _make_dirs(self):
@@ -147,14 +151,12 @@ class BaseClusterTask(luigi.Task):
 
     # copy the python script to the temp folder and replace the shebang
     def _write_script_file(self):
-        file_dir = os.path.dirname(os.path.abspath(__file__))
-        src_file = os.path.join(file_dir, self.task_name + '.py')
-        assert os.path.exists(file_name), file_name
+        assert os.path.exists(self.src_file), self.src_file
         trgt_file = os.path.join(self.tmp_folder, self.task_name + '.py')
-        shtuil.copy(src_file, trgt_file)
+        shutil.copy(self.src_file, trgt_file)
         self._replace_shebang(trgt_file, self.shebang)
         self._make_executable(trgt_file)
-        self._write_log('copied python script from %s to %s' % (src_file, trgt_file))
+        self._write_log('copied python script from %s to %s' % (self.src_file, trgt_file))
 
     # https://stackoverflow.com/questions/39086/search-and-replace-a-line-in-a-file-in-python
     @staticmethod
@@ -179,9 +181,9 @@ class SlurmTask(BaseClusterTask):
     # number of cores per job
     cores_per_job = luigi.IntParameter(default=1)
     # memory limit (TODO write proper parser)
-    mem_limit = luigi.StringParameter(default='1G')
+    mem_limit = luigi.Parameter(default='1G')
     # time limit (TODO write proper parser)
-    time_limit = luigi.StringParameter(default='0-1:00')
+    time_limit = luigi.Parameter(default='0-1:00')
 
     def _write_slurm_file(self):
         trgt_file = os.path.join(self.tmp_folder, self.task_name + '.py')
@@ -190,16 +192,18 @@ class SlurmTask(BaseClusterTask):
         slurm_template = ("#!/bin/bash\n"
                           "#SBATCH -A groupname\n"
                           "#SBATCH -N 1\n"
-                          "#SBATCH -n %i\n" % self.cores_per_job
-                          "#SBATCH --mem %s\n" % self.mem_limit
-                          "#SBATCH -t %s\n" % self.time_limit
-                          "#SBATCH -o %s\n" % os.path.join(self.tmp_folder,
-                                                           'logs',
-                                                           '%s_job$1.log' % self.task_name)
-                          "#SBATCH -e %s\n" % os.path.join(self.tmp_folder,
-                                                           'error_logs',
-                                                           '%s_job$1.err' % self.task_name)
-                          "%s %s" % (trgt_file, config_tmpl))
+                          "#SBATCH -n %i\n"
+                          "#SBATCH --mem %s\n"
+                          "#SBATCH -t %s\n"
+                          "#SBATCH -o %s\n"
+                          "#SBATCH -e %s\n"
+                          "%s %s") % (self.cores_per_job, self.mem_limit,
+                                      self.time_limit,
+                                      os.path.join(self.tmp_folder, 'logs',
+                                                   '%s_job$1.log' % self.task_name),
+                                      os.path.join(self.tmp_folder, 'error_logs',
+                                                   '%s_job$1.err' % self.task_name),
+                                      trgt_file, config_tmpl)
         script_path = os.path.join(self.tmp_folder, 'slurm_%s.sh' % self.task_name)
         with open(script_path, 'w') as f:
             f.write(script_path)
@@ -230,20 +234,19 @@ class LocalTask(BaseClusterTask):
         # write the job configs
         self._write_job_config(n_jobs, block_list, **config)
 
-    def submit_jobs(self, n_jobs):
+    def _submit(self, job_id):
         script_path = os.path.join(self.tmp_folder, self.task_name + '.py')
+        log_file = os.path.join(self.tmp_folder, 'logs',
+                                '%s_job%i.log' % (self.task_name, job_id))
+        err_file = os.path.join(self.tmp_folder, 'error_logs',
+                                '%s_job%i.err' % (self.task_name, job_id))
+        config_file = self._config_path(job_id)
+        with open(log_file, 'w') as f_out, open(err_file, 'w') as f_err:
+            call([script_path, config_file], stdout=f_out, stderr=f_err)
 
-        def submit(job_id):
-            log_file = os.path.join(self.tmp_folder, 'logs',
-                                    '%s_job%i.log' % (self.task_name, job_id))
-            err_file = os.path.join(self.tmp_folder, 'error_logs',
-                                    '%s_job%i.err' % (self.task_name, job_id))
-            config_file = self._config_path(job_id)
-            with open(log_file, 'w') as f_out, open(err_file, 'w') as f_err:
-                call([script_path, config_file], stdout=f_out, stderr=f_err)
-
+    def submit_jobs(self, n_jobs):
         with futures.ProcessPoolExecutor(n_jobs) as pp:
-            tasks = [pp.submit(submit, job_id) for job_id in range(n_jobs)]
+            tasks = [pp.submit(self._submit, job_id) for job_id in range(n_jobs)]
             [t.result() for t in tasks]
 
     # don't need to wait for process pool
@@ -259,7 +262,7 @@ class LSFTask(BaseClusterTask):
     # number of cores per job
     cores_per_job = luigi.IntParameter(default=1)
     # time limit in minutes (TODO write proper parser)
-    time_limit = luigi.StringParameter(default='60')
+    time_limit = luigi.Parameter(default='60')
 
     def prepare_jobs(self, n_jobs, block_list, **config):
         # write the job configs
