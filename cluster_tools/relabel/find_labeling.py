@@ -54,6 +54,9 @@ class FindLabelingBase(luigi.Task):
 
         # wait till jobs finish and check for job success
         self.wait_for_jobs()
+        # log the save-path again
+        save_path = os.path.join(self.tmp_folder, 'relabeling.pkl')
+        self._write_log("saving results to %s" % save_path)
         self.check_jobs(1)
 
 
@@ -92,7 +95,7 @@ def find_labeling(job_id, config_path):
     input_key = config['input_key']
 
     # TODO this could be parallelized
-    uniques = np.concatenate([np.load(os.path.join(tmp_folder, 'uniques_job_%i.npy' % job_id))
+    uniques = np.concatenate([np.load(os.path.join(tmp_folder, 'find_uniques_job_%i.npy' % job_id))
                               for job_id in range(n_jobs)])
     uniques = nt.unique(uniques)
     _, max_id, mapping = vigra.analysis.relabelConsecutive(uniques,

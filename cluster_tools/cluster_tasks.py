@@ -144,7 +144,7 @@ class BaseClusterTask(luigi.Task):
     def _write_single_job_config(self, config, job_prefix):
         config_path = self._config_path(0, job_prefix)
         with open(config_path, 'w') as f:
-            json.dump(job_config, f)
+            json.dump(config, f)
 
     def _write_multiple_job_configs(self, n_jobs, block_list, config, job_prefix):
         # write the configurations for all jobs to the tmp folder

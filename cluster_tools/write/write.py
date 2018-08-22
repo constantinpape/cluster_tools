@@ -3,6 +3,8 @@
 import os
 import sys
 import json
+import pickle
+from concurrent import futures
 
 import luigi
 import numpy as np
@@ -42,6 +44,7 @@ class WriteBase(luigi.Task):
     def _parse_log(self, log_path):
         log_path = self.input().path
         lines = fu.tail(log_path, 3)
+        lines = [' '.join(ll.split()[2:]) for ll in lines]
         # check if this is a pickle file
         if lines[1].startswith("saving results to"):
             path = lines[1].split()[-1]
@@ -177,7 +180,7 @@ def _write(ds_in, ds_out, blocking, block_list,
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(_write_block, ds_in, ds_out,
                            blocking, block_id, node_labels)
-                 for block_id in block_ids]
+                 for block_id in block_list]
         [t.result() for t in tasks]
 
 
@@ -216,7 +219,7 @@ def write(job_id, config_path):
     assignment_path = config['assignment_path']
     assignment_key = config.get('assignment_key', None)
     fu.log("loading node labels from %s" % assignment_path)
-    node_labels = _load_assignments(assignment_path, assignment_key)
+    node_labels = _load_assignments(assignment_path, assignment_key, n_threads)
 
     offset_path = config.get('offset_path', None)
 
@@ -233,6 +236,7 @@ def write(job_id, config_path):
         else:
             _write_with_offsets(ds_in, ds_out, blocking, block_list,
                                 n_threads, node_labels, offset_path)
+    fu.log_job_success(job_id)
 
 
 if __name__ == '__main__':

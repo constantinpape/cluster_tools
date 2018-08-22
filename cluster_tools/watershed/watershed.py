@@ -190,19 +190,27 @@ def _apply_watershed_with_seeds(input_, dt, offset, initial_seeds, config):
     if apply_2d:
         ws = np.zeros_like(input_, dtype='uint64')
         for z in range(ws.shape[0]):
-            # get seesds in this slice
+
+            # compute seeds for this slice
+
+            # smoothe the distance transform if specified
             dtz = vu.apply_filter(dt[z], 'gaussianSmoothing',
                                   sigma_seeds) if sigma_seeds != 0 else dt[z]
+
+            # get the initial seeds for this slice
+            # and a mask for the inital seeds
+            initial_seeds_z = initial_seeds[z]
+            initial_seed_mask = initial_seeds_z != 0
+            # don't place maxima at initial seeds
+            dtz[initial_seed_mask] = 0
+
             seeds = vigra.analysis.localMaxima(dtz, marker=np.nan,
                                                allowAtBorder=True, allowPlateaus=True)
             seeds = vigra.analysis.labelImageWithBackground(np.isnan(seeds).view('uint8'))
 
             # add offset to seeds
             seeds[seeds != 0] += offset
-
-            # add the initial seeds where we have them
-            initial_seeds_z = initial_seeds[z]
-            initial_seed_mask = initial_seeds_z != 0
+            # add initial seeds
             seeds[initial_seed_mask] = initial_seeds_z[initial_seed_mask]
 
             # we need to remap the seeds consecutively, because vigra
