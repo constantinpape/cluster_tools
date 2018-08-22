@@ -1,1 +1,1 @@
-from .make_batch_jobs import *
+from .relabel_workflow import RelabelWorkflow
