@@ -18,7 +18,7 @@ class RelabelWorkflow(WorkflowBase):
                               self._get_task_name('FindUniques'))
         t1 = unique_task(tmp_folder=self.tmp_folder,
                          max_jobs=self.max_jobs,
-                         global_config_path=self.global_config_path,
+                         config_dir=self.config_dir,
                          input_path=self.input_path,
                          input_key=self.input_key,
                          dependency=self.dependency)
@@ -27,7 +27,7 @@ class RelabelWorkflow(WorkflowBase):
                                 self._get_task_name('FindLabeling'))
         t2 = labeling_task(tmp_folder=self.tmp_folder,
                            max_jobs=self.max_jobs,
-                           global_config_path=self.global_config_path,
+                           config_dir=self.config_dir,
                            input_path=self.input_path,
                            input_key=self.input_key,
                            dependency=t1)
@@ -36,7 +36,7 @@ class RelabelWorkflow(WorkflowBase):
                              self._get_task_name('Write'))
         t3 = write_task(tmp_folder=self.tmp_folder,
                         max_jobs=self.max_jobs,
-                        global_config_path=self.global_config_path,
+                        config_dir=self.config_dir,
                         input_path=self.input_path,
                         input_key=self.input_key,
                         output_path=self.input_path,

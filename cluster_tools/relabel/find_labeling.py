@@ -35,8 +35,8 @@ class FindLabelingBase(luigi.Task):
         return self.dependency
 
     def run(self):
-        # get the global config and init configs
-        shebang, block_shape, roi_begin, roi_end = fu.load_global_config(self.global_config_path)
+        self.make_dirs()
+        shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 
         # get shape and make block config

@@ -59,7 +59,8 @@ class WriteBase(luigi.Task):
 
     def run(self):
         # get the global config and init configs
-        shebang, block_shape, roi_begin, roi_end = fu.load_global_config(self.global_config_path)
+        self.make_dirs()
+        shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 
         # get shape and make block config
@@ -72,12 +73,13 @@ class WriteBase(luigi.Task):
             f.require_dataset(self.output_key, shape=shape, chunks=chunks,
                               compression='gzip', dtype='uint64')
 
+        n_threads = self.get_task_config().get('threads_per_core', 1)
         assignment_path, assignment_key = self._parse_log(self.input().path)
         # update the config with input and output paths and keys
         # as well as block shape
         config = {'input_path': self.input_path, 'input_key': self.input_key,
                   'output_path': self.output_path, 'output_key': self.output_key,
-                  'block_shape': block_shape, 'n_threads': self.threads_per_job,
+                  'block_shape': block_shape, 'n_threads': n_threads,
                   'assignment_path': assignment_path, 'assignment_key': assignment_key}
         if self.offset_path != '':
             config.update({'offset_path': self.offset_path})

@@ -32,8 +32,14 @@ class WatershedBase(luigi.Task):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
 
-    # configuration paths
-    ws_config_path = luigi.Parameter()
+    def default_task_config(self):
+        # TODO I don't know if we can make the correct super
+        # call using the mixin pattern here ...
+        # config = super().default_task_config()
+        config = {'threads_per_job': 1, 'time_limit': 60, 'mem_limit': 1.,
+                  'threshold': .5, 'apply_dt_2d': True, 'pixel_pitch': None,
+                  'apply_ws_2d': True, 'sigma_seeds': 2., 'size_filter': 25,
+                  'sigam_weights': 2.}
 
     def _watershed_pass(self, n_jobs, block_list, ws_config, prefix=None):
         # prime and run the jobs
@@ -46,7 +52,8 @@ class WatershedBase(luigi.Task):
 
     def run(self):
         # get the global config and init configs
-        shebang, block_shape, roi_begin, roi_end = fu.load_global_config(self.global_config_path)
+        self.make_dirs()
+        shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 
         # get shape and make block config
@@ -56,8 +63,7 @@ class WatershedBase(luigi.Task):
 
         # load the watershed config
         # TODO check more parameters here
-        with open(self.ws_config_path, 'r') as f:
-            ws_config = json.load(f)
+        ws_config = self.get_task_config()
 
         # require output dataset
         # TODO read chunks from config
@@ -125,7 +131,7 @@ def _apply_dt(input_, config):
     threshd = (input_ > threshold).astype('uint32')
 
     pixel_pitch = config.get('pixel_pitch', None)
-    apply_2d = config.get('apply_dt_2d', False)
+    apply_2d = config.get('apply_dt_2d', True)
     if apply_2d:
         assert pixel_pitch is None
         dt = np.zeros_like(threshd, dtype='float32')
@@ -141,9 +147,9 @@ def _apply_dt(input_, config):
 
 # apply watershed
 def _apply_watershed(input_, dt, offset, config):
-    apply_2d = config.get('apply_ws_2d', False)
-    sigma_seeds = config.get('sigma_seeds', 0.)
-    size_filter = config.get('size_filter', 0)
+    apply_2d = config.get('apply_ws_2d', True)
+    sigma_seeds = config.get('sigma_seeds', 2.)
+    size_filter = config.get('size_filter', 25)
 
     # apply the watersheds in 2d
     if apply_2d:
@@ -182,9 +188,9 @@ def _apply_watershed(input_, dt, offset, config):
 
 
 def _apply_watershed_with_seeds(input_, dt, offset, initial_seeds, config):
-    apply_2d = config.get('apply_ws_2d', False)
-    sigma_seeds = config.get('sigma_seeds', 0.)
-    size_filter = config.get('size_filter', 0)
+    apply_2d = config.get('apply_ws_2d', True)
+    sigma_seeds = config.get('sigma_seeds', 2.)
+    size_filter = config.get('size_filter', 25)
 
     # apply the watersheds in 2d
     if apply_2d:
@@ -227,7 +233,8 @@ def _apply_watershed_with_seeds(input_, dt, offset, initial_seeds, config):
             if size_filter > 0:
                 # we do not filter ids from the initial seed mask
                 initial_seed_ids = np.unique(initial_seeds_z[initial_seed_mask])
-                seeds, max_id = vu.apply_size_filter(seeds, input_[z], size_filter, exclude=initial_seed_ids)
+                seeds, max_id = vu.apply_size_filter(seeds, input_[z], size_filter,
+                                                     exclude=initial_seed_ids)
 
             # map back to original ids
             seeds = seeds.astype('uint64')
@@ -265,7 +272,8 @@ def _apply_watershed_with_seeds(input_, dt, offset, initial_seeds, config):
         if size_filter > 0:
             # we do not filter ids from the initial seed mask
             initial_seed_ids = np.unique(initial_seeds_z[initial_seed_mask])
-            seeds, max_id = vu.apply_size_filter(seeds, input_[z], size_filter, exclude=initial_seed_ids)
+            seeds, max_id = vu.apply_size_filter(seeds, input_[z], size_filter,
+                                                 exclude=initial_seed_ids)
         seeds = seeds.astype('uint64')
         seeds = nt.takeDict(new_to_old, seeds)
         return seeds
@@ -300,10 +308,11 @@ def _ws_block(blocking, block_id, ds_in, ds_out, config, pass_):
     else:
         input_ = vu.normalize(ds_in[input_bb])
 
+    # TODO we need to enable smoothing in 2d here
     # smooth input if sigma is given
-    sigma_weights = float(config.get('sigma_weights', 0.))
+    sigma_weights = float(config.get('sigma_weights', 2.))
     if sigma_weights > 0:
-        input_ = vu.apply_filter(input_, 'gaussianSmoothing', sigma)
+        input_ = vu.apply_filter(input_, 'gaussianSmoothing', sigma_weights)
 
     # apply distance transform
     dt = _apply_dt(input_, config)

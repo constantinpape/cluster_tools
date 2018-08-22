@@ -51,27 +51,22 @@ class BaseClusterTask(luigi.Task):
     tmp_folder = luigi.Parameter()
     # maximum number of concurrent jobs
     max_jobs = luigi.IntParameter()
-    # path for the global configuration
-    global_config_path = luigi.Parameter()
-    # number of threads per job
-    threads_per_job = luigi.IntParameter(default=1)
+    # directory for configs
+    config_dir = luigi.Parameter()
 
     #
     # API
     #
 
     def init(self, shebang):
-        """
-        Init tmp dir and python scripts.
+        """ Init tmp dir and python scripts.
 
         Should be the first call in `run`.
         """
-        self._make_dirs()
         self._write_script_file(shebang)
 
     def check_jobs(self, n_jobs, job_prefix=None):
-        """
-        Check for jobs that ran successfully
+        """ Check for jobs that ran successfully
         """
         success_list = []
         job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
@@ -93,6 +88,64 @@ class BaseClusterTask(luigi.Task):
             shutil.move(self.output().path,
                         os.path.join(self.tmp_folder, self.task_name + '_failed.log'))
             raise RuntimeError("Task: %s failed for %i / %i jobs" % (self.task_name, len(failed_jobs), n_jobs))
+
+    def get_task_config(self):
+        """ Get the task configuration
+
+        Reads the task config from 'config_dir/task_name.config'.
+        If this does not exist, returns the default task config.
+        """
+        config_path = os.path.join(self.config_dir, self.task_name + '.config')
+        if os.path.exists(config_path):
+            self._write_log("reading task config from %s" % config_path)
+            with open(config_path, 'r') as f:
+                return json.load(f)
+        else:
+            self._write_log("reading default task config")
+            return self.default_task_config()
+
+    def default_task_config(self):
+        """ Return the default task config
+
+        The default implementation just contains `threads_per_job`, `time_limit` and `mem_limit`.
+        Over-ride in deriving classes to specify the default configuration.
+        """
+        # time-limit in minutes
+        # mem_limit in GB
+        return {'threads_per_job': 1, 'time_limit': 60, 'mem_limit': 1.}
+
+    def get_global_config(self):
+        """ Get the global configuration
+
+        Reads the global config from 'config_dir/global.config'.
+        If this does not exist, returns the default global config.
+        """
+        config_path = os.path.join(self.config_dir, 'global.config')
+        if os.path.exists(config_path):
+            self._write_log("reading global config from %s" % config_path)
+            with open(config_path, 'r') as f:
+                return json.load(f)
+        else:
+            self._write_log("reading default global config")
+            return self.default_global_config()
+
+    def default_global_config(self):
+        """ Return default global config
+        """
+        return {"block_shape": [50, 512, 512],
+                "shebang": "#! /bin/python",
+                "roi_begin": None,
+                "roi_end": None}
+
+    def global_config_values(self):
+        """ Load the global config values
+        """
+        config = self.get_global_config()
+        # first two return values (shebang, block_shape) must exist
+        # second two have defaults
+        return (config["shebang"], config["block_shape"],
+                config.get("roi_begin", None),
+                config.get("roi_end", None))
 
     # part of the luigi API
     def output(self):
@@ -128,7 +181,7 @@ class BaseClusterTask(luigi.Task):
             return os.path.join(self.tmp_folder, self.task_name + '_job_%s_%s.config' % (job_prefix, str(job_id)))
 
     # make the tmpdir and logdirs
-    def _make_dirs(self):
+    def make_dirs(self):
 
         def mkdir(dirpath):
             try:
@@ -196,13 +249,27 @@ class SlurmTask(BaseClusterTask):
     Task for cluster with Slurm scheduling system
     (tested on EMBL cluster)
     """
-    # TODO remvoe these as luigi parameter and put into global config
-    # memory limit (TODO write proper parser)
-    mem_limit = luigi.Parameter(default='1G')
-    # time limit (TODO write proper parser)
-    time_limit = luigi.Parameter(default='0-1:00')
+
+    @staticmethod
+    def _parse_time_limit(time_limit):
+        """ Converts time limit in minutes to slurm format
+        """
+        pass
+
+    @staticmethod
+    def _parse_mem_limit(mem_limit):
+        """ Converts mem limit in GB to slurm format
+        """
+        pass
 
     def _write_slurm_file(self, job_prefix=None):
+        # read and parse the relevant task config
+        task_config = self.get_task_config()
+        n_threads = task_config.get("threads_per_job", 1)
+        time_limt = self._parse_time_limit(task_config.get("time_limit", 60))
+        mem_limt = self._parse_mem_limit(task_config.get("mem_limit", 60))
+
+        # get file paths
         trgt_file = os.path.join(self.tmp_folder, self.task_name + '.py')
         config_tmpl = self._config_path('$1', job_prefix)
         job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
@@ -215,8 +282,7 @@ class SlurmTask(BaseClusterTask):
                           "#SBATCH -t %s\n"
                           "#SBATCH -o %s\n"
                           "#SBATCH -e %s\n"
-                          "%s %s") % (self.threads_per_job, self.mem_limit,
-                                      self.time_limit,
+                          "%s %s") % (n_threads, mem_limit, time_limit,
                                       os.path.join(self.tmp_folder, 'logs',
                                                    '%s_$1.log' % job_name),
                                       os.path.join(self.tmp_folder, 'error_logs',
@@ -280,15 +346,16 @@ class LSFTask(BaseClusterTask):
     (tested on Janelia cluster)
     """
 
-    # TODO remvoe these as luigi parameter and put into global config
-    # time limit in minutes (TODO write proper parser)
-    time_limit = luigi.Parameter(default='60')
-
     def prepare_jobs(self, n_jobs, block_list, config, job_prefix=None):
         # write the job configs
         self._write_job_config(n_jobs, block_list, config, job_prefix)
 
     def submit_jobs(self, n_jobs, job_prefix=None):
+        # read the task config to get number of threads and time limit
+        task_config = self.get_task_config()
+        n_threads = task_config.get("threads_per_job", 1)
+        time_limit = task_config.get("time_limit", 60)
+        #
         script_path = os.path.join(self.tmp_folder, self.task_name + '.py')
         assert os.path.exists(script_path), script_path
         job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
@@ -300,10 +367,8 @@ class LSFTask(BaseClusterTask):
                                     '%s_%i.log' % (job_name, job_id))
             err_file = os.path.join(self.tmp_folder, 'error_logs',
                                     '%s_%i.err' % (job_name, job_id))
-            bsub_command = 'bsub -n %i -J %s_%i -We %s -o %s -e %s \'%s\'' % (self.threads_per_job,
-                                                                              self.task_name,
-                                                                              job_id,
-                                                                              self.time_limit,
+            bsub_command = 'bsub -n %i -J %s_%i -We %i -o %s -e %s \'%s\'' % (n_threads, self.task_name,
+                                                                              job_id, time_limit,
                                                                               log_file, err_file,
                                                                               command)
             call([bsub_command], shell=True)
@@ -339,7 +404,7 @@ class WorkflowBase(luigi.Task):
     # maximum number of concurrent jobs
     max_jobs = luigi.IntParameter()
     # path for the global configuration
-    global_config_path = luigi.Parameter()
+    config_dir = luigi.Parameter()
     # TODO max number of threads per job ?
     # target can be local, slurm, lsf (case insensitive)
     target = luigi.Parameter()

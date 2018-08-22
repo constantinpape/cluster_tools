@@ -23,8 +23,7 @@ def test_ws():
 
     ret = luigi.build([WatershedWorkflow(input_path=input_path, input_key=input_key,
                                          output_path=output_path, output_key=output_key,
-                                         global_config_path='./test_config.json',
-                                         ws_config_path='./test_config.json',
+                                         config_dir='./configs',
                                          tmp_folder='./tmp',
                                          target='local',
                                          max_jobs=max_jobs)], local_scheduler=True)

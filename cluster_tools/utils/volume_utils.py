@@ -1,4 +1,5 @@
 import json
+import numpy as np
 import h5py
 import z5py
 import vigra
