@@ -314,7 +314,9 @@ class SlurmTask(BaseClusterTask):
         for job_id in range(n_jobs):
             out_file = os.path.join(self.tmp_folder, 'logs', '%s_%i.log' % (job_name, job_id))
             err_file = os.path.join(self.tmp_folder, 'error_logs', '%s_%i.err' % (job_name, job_id))
-            call(['sbatch', '-o', out_file, '-e', err_file, script_path, str(job_id)])
+            call(['sbatch', '-o', out_file, '-e', err_file,
+                  '-J', '%s_%i' % (job_name, job_id),
+                  script_path, str(job_id)])
 
     def wait_for_jobs(self, job_prefix=None):
         # TODO move to some config
