@@ -6,7 +6,7 @@ import time
 import fileinput
 from concurrent import futures
 from subprocess import call, check_output
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import luigi
 
@@ -254,13 +254,18 @@ class SlurmTask(BaseClusterTask):
     def _parse_time_limit(time_limit):
         """ Converts time limit in minutes to slurm format
         """
-        pass
+        tt = timedelta(minutes=time_limit) + datetime(1, 1, 1)
+        return "%i-%i:%i:%i" % (tt.day - 1, tt.hour, tt.minute, tt.second)
 
     @staticmethod
     def _parse_mem_limit(mem_limit):
         """ Converts mem limit in GB to slurm format
         """
-        pass
+        if mem_limit > 1:
+            # TODO I don't know if float mem
+            return "%fG" % mem_limt
+        else:
+            return "%iM" % int (mem_limit * 1000)
 
     def _write_slurm_file(self, job_prefix=None):
         # read and parse the relevant task config
@@ -304,9 +309,18 @@ class SlurmTask(BaseClusterTask):
         for job_id in range(n_jobs):
             call(['sbatch', script_path, str(job_id)])
 
-    # TODO
     def wait_for_jobs(self, job_prefix=None):
-        pass
+        # TODO move to some config
+        wait_time = 10
+        while True:
+            time.sleep(wait_time)
+            # TODO filter for job name pattern
+            n_running = subprocess.check_output(['squeue -u $USER | wc -l'], shell=True).decode()
+            # n_running = subprocess.check_output(['squeue -u $USER | grep %f | wc -l' % self.task_name], shell=True).decode()
+            # need to substract 1 due to header # TODO drop this once we filter for job-name
+            n_running = int(n_running.strip('\n')) - 1
+            if n_running == 0:
+                break
 
 
 class LocalTask(BaseClusterTask):
@@ -376,8 +390,6 @@ class LSFTask(BaseClusterTask):
     def wait_for_jobs(self, job_prefix=None):
         # TODO move to some config
         wait_time = 10
-        max_wait_time = None
-        t_start = time.time()
         while True:
             time.sleep(wait_time)
             # TODO filter for job name pattern
@@ -386,12 +398,6 @@ class LSFTask(BaseClusterTask):
             n_running = int(n_running.strip('\n'))
             if n_running == 0:
                 break
-            if max_wait_time is not None:
-                t_wait = time.time() - t_start
-                if t_wait > max_wait_time:
-                    # TODO cancel jobs with pattern
-                    print("MAX WAIT TIME EXCEEDED")
-                    break
 
 
 class WorkflowBase(luigi.Task):
