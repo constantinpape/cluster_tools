@@ -2,12 +2,13 @@ import os
 import json
 import luigi
 
-import .find_uniques as unique_tasks
-import .find_labeling as labeling_tasks
-import ..write import as write_tasks
+from ..cluster_tasks import WorkflowBase
+from . import find_uniques as unique_tasks
+from . import find_labeling as labeling_tasks
+from .. import write as write_tasks
 
 
-class RelabelWorkflow(luigi.Task):
+class RelabelWorkflow(WorkflowBase):
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
     dependency = luigi.TaskParameter()

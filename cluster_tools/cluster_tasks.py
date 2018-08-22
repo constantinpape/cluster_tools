@@ -77,7 +77,7 @@ class BaseClusterTask(luigi.Task):
         job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
         for job_id in range(n_jobs):
             log_file = os.path.join(self.tmp_folder, 'logs', '%s_%i.log' % (job_name, job_id))
-            last_line = tail(log_file)[0]
+            last_line = tail(log_file, 1)[0]
             # get rid of the datetime prefix
             msg = " ".join(last_line.split()[2:])
             if msg == "processed job %i" % job_id:
@@ -142,7 +142,7 @@ class BaseClusterTask(luigi.Task):
         self._write_log('created tmp-folder and log dirs @ %s' % self.tmp_folder)
 
     def _write_single_job_config(self, config, job_prefix):
-        config_path = self._config_path(job_id, job_prefix)
+        config_path = self._config_path(0, job_prefix)
         with open(config_path, 'w') as f:
             json.dump(job_config, f)
 

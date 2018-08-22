@@ -9,7 +9,7 @@ import numpy as np
 import nifty.tools as nt
 
 import cluster_tools.utils.volume_utils as vu
-import cluster_tools.utils.funcion_utils as fu
+import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
@@ -21,6 +21,8 @@ class WriteBase(luigi.Task):
     """
     Write node assignments for all blocks
     """
+    task_name = 'write'
+    src_file = os.path.abspath(__file__)
 
     # input and output configs
     input_path = luigi.Parameter()
@@ -67,7 +69,7 @@ class WriteBase(luigi.Task):
             f.require_dataset(self.output_key, shape=shape, chunks=chunks,
                               compression='gzip', dtype='uint64')
 
-        assignment_path, assignment_key = self._parse_log()
+        assignment_path, assignment_key = self._parse_log(self.input().path)
         # update the config with input and output paths and keys
         # as well as block shape
         config = {'input_path': self.input_path, 'input_key': self.input_key,

@@ -1,1 +1,1 @@
-from .watershed import WatershedLocal, WatershedSlurm, WatershedLSF
+from .watershed_workflow import WatershedWorkflow

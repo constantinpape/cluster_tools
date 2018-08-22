@@ -10,7 +10,7 @@ import vigra
 import nifty.tools as nt
 
 import cluster_tools.utils.volume_utils as vu
-import cluster_tools.utils.functional_utils as fu
+import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
@@ -84,7 +84,7 @@ def uniques_in_block(block_id, blocking, ds):
     labels = ds[bb]
     # TODO why don't we use numpy unique ???
     # uniques = np.unique(labels)
-    uniques = nifty.tools.unique(labels)
+    uniques = nt.unique(labels)
     # log block success
     fu.log_block_success(block_id)
     return uniques
@@ -95,7 +95,7 @@ def find_uniques(job_id, config_path):
     fu.log("reading config from %s" % config_path)
 
     # read the config
-    with open(config_file) as f:
+    with open(config_path) as f:
         config = json.load(f)
     input_path = config['input_path']
     input_key = config['input_key']
