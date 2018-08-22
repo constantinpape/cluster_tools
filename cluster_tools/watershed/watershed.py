@@ -38,7 +38,7 @@ class WatershedBase(luigi.Task):
         config = LocalTask.default_task_config()
         config.update({'threshold': .5, 'apply_dt_2d': True, 'pixel_pitch': None,
                        'apply_ws_2d': True, 'sigma_seeds': 2., 'size_filter': 25,
-                       'sigam_weights': 2.}
+                       'sigam_weights': 2.})
         return config
 
     def _watershed_pass(self, n_jobs, block_list, ws_config, prefix=None):

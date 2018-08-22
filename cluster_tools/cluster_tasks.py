@@ -5,7 +5,7 @@ import json
 import time
 import fileinput
 from concurrent import futures
-from subprocess import call, check_output
+from subprocess import call, check_output, CalledProcessError
 from datetime import datetime, timedelta
 
 import luigi
@@ -72,7 +72,13 @@ class BaseClusterTask(luigi.Task):
         job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
         for job_id in range(n_jobs):
             log_file = os.path.join(self.tmp_folder, 'logs', '%s_%i.log' % (job_name, job_id))
-            last_line = tail(log_file, 1)[0]
+            try:
+                last_line = tail(log_file, 1)[0]
+            # if the file does not exist, this throws a `CalledProcessError`
+            # if it does exist, but is empty, it throws a `IndexError`
+            # in bout cases, the job was unsuccessfull and we continue
+            except (IndexError, CalledProcessError):
+                continue
             # get rid of the datetime prefix
             msg = " ".join(last_line.split()[2:])
             if msg == "processed job %i" % job_id:
@@ -137,7 +143,8 @@ class BaseClusterTask(luigi.Task):
         return {"block_shape": [50, 512, 512],
                 "shebang": "#! /bin/python",
                 "roi_begin": None,
-                "roi_end": None}
+                "roi_end": None,
+                "groupname": "kreshuk"}
 
     def global_config_values(self):
         """ Load the global config values
@@ -265,16 +272,17 @@ class SlurmTask(BaseClusterTask):
         """
         if mem_limit > 1:
             # TODO I don't know if float mem
-            return "%fG" % mem_limt
+            return "%iG" % mem_limit
         else:
             return "%iM" % int (mem_limit * 1000)
 
     def _write_slurm_file(self, job_prefix=None):
+        groupname = self.get_global_config().get('groupname', 'kreshuk')
         # read and parse the relevant task config
         task_config = self.get_task_config()
         n_threads = task_config.get("threads_per_job", 1)
-        time_limt = self._parse_time_limit(task_config.get("time_limit", 60))
-        mem_limt = self._parse_mem_limit(task_config.get("mem_limit", 60))
+        time_limit = self._parse_time_limit(task_config.get("time_limit", 60))
+        mem_limit = self._parse_mem_limit(task_config.get("mem_limit", 2))
 
         # get file paths
         trgt_file = os.path.join(self.tmp_folder, self.task_name + '.py')
@@ -282,22 +290,17 @@ class SlurmTask(BaseClusterTask):
         job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
         # TODO set the job-name so that we can parse the squeue output properly
         slurm_template = ("#!/bin/bash\n"
-                          "#SBATCH -A groupname\n"
+                          "#SBATCH -A %s\n"
                           "#SBATCH -N 1\n"
                           "#SBATCH -n %i\n"
                           "#SBATCH --mem %s\n"
                           "#SBATCH -t %s\n"
-                          "#SBATCH -o %s\n"
-                          "#SBATCH -e %s\n"
-                          "%s %s") % (n_threads, mem_limit, time_limit,
-                                      os.path.join(self.tmp_folder, 'logs',
-                                                   '%s_$1.log' % job_name),
-                                      os.path.join(self.tmp_folder, 'error_logs',
-                                                   '%s_$1.err' % job_name),
+                          "%s %s") % (groupname, n_threads,
+                                      mem_limit, time_limit,
                                       trgt_file, config_tmpl)
         script_path = os.path.join(self.tmp_folder, 'slurm_%s.sh' % job_name)
         with open(script_path, 'w') as f:
-            f.write(script_path)
+            f.write(slurm_template)
 
     def prepare_jobs(self, n_jobs, block_list, config, job_prefix=None):
         # write the job configs
@@ -309,7 +312,9 @@ class SlurmTask(BaseClusterTask):
         job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
         script_path = os.path.join(self.tmp_folder, 'slurm_%s.sh' % job_name)
         for job_id in range(n_jobs):
-            call(['sbatch', script_path, str(job_id)])
+            out_file = os.path.join(self.tmp_folder, 'logs', '%s_%i.log' % (job_name, job_id))
+            err_file = os.path.join(self.tmp_folder, 'error_logs', '%s_%i.err' % (job_name, job_id))
+            call(['sbatch', '-o', out_file, '-e', err_file, script_path, str(job_id)])
 
     def wait_for_jobs(self, job_prefix=None):
         # TODO move to some config
@@ -317,8 +322,8 @@ class SlurmTask(BaseClusterTask):
         while True:
             time.sleep(wait_time)
             # TODO filter for job name pattern
-            n_running = subprocess.check_output(['squeue -u $USER | wc -l'], shell=True).decode()
-            # n_running = subprocess.check_output(['squeue -u $USER | grep %f | wc -l' % self.task_name], shell=True).decode()
+            n_running = check_output(['squeue -u $USER | wc -l'], shell=True).decode()
+            # n_running = check_output(['squeue -u $USER | grep %f | wc -l' % self.task_name], shell=True).decode()
             # need to substract 1 due to header # TODO drop this once we filter for job-name
             n_running = int(n_running.strip('\n')) - 1
             if n_running == 0:
@@ -395,8 +400,7 @@ class LSFTask(BaseClusterTask):
         while True:
             time.sleep(wait_time)
             # TODO filter for job name pattern
-            n_running = subprocess.check_output(['bjobs | grep $USER | wc -l'],
-                                                shell=True).decode()
+            n_running = check_output(['bjobs | grep $USER | wc -l'], shell=True).decode()
             n_running = int(n_running.strip('\n'))
             if n_running == 0:
                 break
