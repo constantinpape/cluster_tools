@@ -32,14 +32,14 @@ class WatershedBase(luigi.Task):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
 
-    def default_task_config(self):
-        # TODO I don't know if we can make the correct super
-        # call using the mixin pattern here ...
-        # config = super().default_task_config()
-        config = {'threads_per_job': 1, 'time_limit': 60, 'mem_limit': 1.,
-                  'threshold': .5, 'apply_dt_2d': True, 'pixel_pitch': None,
-                  'apply_ws_2d': True, 'sigma_seeds': 2., 'size_filter': 25,
-                  'sigam_weights': 2.}
+    @staticmethod
+    def default_task_config():
+        # we use this to get also get the common default config
+        config = LocalTask.default_task_config()
+        config.update({'threshold': .5, 'apply_dt_2d': True, 'pixel_pitch': None,
+                       'apply_ws_2d': True, 'sigma_seeds': 2., 'size_filter': 25,
+                       'sigam_weights': 2.}
+        return config
 
     def _watershed_pass(self, n_jobs, block_list, ws_config, prefix=None):
         # prime and run the jobs

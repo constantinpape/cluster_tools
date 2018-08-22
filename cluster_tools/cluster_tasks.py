@@ -104,7 +104,8 @@ class BaseClusterTask(luigi.Task):
             self._write_log("reading default task config")
             return self.default_task_config()
 
-    def default_task_config(self):
+    @staticmethod
+    def default_task_config():
         """ Return the default task config
 
         The default implementation just contains `threads_per_job`, `time_limit` and `mem_limit`.
@@ -129,7 +130,8 @@ class BaseClusterTask(luigi.Task):
             self._write_log("reading default global config")
             return self.default_global_config()
 
-    def default_global_config(self):
+    @staticmethod
+    def default_global_config():
         """ Return default global config
         """
         return {"block_shape": [50, 512, 512],
