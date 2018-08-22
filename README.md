@@ -1,6 +1,6 @@
 # Cluster Tools
 
-Workflows for 3D Neuron-EM-segmentation on the Janelia Cluster.
+Workflows for distributed 3D Neuron-EM-segmentation.
 
 ## Workflows
 
