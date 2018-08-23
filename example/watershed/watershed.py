@@ -7,14 +7,10 @@ import luigi
 import h5py
 import z5py
 
-try:
-    from cluster_tools.watershed import WatershedWorkflow
-except ImportError:
-    sys.path.append('../..')
-    from cluster_tools.watershed import WatershedWorkflow
+from cluster_tools.watershed import WatershedWorkflow
 
 
-def test_ws():
+def ws_example():
     # input_path = '/home/cpape/Work/data/isbi2012/isbi_train_offsetsV4_3d_meantda_damws2deval_final.h5'
     input_path = '/g/kreshuk/data/isbi2012_challenge/predictions/isbi2012_train_affinities.h5'
     input_key = output_key = 'data'
@@ -38,4 +34,4 @@ def test_ws():
 
 
 if __name__ == '__main__':
-    test_ws()
+    ws_example()

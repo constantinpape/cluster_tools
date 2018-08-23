@@ -39,7 +39,8 @@ class WatershedBase(luigi.Task):
         config.update({'threshold': .5, 'apply_presmooth_2d': True,
                        'apply_dt_2d': True, 'pixel_pitch': None,
                        'apply_ws_2d': True, 'sigma_seeds': 2., 'size_filter': 25,
-                       'sigam_weights': 2.})
+                       'sigma_weights': 2., 'halo': [0, 0, 0],
+                       'two_pass': False})
         return config
 
     def _watershed_pass(self, n_jobs, block_list, ws_config, prefix=None):
@@ -79,12 +80,13 @@ class WatershedBase(luigi.Task):
                           'block_shape': block_shape})
 
         # check if we run a 2-pass watershed
-        is_2pass = ws_config.pop('is_2pass', False)
+        is_2pass = ws_config.pop('two_pass', False)
 
         # run 2 passes of watersheds with checkerboard pattern
         # for the blocks
         if is_2pass:
             assert 'halo' in ws_config, "Need halo for two-pass wlatershed"
+            self._write_log("run two pass watershed")
             blocking = nt.blocking([0, 0, 0], list(shape), list(block_shape))
             blocks_1, blocks_2 = vu.make_checkerboard_block_lists(blocking, roi_begin, roi_end)
             n_jobs = min(len(blocks_1), self.max_jobs)
@@ -94,6 +96,7 @@ class WatershedBase(luigi.Task):
             self._watershed_pass(n_jobs, blocks_2, ws_config, 'pass2')
         # run single pass watershed with all blocks in block_list
         else:
+            self._write_log("run one pass watershed")
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
             n_jobs = min(len(block_list), self.max_jobs)
             self._watershed_pass(n_jobs, block_list, ws_config)
@@ -140,7 +143,7 @@ def _apply_dt(input_, config):
 
     else:
         dt = vigra.filters.distanceTransform(threshd) if pixel_pitch is None else\
-            vigra.filters.distanceTransform(thresd, pixel_pitch=pixel_pitch)
+            vigra.filters.distanceTransform(threshd, pixel_pitch=pixel_pitch)
 
     return dt
 
@@ -309,8 +312,8 @@ def _ws_block(blocking, block_id, ds_in, ds_out, config, pass_):
         input_ = vu.normalize(ds_in[input_bb])
 
     # smooth input if sigma is given
-    sigma_weights = float(config.get('sigma_weights', 2.))
-    if sigma_weights > 0:
+    sigma_weights = config.get('sigma_weights', 2.)
+    if sigma_weights != 0:
         # check if we apply pre-smoothing in 2d
         presmooth_2d = config.get('apply_presmooth_2d', True)
         input_ = vu.apply_filter(input_, 'gaussianSmoothing', sigma_weights, presmooth_2d)

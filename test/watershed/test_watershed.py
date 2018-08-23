@@ -70,7 +70,14 @@ class TestWatershed(unittest.TestCase):
 
     def test_ws_2d(self):
         # default config is alreadt watershed 2d
+        ret = self._run_ws()
+        self.assertTrue(ret)
+        self._check_result()
+
+    def test_ws_two_pass(self):
         config = WatershedLocal.default_task_config()
+        config['two_pass'] = True
+        config['halo'] = [0, 15, 15]
         with open(os.path.join(self.config_folder, 'watershed.config'), 'w') as f:
             json.dump(config, f)
         ret = self._run_ws()
@@ -84,6 +91,18 @@ class TestWatershed(unittest.TestCase):
         config['apply_ws_2d'] = False
         config['sigma_seeds'] = (.5, 2., 2.)
         config['sigma_weights'] = (.5, 2., 2.)
+        with open(os.path.join(self.config_folder, 'watershed.config'), 'w') as f:
+            json.dump(config, f)
+        ret = self._run_ws()
+        self.assertTrue(ret)
+        self._check_result()
+
+    def test_ws_pixel_pitch(self):
+        config = WatershedLocal.default_task_config()
+        config['apply_presmooth_2d'] = False
+        config['apply_dt_2d'] = False
+        config['apply_ws_2d'] = False
+        config['pixel_pitch'] = True
         with open(os.path.join(self.config_folder, 'watershed.config'), 'w') as f:
             json.dump(config, f)
         ret = self._run_ws()
