@@ -38,6 +38,7 @@ class TestWatershed(unittest.TestCase):
         self._mkdir(self.config_folder)
         global_config = WatershedLocal.default_global_config()
         global_config['shebang'] = '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env/bin/python'
+        global_config['block_shape'] = [10, 256, 256]
         with open(os.path.join(self.config_folder, 'global.config'), 'w') as f:
             json.dump(global_config, f)
 

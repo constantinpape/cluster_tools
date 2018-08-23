@@ -11,10 +11,10 @@ from cluster_tools.watershed import WatershedWorkflow
 
 
 def ws_example():
-    # input_path = '/home/cpape/Work/data/isbi2012/isbi_train_offsetsV4_3d_meantda_damws2deval_final.h5'
-    input_path = '/g/kreshuk/data/isbi2012_challenge/predictions/isbi2012_train_affinities.h5'
+    input_path = '/home/cpape/Work/data/isbi2012/isbi_train_offsetsV4_3d_meantda_damws2deval_final.h5'
+    # input_path = '/g/kreshuk/data/isbi2012_challenge/predictions/isbi2012_train_affinities.h5'
     input_key = output_key = 'data'
-    output_path = './ws.n5'
+    output_path = './ws.h5'
 
     max_jobs = 8
 
@@ -22,7 +22,7 @@ def ws_example():
                                          output_path=output_path, output_key=output_key,
                                          config_dir='./configs',
                                          tmp_folder='./tmp',
-                                         target='slurm',
+                                         target='local',
                                          max_jobs=max_jobs)], local_scheduler=True)
     if ret:
         from cremi_tools.viewer.volumina import view
