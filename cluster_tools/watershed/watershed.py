@@ -36,7 +36,8 @@ class WatershedBase(luigi.Task):
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'threshold': .5, 'apply_dt_2d': True, 'pixel_pitch': None,
+        config.update({'threshold': .5, 'apply_presmooth_2d': True,
+                       'apply_dt_2d': True, 'pixel_pitch': None,
                        'apply_ws_2d': True, 'sigma_seeds': 2., 'size_filter': 25,
                        'sigam_weights': 2.})
         return config
@@ -62,7 +63,6 @@ class WatershedBase(luigi.Task):
             shape = shape[1:]
 
         # load the watershed config
-        # TODO check more parameters here
         ws_config = self.get_task_config()
 
         # require output dataset
@@ -308,11 +308,12 @@ def _ws_block(blocking, block_id, ds_in, ds_out, config, pass_):
     else:
         input_ = vu.normalize(ds_in[input_bb])
 
-    # TODO we need to enable smoothing in 2d here
     # smooth input if sigma is given
     sigma_weights = float(config.get('sigma_weights', 2.))
     if sigma_weights > 0:
-        input_ = vu.apply_filter(input_, 'gaussianSmoothing', sigma_weights)
+        # check if we apply pre-smoothing in 2d
+        presmooth_2d = config.get('apply_presmooth_2d', True)
+        input_ = vu.apply_filter(input_, 'gaussianSmoothing', sigma_weights, presmooth_2d)
 
     # apply distance transform
     dt = _apply_dt(input_, config)

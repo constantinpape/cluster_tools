@@ -39,14 +39,21 @@ def block_to_bb(block):
     return tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
 
 
-# TODO enable applying 2d filter to 3d input
-def apply_filter(input_, filter_name, sigma):
+def apply_filter(input_, filter_name, sigma, apply_in_2d=False):
+    # apply 3d filter with anisotropic sigma - only supported in vigra
     if isinstance(sigma, (tuple, list)):
         assert len(sigma) == input_.ndim
+        assert not apply_in_2d
         filt = getattr(vigra.filters, filter_name)
+        return filt(input_, sigma)
+    # apply 2d filter to individual slices
+    elif apply_in_2d:
+        filt = getattr(fastfilters, filter_name)
+        return np.concatenate([filt(in_z, sigma)[None] for in_z in input_], axis=0)
+    # apply 3d fillter
     else:
         filt = getattr(fastfilters, filter_name)
-    return filt(input_, sigma)
+        return filt(input_, sigma)
 
 
 # TODO enable channel-wise normalisation
