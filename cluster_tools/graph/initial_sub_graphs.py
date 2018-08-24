@@ -49,8 +49,9 @@ class InitialSubGraphsBase(luigi.Task):
                        'graph_path': self.graph_path, 'block_shape': block_shape})
 
         # make graph file and write shape as attribute
+        shape = vu.get_shape(self.input_path, self.input_key)
         with vu.file_reader(self.graph_path) as f:
-            f.attrs['shape'] = vu.get_shape(self.input_path, self.input_key)
+            f.attrs['shape'] = shape
 
         block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
         n_jobs = min(len(block_list), self.max_jobs)

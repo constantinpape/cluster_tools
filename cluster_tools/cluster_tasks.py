@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 import luigi
 
 from .utils.function_utils import tail
+from .utils.luigi_utils import DummyTask
 
 
 class BaseClusterTask(luigi.Task):
@@ -419,9 +420,11 @@ class WorkflowBase(luigi.Task):
     max_jobs = luigi.IntParameter()
     # path for the global configuration
     config_dir = luigi.Parameter()
-    # TODO max number of threads per job ?
     # target can be local, slurm, lsf (case insensitive)
     target = luigi.Parameter()
+    # the workflow can have dependencies; per default we
+    # set to be a dummy task that is always successfull
+    dependency = luigi.TaskParameter(default=DummyTask())
 
     _target_dict = {'lsf': 'LSF', 'slurm': 'Slurm', 'local': 'Local'}
 

@@ -2,7 +2,7 @@ import os
 import json
 import luigi
 
-from ..cluster_tasks import WorkflowBase
+from ..cluster_tasks import WorkflowBase, DummyTask
 from . import initial_sub_graphs as initial_tasks
 from . import merge_sub_graphs as merge_tasks
 from . import map_edge_ids as map_tasks
@@ -15,10 +15,16 @@ class GraphWorkflow(WorkflowBase):
     input_key = luigi.Parameter()
     graph_path = luigi.Parameter()
     n_scales = luigi.Parameter()
-    # TODO default to dummy dependency ?
-    dependency = luigi.TaskParameter()
+
+    # for now we only support n5 / zarr input labels
+    def _check_input(self):
+        ending = self.input_path.split('.')[-1]
+        assert ending.lower() in ('zr', 'zarr', 'n5'),\
+            "Only support n5 and zarr files, not %s" % ending
 
     def requires(self):
+        self._check_input()
+
         initial_task = getattr(initial_tasks,
                                self._get_task_name('InitialSubGraphs'))
         t1 = initial_task(tmp_folder=self.tmp_folder,

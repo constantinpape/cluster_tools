@@ -11,7 +11,6 @@ from .. import write as write_tasks
 class RelabelWorkflow(WorkflowBase):
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
-    dependency = luigi.TaskParameter()
 
     def requires(self):
         unique_task = getattr(unique_tasks,
