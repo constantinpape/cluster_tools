@@ -1,18 +1,19 @@
 #! /usr/bin/python
 
 import os
-import z5py
+import sys
 import argparse
-import time
 import json
 
 import numpy as np
+import luigi
 import nifty.distributed as ndist
 
-from ..cluster_tasks import LocalTask, LSFTask, SlurmTask
+import cluster_tools.utils.volume_utils as vu
+import cluster_tools.utils.function_utils as fu
+from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
-# TODO implement watershed with mask
 class BlockEdgeFeaturesBase(luigi.Task):
     """ Block edge feature base class
     """
@@ -23,15 +24,26 @@ class BlockEdgeFeaturesBase(luigi.Task):
     # input and output volumes
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
+    labels_path = luigi.Parameter()
+    labels_key = luigi.Parameter()
+    graph_path = luigi.Parameter()
     output_path = luigi.Parameter()
-    output_key = luigi.Parameter()
+    dependency = luigi.TaskParameter()
+
+    def requires(self):
+        return self.dependency
 
     @staticmethod
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update()
+        config.update({'offsets': None, 'filters': None, 'halo': [0, 0, 0]})
         return config
+
+    def clean_up_for_retry(self, block_list):
+        # TODO does this work with the mixin pattern?
+        super().clean_up_for_retry(block_list)
+        # TODO remove any output of failed blocks because it might be corrupted
 
     def run(self):
         # get the global config and init configs
@@ -39,96 +51,113 @@ class BlockEdgeFeaturesBase(luigi.Task):
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 
-        # get shape and make block config
-        shape = vu.get_shape(self.input_path, self.input_key)
-        if len(shape) == 4:
-            shape = shape[1:]
+        # load the task config
+        config = self.get_task_config()
 
-        # load the watershed config
-        ws_config = self.get_task_config()
-
-        # require output dataset
-        # TODO read chunks from config
-        chunks = tuple(bs // 2 for bs in block_shape)
+        # require output group
         with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, shape=shape, chunks=chunks,
-                              compression='gzip', dtype='uint64')
+            f.require_group('blocks')
 
         # update the config with input and output paths and keys
         # as well as block shape
-        ws_config.update({'input_path': self.input_path, 'input_key': self.input_key,
-                          'output_path': self.output_path, 'output_key': self.output_key,
-                          'block_shape': block_shape})
+        config.update({'input_path': self.input_path, 'input_key': self.input_key,
+                       'labels_path': self.labels_path, 'labels_key': self.labels_key,
+                       'output_path': self.output_path,
+                       'graph_block_prefix': os.path.join(self.graph_path, 'sub_graphs', 's0', 'block_')})
 
-        # check if we run a 2-pass watershed
-        is_2pass = ws_config.pop('two_pass', False)
+        if self.n_retries == 0:
+            # get shape and make block config
+            shape = vu.get_shape(self.input_path, self.input_key)
+            if len(shape) == 4:
+                shape = shape[1:]
+            block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+        else:
+            block_list = self.block_list
+            self.clean_up_for_retry(block_list)
 
-        self._write_log("run one pass watershed")
-        block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
         n_jobs = min(len(block_list), self.max_jobs)
-        self._watershed_pass(n_jobs, block_list, ws_config)
         # prime and run the jobs
-        self.prepare_jobs(n_jobs, block_list, ws_config, prefix)
-        self.submit_jobs(n_jobs, prefix)
+        self.prepare_jobs(n_jobs, block_list, config)
+        self.submit_jobs(n_jobs)
 
         # wait till jobs finish and check for job success
-        self.wait_for_jobs(prefix)
-        self.check_jobs(n_jobs, prefix)
+        self.wait_for_jobs()
+        self.check_jobs(n_jobs)
 
 
+class BlockEdgeFeaturesLocal(BlockEdgeFeaturesBase, LocalTask):
+    """ BlockEdgeFeatures on local machine
+    """
+    pass
 
 
+class BlockEdgeFeaturesSlurm(BlockEdgeFeaturesBase, SlurmTask):
+    """ BlockEdgeFeatures on slurm cluster
+    """
+    pass
 
-def features_step1(sub_graph_prefix,
-                   data_path, data_key,
-                   labels_path, labels_key,
-                   offset_file, block_file,
-                   out_path):
 
-    t0 = time.time()
-    block_list = np.load(block_file).tolist()
-    with open(offset_file, 'r') as f:
-        offsets = json.load(f)
+class BlockEdgeFeaturesLSF(BlockEdgeFeaturesBase, LSFTask):
+    """ BlockEdgeFeatures on lsf cluster
+    """
+    pass
 
-    dtype = z5py.File(data_path)[data_key].dtype
 
-    if offsets is not None:
+def block_edge_features(job_id, config_path):
+
+    fu.log("start processing job %i" % job_id)
+    fu.log("reading config from %s" % config_path)
+
+    # get the config
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+
+    block_list = config['block_list']
+    input_path = config['input_path']
+    input_key = config['input_key']
+    labels_path = config['labels_path']
+    labels_key = config['labels_key']
+    output_path = config['output_path']
+    graph_block_prefix = config['graph_block_prefix']
+
+    # offsets for accumulation of affinity maps
+    offsets = config.get('offsets', None)
+    # TODO support accumulation with filters on the fly
+    filters = config.get('filters', None)
+    halo = config.get('halo', [0, 0, 0])
+
+    with vu.file_reader(input_path, 'r') as f:
+        dtype = f[input_key].dtype
+        input_dim = f[input_key].ndim
+
+    # TODO print block success in c++ !
+    if offsets is None:
+        # TODO implement accumulation with filters on the fly (need halo)
+        # TODO allow reduction from 4d -> 3d before accumulating boundary map features
+        assert input_dim == 3
+        boundary_function = ndist.extractBlockFeaturesFromBoundaryMaps_uint8 if dtype == 'uint8' else \
+            ndist.extractBlockFeaturesFromBoundaryMaps_float32
+        boundary_function(graph_block_prefix,
+                          input_path, input_key,
+                          labels_path, labels_key,
+                          block_list,
+                          os.path.join(output_path, 'blocks'))
+    else:
+        assert input_dim == 4
+        assert filters is None
         affinity_function = ndist.extractBlockFeaturesFromAffinityMaps_uint8 if dtype == 'uint8' else \
             ndist.extractBlockFeaturesFromAffinityMaps_float32
 
-        affinity_function(sub_graph_prefix,
-                          data_path, data_key,
+        affinity_function(graph_block_prefix,
+                          input_path, input_key,
                           labels_path, labels_key,
-                          block_list, os.path.join(out_path, 'blocks'),
+                          block_list, os.path.join(output_path, 'blocks'),
                           offsets)
-    else:
-        boundary_function = ndist.extractBlockFeaturesFromBoundaryMaps_uint8 if dtype == 'uint8' else \
-            ndist.extractBlockFeaturesFromBoundaryMaps_float32
-        boundary_function(sub_graph_prefix,
-                          data_path, data_key,
-                          labels_path, labels_key,
-                          block_list,
-                          os.path.join(out_path, 'blocks'))
-
-    job_id = int(os.path.split(block_file)[1].split('_')[2][:-4])
-    print("Success job %i" % job_id)
-    print("In %f s" % (time.time() - t0,))
+    fu.log_job_success(job_id)
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument("sub_graph_prefix", type=str)
-    parser.add_argument("data_path", type=str)
-    parser.add_argument("data_key", type=str)
-    parser.add_argument("labels_path", type=str)
-    parser.add_argument("labels_key", type=str)
-    parser.add_argument("--offset_file", type=str)
-    parser.add_argument("--block_file", type=str)
-    parser.add_argument("--out_path", type=str)
-    args = parser.parse_args()
-
-    features_step1(args.sub_graph_prefix,
-                   args.data_path, args.data_key,
-                   args.labels_path, args.labels_key,
-                   args.offset_file, args.block_file,
-                   args.out_path)
+    path = sys.argv[1]
+    assert os.path.exists(path), path
+    job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
+    block_edge_features(job_id, path)

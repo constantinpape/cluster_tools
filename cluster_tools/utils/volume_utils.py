@@ -25,9 +25,9 @@ def get_shape(path, key):
 
 def blocks_in_volume(shape, block_shape,
                      roi_begin=None, roi_end=None):
-    assert len(shape) == len(block_shape) == 3, '%i; %i' % (len(shape), len(block_shape))
+    assert len(shape) == len(block_shape), '%i; %i' % (len(shape), len(block_shape))
     assert (roi_begin is None) == (roi_end is None)
-    blocking_ = blocking([0, 0, 0], list(shape), list(block_shape))
+    blocking_ = blocking([0] * len(shape), list(shape), list(block_shape))
     if roi_begin is None:
         return list(range(blocking_.numberOfBlocks))
     else:

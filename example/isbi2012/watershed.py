@@ -13,10 +13,11 @@ from cluster_tools.watershed.watershed import WatershedLocal
 
 
 def ws_example(shebang):
-    input_path = '/home/cpape/Work/data/isbi2012/isbi_train_offsetsV4_3d_meantda_damws2deval_final.h5'
-    # input_path = '/g/kreshuk/data/isbi2012_challenge/predictions/isbi2012_train_affinities.h5'
-    input_key = output_key = 'data'
-    output_path = './ws.n5'
+    input_path = '/home/cpape/Work/data/isbi2012/cluster_example/isbi_train.n5'
+    output_path = '/home/cpape/Work/data/isbi2012/cluster_example/isbi_train.n5'
+
+    input_key = 'volumes/affinties'
+    output_key = 'volumes/watershed'
 
     max_jobs = 8
 

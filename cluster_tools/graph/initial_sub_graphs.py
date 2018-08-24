@@ -17,6 +17,7 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 # Graph Tasks
 #
 
+# TODO implement graph extraction with ignore label 0
 class InitialSubGraphsBase(luigi.Task):
     """ InitialSubGraph base class
     """

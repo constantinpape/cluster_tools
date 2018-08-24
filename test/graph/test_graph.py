@@ -76,7 +76,8 @@ class TestGraph(unittest.TestCase):
 
     def test_graph(self):
         max_jobs = 8
-        ret = luigi.build([GraphWorkflow(input_path=self.input_path, input_key=self.input_key,
+        ret = luigi.build([GraphWorkflow(input_path=self.input_path,
+                                         input_key=self.input_key,
                                          graph_path=self.output_path,
                                          n_scales=1,
                                          config_dir=self.config_folder,

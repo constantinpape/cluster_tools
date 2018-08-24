@@ -2,7 +2,7 @@ import os
 import json
 import luigi
 
-from ..cluster_tasks import WorkflowBase, DummyTask
+from ..cluster_tasks import WorkflowBase
 from . import initial_sub_graphs as initial_tasks
 from . import merge_sub_graphs as merge_tasks
 from . import map_edge_ids as map_tasks

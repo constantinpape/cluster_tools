@@ -8,6 +8,7 @@ from concurrent import futures
 from subprocess import call, check_output, CalledProcessError
 from datetime import datetime, timedelta
 
+import numpy as np
 import luigi
 
 from .utils.function_utils import tail
@@ -23,7 +24,6 @@ class BaseClusterTask(luigi.Task):
     - `submit_jobs`: submit jobs to the cluster
     - `wait_for_jobs`: wait for all running jobs
     - `run`: custom run function
-    - TODO requires ??
     The `run` method executes the job and must use the pre-implemented API
     functions in the correct order, see example below.
 
@@ -227,7 +227,7 @@ class BaseClusterTask(luigi.Task):
     # Must implement API
     #
 
-    def prepare_jobs(self, n_jobs, block_list, config, job_prefix=None):
+    def prepare_jobs(self, n_jobs, block_list, config, job_prefix=None, consecutive_blocks=False):
         raise NotImplementedError("BaseClusterTask does not implement this functionality")
 
     def submit_jobs(self, n_jobs, job_prefix=None):
@@ -271,17 +271,44 @@ class BaseClusterTask(luigi.Task):
         with open(config_path, 'w') as f:
             json.dump(config, f)
 
-    def _write_multiple_job_configs(self, n_jobs, block_list, config, job_prefix):
+    def _write_multiple_job_configs(self, n_jobs, block_list, config, job_prefix,
+                                    consecutive_blocks):
+
+        # TODO there must be a more elegant way of doing this
+        if consecutive_blocks:
+            # distribute blocks to jobs as equal as possible
+            blocks_per_job = np.zeros(n_jobs, dtype='uint32')
+            block_count = len(block_list)
+            job_id = 0
+            while block_count > 0:
+                blocks_per_job[job_id] += 1
+                block_count -= 1
+                job_id += 1
+                job_id = job_id % n_jobs
+
+            assert np.sum(blocks_per_job) == len(block_list)
+            # make prepartition
+            prepartiion = []
+            block_id = 0
+            for bpj in blocks_per_job:
+                prepartiion.append(list(range(block_id, block_id + bpj)))
+                block_id += bpj
+
         # write the configurations for all jobs to the tmp folder
         for job_id in range(n_jobs):
-            block_jobs = block_list[job_id::n_jobs]
+            # if `consecutive_blocks` is true, we keep the block_ids in
+            # block_jobs consecutive
+            if consecutive_blocks:
+                block_jobs = prepartiion[job_id]
+            else:
+                block_jobs = block_list[job_id::n_jobs]
             job_config = {'block_list': block_jobs, **config}
             config_path = self._config_path(job_id, job_prefix)
             with open(config_path, 'w') as f:
                 json.dump(job_config, f)
 
     # TODO allow config for individual blocks
-    def _write_job_config(self, n_jobs, block_list, config, job_prefix=None):
+    def _write_job_config(self, n_jobs, block_list, config, job_prefix=None, consecutive_blocks=False):
         # check f we have a reduce style block, that is
         # not distributed over blocks
         if block_list is None:
@@ -292,7 +319,7 @@ class BaseClusterTask(luigi.Task):
             # we add the block list to this class to know all the blocks
             # that were scheduled if we need to rerun this task
             self.block_list = block_list
-            self._write_multiple_job_configs(n_jobs, block_list, config, job_prefix)
+            self._write_multiple_job_configs(n_jobs, block_list, config, job_prefix, consecutive_blocks)
         self._write_log('written config for %i jobs' % n_jobs)
 
     # copy the python script to the temp folder and replace the shebang
@@ -368,9 +395,9 @@ class SlurmTask(BaseClusterTask):
         with open(script_path, 'w') as f:
             f.write(slurm_template)
 
-    def prepare_jobs(self, n_jobs, block_list, config, job_prefix=None):
+    def prepare_jobs(self, n_jobs, block_list, config, job_prefix=None, consecutive_blocks=False):
         # write the job configs
-        self._write_job_config(n_jobs, block_list, config, job_prefix)
+        self._write_job_config(n_jobs, block_list, config, job_prefix, consecutive_blocks)
         # write the slurm script file
         self._write_slurm_file(job_prefix)
 
@@ -404,9 +431,9 @@ class LocalTask(BaseClusterTask):
     test purposes
     """
 
-    def prepare_jobs(self, n_jobs, block_list, config, job_prefix=None):
+    def prepare_jobs(self, n_jobs, block_list, config, job_prefix=None, consecutive_blocks=False):
         # write the job configs
-        self._write_job_config(n_jobs, block_list, config, job_prefix)
+        self._write_job_config(n_jobs, block_list, config, job_prefix, consecutive_blocks)
 
     def _submit(self, job_id, job_prefix):
         script_path = os.path.join(self.tmp_folder, self.task_name + '.py')
@@ -435,9 +462,9 @@ class LSFTask(BaseClusterTask):
     (tested on Janelia cluster)
     """
 
-    def prepare_jobs(self, n_jobs, block_list, config, job_prefix=None):
+    def prepare_jobs(self, n_jobs, block_list, config, job_prefix=None, consecutive_blocks=False):
         # write the job configs
-        self._write_job_config(n_jobs, block_list, config, job_prefix)
+        self._write_job_config(n_jobs, block_list, config, job_prefix, consecutive_blocks)
 
     def submit_jobs(self, n_jobs, job_prefix=None):
         # read the task config to get number of threads and time limit
