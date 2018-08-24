@@ -105,7 +105,7 @@ class MergeSubGraphsLSF(MergeSubGraphsBase, LSFTask):
 #
 
 
-def _merge_graph(graph_path, scale, blocking, shape):
+def _merge_graph(graph_path, scale, blocking, shape, n_threads):
     block_prefix = 'sub_graphs/s%i/block_' % scale
     output_key = 'graph'
     block_list = list(range(blocking.numberOfBlocks))
@@ -144,7 +144,6 @@ def merge_sub_graphs(job_id, config_path):
         config = json.load(f)
     scale = config['scale']
     initial_block_shape = config['block_shape']
-    block_list = config['block_list']
     graph_path = config['graph_path']
     merge_complete_graph = config['merge_complete_graph']
 
@@ -152,21 +151,23 @@ def merge_sub_graphs(job_id, config_path):
         shape = f.attrs['shape']
     factor = 2**scale
     block_shape = [factor * bs for bs in initial_block_shape]
-    blocking = nifty.tools.blocking(roiBegin=[0, 0, 0],
-                                    roiEnd=list(shape),
-                                    blockShape=block_shape)
+    blocking = nt.blocking(roiBegin=[0, 0, 0],
+                           roiEnd=list(shape),
+                           blockShape=block_shape)
 
     if merge_complete_graph:
         fu.log("merge complete graph at scale %i" % scale)
-        _merge_graph(graph_path, scale, blocking, shape)
+        n_threads = config['threads_per_job']
+        _merge_graph(graph_path, scale, blocking, shape, n_threads)
 
     else:
         fu.log("merging subgraphs at scale %i" % scale)
         previous_factor = 2**(scale - 1)
         previous_block_shape = [previous_factor * bs for bs in initial_block_shape]
-        previous_blocking = nifty.tools.blocking(roiBegin=[0, 0, 0],
-                                                 roiEnd=list(shape),
-                                                 blockShape=previous_block_shape)
+        previous_blocking = nt.blocking(roiBegin=[0, 0, 0],
+                                        roiEnd=list(shape),
+                                        blockShape=previous_block_shape)
+        block_list = config['block_list']
         for block_id in block_list:
             _merge_subblocks(block_id, blocking, previous_blocking, graph_path, scale)
 

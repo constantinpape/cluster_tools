@@ -225,6 +225,9 @@ def write(job_id, config_path):
 
     offset_path = config.get('offset_path', None)
 
+    # FIXME we might have the same input / output file
+    # this causes issues with h5, but it should be easy to check and just
+    # open a single file then
     # call write functions
     with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
         ds_in = f_in[input_key]
