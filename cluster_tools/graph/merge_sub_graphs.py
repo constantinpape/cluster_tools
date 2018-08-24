@@ -34,6 +34,11 @@ class MergeSubGraphsBase(luigi.Task):
     def requires(self):
         return self.dependency
 
+    def clean_up_for_retry(self, block_list):
+        # TODO does this work with the mixin pattern?
+        super().clean_up_for_retry(block_list)
+        # TODO remove any output of failed blocks because it might be corrupted
+
     def _run_scale(self, config):
         # make graph file and write shape as attribute
         with vu.file_reader(self.graph_path) as f:
@@ -42,7 +47,12 @@ class MergeSubGraphsBase(luigi.Task):
         factor = 2**scale
         block_shape = tuple(sh * factor for sh in block_shape)
 
-        block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+        if self.n_retries == 0:
+            block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+        else:
+            block_list = self.block_list
+            self.clean_up_for_retry(block_list)
+
         n_jobs = min(len(block_list), self.max_jobs)
         # prime and run the jobs
         self.prepare_jobs(n_jobs, block_list, config)
@@ -53,6 +63,8 @@ class MergeSubGraphsBase(luigi.Task):
         self.check_jobs(n_jobs)
 
     def _run_last_scale(self, config):
+        # we don't allow for retry when merging the last scale
+        self.allow_retry = False
         # prime and run the jobs
         self.prepare_jobs(1, None, config)
         self.submit_jobs(1)

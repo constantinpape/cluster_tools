@@ -54,6 +54,11 @@ class BaseClusterTask(luigi.Task):
     max_jobs = luigi.IntParameter()
     # directory for configs
     config_dir = luigi.Parameter()
+    # variables for retry mechanism
+    # allow retries for this task, set to false in deriving class if retries not allowed
+    allow_retry = True
+    # number of retries already done
+    n_retries = 0
 
     #
     # API
@@ -91,10 +96,59 @@ class BaseClusterTask(luigi.Task):
             failed_jobs = set(range(n_jobs)) - set(success_list)
             self._write_log("%s failed for jobs:" % self.task_name)
             self._write_log("%s" % ', '.join(map(str, failed_jobs)))
-            # rename log file due to fail
-            shutil.move(self.output().path,
-                        os.path.join(self.tmp_folder, self.task_name + '_failed.log'))
-            raise RuntimeError("Task: %s failed for %i / %i jobs" % (self.task_name, len(failed_jobs), n_jobs))
+
+            # check if conditions to retry jobs are met
+            max_num_retries = self.get_global_config().get('max_num_retries', 0)
+            # does the number of retries exceed the max number of retries?
+            # does this task allow for retries?
+            retry = (self.n_retries < max_num_retries) and self.allow_retry
+            # have at least 50 % of the jobs passed?
+            # we use this as heuristic to determine if something is fundementally broken.
+            retrty = retry and len(failed_jobs) / n_jobs < 0.5
+
+            if retry:
+                failed_blocks = self.get_failed_blocks(n_jobs, success_list, job_prefix)
+                self._write_log("resubmitting %i failed blocks in %i retry attempt" % (len(failed_blocks),
+                                                                                       self.n_retries + 1))
+                self.n_retries += 1
+                self.block_list = failed_blocks
+                self.run()
+            else:
+                # rename log file due to fail
+                shutil.move(self.output().path,
+                            os.path.join(self.tmp_folder, self.task_name + '_failed.log'))
+                raise RuntimeError("Task: %s failed for %i / %i jobs" % (self.task_name, len(failed_jobs), n_jobs))
+
+    def get_failed_blocks(self, n_jobs, passed_jobs=[], job_prefix=None):
+        """ Parse the log of failed jobs to find the ids of all blocks that have failed.
+        """
+        passed_blocks = []
+        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
+        for job_id in range(n_jobs):
+
+            # if this job has passed, we don't need to parse the log file, but can
+            # copy the block list from the job's config
+            if job_id in passed_jobs:
+                config_path = self._config_path(job_id, job_prefix)
+                with open(config_path, 'r') as f:
+                    passed_blocks.extend(json.load(f)['block_list'])
+                continue
+
+            # otherwise, we parse the log file (if it exists)
+            log_file = os.path.join(self.tmp_folder, 'logs', '%s_%i.log' % (job_name, job_id))
+            if not os.path.exists(log_file):
+                continue
+
+            with open(log_file, 'r') as f:
+                for line in log_file:
+                    # get rid of date-time prefix
+                    line = ' '.join(line.split()[2:])
+                    # check if the line marks a block that has passed
+                    if line.startswith('processed block'):
+                        block_list.append(int(line.split()[-1]))
+
+        # return the list of failed blocks
+        return list(set(self.block_list) - set(passed_blocks))
 
     def get_task_config(self):
         """ Get the task configuration
@@ -145,10 +199,12 @@ class BaseClusterTask(luigi.Task):
                 "shebang": "#! /bin/python",
                 "roi_begin": None,
                 "roi_end": None,
-                "groupname": "kreshuk"}
+                "groupname": "kreshuk",
+                "max_num_retries": 0}
 
     def global_config_values(self):
-        """ Load the global config values
+        """ Load the global config values that are needed
+            in most of the tasks
         """
         config = self.get_global_config()
         # first two return values (shebang, block_shape) must exist
@@ -156,6 +212,12 @@ class BaseClusterTask(luigi.Task):
         return (config["shebang"], config["block_shape"],
                 config.get("roi_begin", None),
                 config.get("roi_end", None))
+
+    def clean_up_for_retry(self, block_list, prefix=None):
+        """ Clean up before starting a retry.
+        The base implementation is just a dummy.
+        """
+        pass
 
     # part of the luigi API
     def output(self):
@@ -166,13 +228,13 @@ class BaseClusterTask(luigi.Task):
     #
 
     def prepare_jobs(self, n_jobs, block_list, config, job_prefix=None):
-        raise NotImplementedError("BaseClusterTask does not implement any functionality")
+        raise NotImplementedError("BaseClusterTask does not implement this functionality")
 
     def submit_jobs(self, n_jobs, job_prefix=None):
-        raise NotImplementedError("BaseClusterTask does not implement any functionality")
+        raise NotImplementedError("BaseClusterTask does not implement this functionality")
 
     def wait_for_jobs(self, job_prefix=None):
-        raise NotImplementedError("BaseClusterTask does not implement any functionality")
+        raise NotImplementedError("BaseClusterTask does not implement this functionality")
 
     #
     # Helper functions
@@ -227,6 +289,9 @@ class BaseClusterTask(luigi.Task):
             self._write_single_job_config(config, job_prefix)
         # otherwise, we have multiple jobs distributed over blocks
         else:
+            # we add the block list to this class to know all the blocks
+            # that were scheduled if we need to rerun this task
+            self.block_list = block_list
             self._write_multiple_job_configs(n_jobs, block_list, config, job_prefix)
         self._write_log('written config for %i jobs' % n_jobs)
 
@@ -407,6 +472,13 @@ class LSFTask(BaseClusterTask):
             n_running = int(n_running.strip('\n'))
             if n_running == 0:
                 break
+
+    # TODO I think LSF appends to the output and logfile
+    # so we need to clean them up here in order to have clean logs
+    def clean_up_for_retry(self, block_list, prefix=None):
+        """ Clean up before starting a retry.
+        """
+        pass
 
 
 class WorkflowBase(luigi.Task):

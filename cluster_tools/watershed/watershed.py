@@ -43,6 +43,11 @@ class WatershedBase(luigi.Task):
                        'two_pass': False})
         return config
 
+    def clean_up_for_retry(self, block_list):
+        # TODO does this work with the mixin pattern?
+        super().clean_up_for_retry(block_list)
+        # TODO remove any output of failed blocks because it might be corrupted
+
     def _watershed_pass(self, n_jobs, block_list, ws_config, prefix=None):
         # prime and run the jobs
         self.prepare_jobs(n_jobs, block_list, ws_config, prefix)
@@ -85,6 +90,12 @@ class WatershedBase(luigi.Task):
         # run 2 passes of watersheds with checkerboard pattern
         # for the blocks
         if is_2pass:
+
+            # retries for two pass watershed are too complicated now
+            # this could be fixed if we seperate the passes in two different
+            # task instances
+            self.allow_retry = False
+
             assert 'halo' in ws_config, "Need halo for two-pass wlatershed"
             self._write_log("run two pass watershed")
             blocking = nt.blocking([0, 0, 0], list(shape), list(block_shape))
@@ -97,7 +108,11 @@ class WatershedBase(luigi.Task):
         # run single pass watershed with all blocks in block_list
         else:
             self._write_log("run one pass watershed")
-            block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+            if self.n_retries == 0:
+                block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+            else:
+                block_list = self.block_list
+                self.clean_up_for_retry(block_list)
             n_jobs = min(len(block_list), self.max_jobs)
             self._watershed_pass(n_jobs, block_list, ws_config)
 

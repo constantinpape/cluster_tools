@@ -34,13 +34,18 @@ class InitialSubGraphsBase(luigi.Task):
     def requires(self):
         return self.dependency
 
+    def clean_up_for_retry(self, block_list):
+        # TODO does this work with the mixin pattern?
+        super().clean_up_for_retry(block_list)
+        # TODO remove any output of failed blocks because it might be corrupted
+
     def run(self):
         # get the global config and init configs
         self.make_dirs()
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 
-        # load the watershed config
+        # load the task config
         config = self.get_task_config()
 
         # update the config with input and graph paths and keys
@@ -53,7 +58,12 @@ class InitialSubGraphsBase(luigi.Task):
         with vu.file_reader(self.graph_path) as f:
             f.attrs['shape'] = shape
 
-        block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+        if self.n_retries == 0:
+            block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+        else:
+            block_list = self.block_list
+            self.clean_up_for_retry(block_list)
+
         n_jobs = min(len(block_list), self.max_jobs)
         # prime and run the jobs
         self.prepare_jobs(n_jobs, block_list, config)

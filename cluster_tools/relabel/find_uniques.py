@@ -36,7 +36,13 @@ class FindUniquesBase(luigi.Task):
 
         # get shape and make block config
         shape = vu.get_shape(self.input_path, self.input_key)
-        block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+
+        if self.n_retries == 0:
+            block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+        else:
+            block_list = self.block_list
+            self.clean_up_for_retry(block_list)
+
         n_jobs = min(len(block_list), self.max_jobs)
 
         # we don't need any additional config besides the paths

@@ -57,6 +57,11 @@ class WriteBase(luigi.Task):
         else:
             raise RuntimeError("Could not parse log file.")
 
+    def clean_up_for_retry(self, block_list, prefix):
+        # TODO does this work with the mixin pattern?
+        super().clean_up_for_retry(block_list, prefix)
+        # TODO remove any output of failed blocks because it might be corrupted
+
     def run(self):
         # get the global config and init configs
         self.make_dirs()
@@ -75,17 +80,28 @@ class WriteBase(luigi.Task):
 
         n_threads = self.get_task_config().get('threads_per_core', 1)
         assignment_path, assignment_key = self._parse_log(self.input().path)
+
+        # check if input and output datasets are identical
+        in_place = (self.input_path == self.output_path) and (self.input_key == self.output_key)
+
         # update the config with input and output paths and keys
         # as well as block shape
         config = {'input_path': self.input_path, 'input_key': self.input_key,
-                  'output_path': self.output_path, 'output_key': self.output_key,
                   'block_shape': block_shape, 'n_threads': n_threads,
                   'assignment_path': assignment_path, 'assignment_key': assignment_key}
         if self.offset_path != '':
             config.update({'offset_path': self.offset_path})
+        # we only add output path and key if we do not write in place
+        if not in_place:
+            config.update({'output_path': self.output_path, 'output_key': self.output_key})
 
         # get block list and jobs
-        block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+        if self.n_retries == 0:
+            block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+        else:
+            block_list = self.block_list
+            self.clean_up_for_retry(block_list, self.identifier)
+
         n_jobs = min(len(block_list), self.max_jobs)
 
         # prime and run the jobs
@@ -210,8 +226,14 @@ def write(job_id, config_path):
     # read I/O config
     input_path = config['input_path']
     input_key = config['input_key']
-    output_path = config['output_path']
-    output_key = config['output_key']
+
+    # check if we write in-place
+    if 'output_path' in config:
+        output_path = config['output_path']
+        output_key = config['output_key']
+        in_place = False
+    else:
+        in_place = True
 
     block_shape = config['block_shape']
     block_list = config['block_list']
@@ -225,22 +247,49 @@ def write(job_id, config_path):
 
     offset_path = config.get('offset_path', None)
 
-    # FIXME we might have the same input / output file
-    # this causes issues with h5, but it should be easy to check and just
-    # open a single file then
-    # call write functions
-    with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
-        ds_in = f_in[input_key]
-        ds_out = f_out[output_key]
+    # if we write in-place, we only need to open one file and one dataset
+    if in_place:
+        with vu.file_reader(input_path) as f:
+            ds_in = f[input_key]
+            ds_out = ds_in
 
-        shape = ds_in.shape
-        blocking = nt.blocking([0, 0, 0], list(shape), list(block_shape))
+            shape = ds_in.shape
+            blocking = nt.blocking([0, 0, 0], list(shape), list(block_shape))
 
-        if offset_path is None:
-            _write(ds_in, ds_out, blocking, block_list, n_threads, node_labels)
+            if offset_path is None:
+                _write(ds_in, ds_out, blocking, block_list, n_threads, node_labels)
+            else:
+                _write_with_offsets(ds_in, ds_out, blocking, block_list,
+                                    n_threads, node_labels, offset_path)
+    else:
+        # even if we do not write in-place, we might still write to the same output_file, but different datasets
+        # hdf5 does not like opening a file twice, so we need to check for this
+        if input_path == output_path:
+            with vu.file_reader(input_path) as f:
+                ds_in = f[input_key]
+                ds_out = f[output_key]
+
+                shape = ds_in.shape
+                blocking = nt.blocking([0, 0, 0], list(shape), list(block_shape))
+
+                if offset_path is None:
+                    _write(ds_in, ds_out, blocking, block_list, n_threads, node_labels)
+                else:
+                    _write_with_offsets(ds_in, ds_out, blocking, block_list,
+                                        n_threads, node_labels, offset_path)
         else:
-            _write_with_offsets(ds_in, ds_out, blocking, block_list,
-                                n_threads, node_labels, offset_path)
+            with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
+                ds_in = f_in[input_key]
+                ds_out = f_out[output_key]
+
+                shape = ds_in.shape
+                blocking = nt.blocking([0, 0, 0], list(shape), list(block_shape))
+
+                if offset_path is None:
+                    _write(ds_in, ds_out, blocking, block_list, n_threads, node_labels)
+                else:
+                    _write_with_offsets(ds_in, ds_out, blocking, block_list,
+                                        n_threads, node_labels, offset_path)
     fu.log_job_success(job_id)
 
 

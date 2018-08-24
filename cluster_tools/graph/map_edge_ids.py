@@ -23,6 +23,7 @@ class MapEdgeIdsBase(luigi.Task):
 
     task_name = 'map_edge_ids'
     src_file = os.path.abspath(__file__)
+    allow_retry = False
 
     # input volumes and graph
     graph_path = luigi.Parameter()

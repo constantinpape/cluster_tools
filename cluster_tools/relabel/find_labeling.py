@@ -25,6 +25,7 @@ class FindLabelingBase(luigi.Task):
 
     task_name = 'find_labeling'
     src_file = os.path.abspath(__file__)
+    allow_retry = False
 
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
