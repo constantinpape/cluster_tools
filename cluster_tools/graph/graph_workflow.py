@@ -38,14 +38,14 @@ class GraphWorkflow(WorkflowBase):
                              self._get_task_name('MergeSubGraphs'))
         t_prev = t1
         for scale in range(1, self.n_scales):
-            t_2 = merge_task(tmp_folder=self.tmp_folder,
-                             max_jobs=self.max_jobs,
-                             config_dir=self.config_dir,
-                             graph_path=self.graph_path,
-                             scale=scale,
-                             merge_complete_graph=False,
-                             dependency=t_prev)
-            t_prev = t_2
+            t2 = merge_task(tmp_folder=self.tmp_folder,
+                            max_jobs=self.max_jobs,
+                            config_dir=self.config_dir,
+                            graph_path=self.graph_path,
+                            scale=scale,
+                            merge_complete_graph=False,
+                            dependency=t_prev)
+            t_prev = t2
 
         t3 = merge_task(tmp_folder=self.tmp_folder,
                         max_jobs=self.max_jobs,
