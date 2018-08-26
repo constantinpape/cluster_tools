@@ -5,12 +5,15 @@ import sys
 import json
 from concurrent import futures
 
+import numpy as np
 import luigi
+import nifty
 import nifty.tools as nt
 import nifty.distributed as ndist
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
+import cluster_tools.utils.segmentation_utils as su
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
@@ -43,12 +46,11 @@ class SolveSubproblemsBase(luigi.Task):
         super().clean_up_for_retry(block_list)
         # TODO remove any output of failed blocks because it might be corrupted
 
-    # TODO
     @staticmethod
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'agglomerator': ''})
+        config.update({'agglomerator': 'kernighan-lin'})
         return config
 
     def run(self):
@@ -64,7 +66,7 @@ class SolveSubproblemsBase(luigi.Task):
         # as well as block shape
         config.update({'costs_path': self.costs_path, 'costs_key': self.costs_key,
                        'graph_path': self.graph_path, 'graph_key': self.graph_key,
-                       'scale': self.scale})
+                       'scale': self.scale, 'tmp_folder': self.tmp_folder})
 
         with vu.file_reader(self.graph_path, 'r') as f:
             shape = f.attrs['shape']
@@ -126,7 +128,7 @@ def _solve_block_problem(block_id, graph, block_prefix, costs, agglomerator):
     assert len(sub_uvs) > 0, str(block_id)
 
     n_local_nodes = int(sub_uvs.max() + 1)
-    sub_graph = undirectedGraph(n_local_nodes)
+    sub_graph = nifty.graph.undirectedGraph(n_local_nodes)
     sub_graph.insertEdges(sub_uvs)
 
     sub_costs = costs[inner_edges]
@@ -156,12 +158,18 @@ def solve_subproblems(job_id, config_path):
     costs_key = config['costs_key']
     graph_path = config['graph_path']
     graph_key = config['graph_key']
+    tmp_folder = config['tmp_folder']
     scale = config['scale']
     block_list = config['block_list']
     n_threads = config['threads_per_job']
+    agglomerator_key = config['agglomerator']
 
-    # TODO
-    block_prefix = ''
+    if scale == 0:
+        block_prefix = os.path.join(graph_path, 'sub_graphs',
+                                    's%i' % scale, 'block_')
+    else:
+        block_prefix = os.path.join(graph_path, 's%i' % scale,
+                                    'sub_graphs', 'block_')
 
     with vu.file_reader(costs_path, 'r') as f:
         ds = f[costs_key]
@@ -171,11 +179,7 @@ def solve_subproblems(job_id, config_path):
     # load the graph
     # TODO parallelize ?!
     graph = ndist.Graph(os.path.join(graph_path, graph_key))
-
-    # TODO options for different agglomerators
-    # agglomerator = AGGLOMERATORS[agglomerator_key]
-    # TODO implement multicut agglomerator in utils
-    agglomerator = ''
+    agglomerator = su.key_to_agglomerator(agglomerator_key)
 
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(_solve_block_problem,
