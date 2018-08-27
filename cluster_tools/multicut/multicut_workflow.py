@@ -70,3 +70,13 @@ class MulticutWorkflow(WorkflowBase):
                              scale=self.n_scales,
                              dependency=t_prev)
         return t_solve
+
+    def get_config(self):
+        configs = super().get_config()
+        configs.update({'solve_subproblems': (os.path.join(self.config_dir, 'solve_subproblems.config'),
+                                              subproblem_tasks.SolveSubproblemsLocal.default_task_config()),
+                        'reduce_problem': (os.path.join(self.config_dir, 'reduce_problem.config'),
+                                           reduce_tasks.ReduceProblemLocal.default_task_config()),
+                        'solve_global': (os.path.join(self.config_dir, 'solve_global.config'),
+                                         solve_tasks.SolveGlobalLocal.default_task_config())})
+        return configs

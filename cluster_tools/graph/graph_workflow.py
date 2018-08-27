@@ -69,3 +69,15 @@ class GraphWorkflow(WorkflowBase):
             t_prev = t4
         return t4
 
+    def get_config(self):
+        configs = super().get_config()
+        configs.update({'initial_sub_graphs': (os.path.join(self.config_dir,
+                                                            'initial_sub_graphs.config'),
+                                               initial_tasks.InitialSubGraphsLocal.default_task_config()),
+                        'merge_sub_graphs': (os.path.join(self.config_dir,
+                                                          'merge_sub_graphs.config'),
+                                            merge_tasks.default_task_config()),
+                        'map_edge_ids': (os.path.join(self.config_dir,
+                                                      'map_edge_ids.config'),
+                                         map_tasks.MapEdgeIdsLocal.default_task_config())})
+        return configs

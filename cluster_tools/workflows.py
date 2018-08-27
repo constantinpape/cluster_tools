@@ -115,3 +115,12 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                        output_key=self.output_key,
                        identifier='multicut')
         return t
+
+    #
+    def get_config(self):
+        config = {**WatershedWorkflow.get_config(),
+                  **GraphWorkflow.get_config(),
+                  **EdgeFeaturesWorkflow.get_config(),
+                  **CostsWorkflow.get_config(),
+                  **MulticutWorkflow.get_config()}
+        return config

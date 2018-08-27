@@ -31,3 +31,9 @@ class WatershedWorkflow(WorkflowBase):
                              input_key=self.output_key,
                              dependency=t1)
         return t2
+
+    def get_config(self):
+        configs = super().get_config()
+        configs.update({'watershed': (os.path.join(self.config_dir, 'watershed.config'),
+                                      watershed_tasks.WatershedLocal.default_task_config())})
+        return configs

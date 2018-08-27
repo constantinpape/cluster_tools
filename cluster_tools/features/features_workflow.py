@@ -55,3 +55,13 @@ class EdgeFeaturesWorkflow(WorkflowBase):
                         output_key=self.output_key,
                         dependency=t1)
         return t2
+
+    def get_config(self):
+        configs = super().get_config()
+        configs.update({'block_edge_features': (os.path.join(self.config_dir,
+                                                             'block_edge_features.config'),
+                                                feat_tasks.BlockEdgeFeaturesLocal.default_task_config()),
+                       'merge_edge_features': (os.path.join(self.config_dir,
+                                                            'merge_edge_features.config'),
+                                              merge_task.MergeEdgeFeaturesLocal.default_task_config())})
+        return configs

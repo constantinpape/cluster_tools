@@ -12,7 +12,7 @@ import numpy as np
 import luigi
 
 from .utils.function_utils import tail
-from .utils.luigi_utils import DummyTask
+from .utils.task_utils import DummyTask
 
 
 class BaseClusterTask(luigi.Task):
@@ -534,3 +534,9 @@ class WorkflowBase(luigi.Task):
     def output(self):
         # we just mirror the target of the last task
         return luigi.LocalTarget(self.input().path)
+
+    def get_config(self):
+        """ Return all default configs and their save_path indexed by the task name
+        """
+        return {'global': (os.path.join(self.config_dir, 'global.config'),
+                           WorkflowBase.default_global_config())}
