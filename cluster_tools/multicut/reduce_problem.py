@@ -271,7 +271,6 @@ def reduce_problem(job_id, config_path):
     with vu.file_reader(graph_path, 'r') as f:
         shape = f.attrs['shape']
         group = f[graph_key]
-        n_nodes = group.attrs['numberOfNodes']
         ds = group['edges']
         ds.n_threads = n_threads
         uv_ids = ds[:]
@@ -283,6 +282,7 @@ def reduce_problem(job_id, config_path):
             ds.n_threads = n_threads
             initial_node_labeling = ds[:]
 
+    n_nodes = uv_ids.max() + 1
     n_edges = len(uv_ids)
     fu.log("read costs from %s, %s" % (costs_path, costs_key))
     with vu.file_reader(costs_path) as f:

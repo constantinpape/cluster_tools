@@ -164,12 +164,8 @@ def solve_subproblems(job_id, config_path):
     n_threads = config['threads_per_job']
     agglomerator_key = config['agglomerator']
 
-    if scale == 0:
-        block_prefix = os.path.join(graph_path, 'sub_graphs',
-                                    's%i' % scale, 'block_')
-    else:
-        block_prefix = os.path.join(graph_path, 's%i' % scale,
-                                    'sub_graphs', 'block_')
+    block_prefix = os.path.join(graph_path, 's%i' % scale,
+                                'sub_graphs', 'block_')
 
     with vu.file_reader(costs_path, 'r') as f:
         ds = f[costs_key]

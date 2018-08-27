@@ -112,6 +112,10 @@ class WriteBase(luigi.Task):
         self.wait_for_jobs(self.identifier)
         self.check_jobs(n_jobs, self.identifier)
 
+    def output(self):
+        return luigi.LocalTarget(os.path.join(self.tmp_folder, '%s_%s.log' % (self.task_name,
+                                                                              self.identifier)))
+
 
 class WriteLocal(WriteBase, LocalTask):
     """ Write on local machine
@@ -262,7 +266,8 @@ def write(job_id, config_path):
                 _write_with_offsets(ds_in, ds_out, blocking, block_list,
                                     n_threads, node_labels, offset_path)
     else:
-        # even if we do not write in-place, we might still write to the same output_file, but different datasets
+        # even if we do not write in-place, we might still write to the same output_file,
+        # but different datasets
         # hdf5 does not like opening a file twice, so we need to check for this
         if input_path == output_path:
             with vu.file_reader(input_path) as f:

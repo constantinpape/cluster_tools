@@ -69,6 +69,10 @@ class SolveGlobalBase(luigi.Task):
 
         # wait till jobs finish and check for job success
         self.wait_for_jobs()
+
+        self._write_log('saving results to %s' % self.output_path)
+        self._write_log('and key %s' % self.output_key)
+
         self.check_jobs(1)
 
 
@@ -153,6 +157,8 @@ def solve_global(job_id, config_path):
                                compression='gzip')
         ds.n_threads = n_threads
         ds[:] = new_initial_node_labeling
+    fu.log('saving results to %s' % output_path)
+    fu.log('and key %s' % output_key)
     fu.log_job_success(job_id)
 
 

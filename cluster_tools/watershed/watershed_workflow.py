@@ -32,8 +32,8 @@ class WatershedWorkflow(WorkflowBase):
                              dependency=t1)
         return t2
 
-    def get_config(self):
-        configs = super().get_config()
-        configs.update({'watershed': (os.path.join(self.config_dir, 'watershed.config'),
-                                      watershed_tasks.WatershedLocal.default_task_config())})
+    @staticmethod
+    def get_config():
+        configs = super(WatershedWorkflow, WatershedWorkflow).get_config()
+        configs.update({'watershed': watershed_tasks.WatershedLocal.default_task_config()})
         return configs

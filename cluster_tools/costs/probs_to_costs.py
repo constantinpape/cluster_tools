@@ -37,7 +37,8 @@ class ProbsToCostsBase(luigi.Task):
     def requires(self):
         return self.dependency
 
-    def default_task_config(self):
+    @staticmethod
+    def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
         config.update({'invert_inputs': False, 'transform_to_costs': True,

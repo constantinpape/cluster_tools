@@ -64,8 +64,8 @@ class EdgeCostsWorkflow(WorkflowBase):
         else:
             return self._costs_with_rf()
 
-    def get_config(self):
-        configs = super().get_config()
-        configs.update({'probs_to_costs': (os.path.join(self.config_dir, 'probs_to_costs.config'),
-                                           transform_tasks.ProbsToCostsLocal.default_task_config())})
+    @staticmethod
+    def get_config():
+        configs = super(EdgeCostsWorkflow, EdgeCostsWorkflow).get_config()
+        configs.update({'probs_to_costs': transform_tasks.ProbsToCostsLocal.default_task_config()})
         return configs

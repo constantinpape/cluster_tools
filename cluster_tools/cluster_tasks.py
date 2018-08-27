@@ -75,7 +75,8 @@ class BaseClusterTask(luigi.Task):
         """ Check for jobs that ran successfully
         """
         success_list = []
-        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
+        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name,
+                                                                        job_prefix)
         for job_id in range(n_jobs):
             log_file = os.path.join(self.tmp_folder, 'logs', '%s_%i.log' % (job_name, job_id))
             try:
@@ -115,15 +116,20 @@ class BaseClusterTask(luigi.Task):
                 self.run()
             else:
                 # rename log file due to fail
-                shutil.move(self.output().path,
-                            os.path.join(self.tmp_folder, self.task_name + '_failed.log'))
-                raise RuntimeError("Task: %s failed for %i / %i jobs" % (self.task_name, len(failed_jobs), n_jobs))
+                out_path = self.output().path
+                fail_path = out_path[:-4] + '_failed.log'
+                self._write_log("move log from %s to %s" % (out_path, fail_path))
+                shutil.move(out_path, fail_path)
+                raise RuntimeError("Task: %s failed for %i / %i jobs" % (self.task_name,
+                                                                         len(failed_jobs),
+                                                                         n_jobs))
 
     def get_failed_blocks(self, n_jobs, passed_jobs=[], job_prefix=None):
         """ Parse the log of failed jobs to find the ids of all blocks that have failed.
         """
         passed_blocks = []
-        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
+        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name,
+                                                                        job_prefix)
         for job_id in range(n_jobs):
 
             # if this job has passed, we don't need to parse the log file, but can
@@ -535,8 +541,8 @@ class WorkflowBase(luigi.Task):
         # we just mirror the target of the last task
         return luigi.LocalTarget(self.input().path)
 
-    def get_config(self):
+    @staticmethod
+    def get_config():
         """ Return all default configs and their save_path indexed by the task name
         """
-        return {'global': (os.path.join(self.config_dir, 'global.config'),
-                           WorkflowBase.default_global_config())}
+        return {'global': BaseClusterTask.default_global_config()}
