@@ -1,1 +1,1 @@
-
+from .workflows import MulticutSegmentationWorkflow
