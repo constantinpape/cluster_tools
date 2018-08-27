@@ -118,7 +118,7 @@ class MergeSubGraphsLSF(MergeSubGraphsBase, LSFTask):
 
 
 def _merge_graph(graph_path, scale, blocking, shape, n_threads):
-    block_prefix = 'sub_graphs/s%i/block_' % scale
+    block_prefix = 's%i/sub_graphs/block_' % scale
     output_key = 'graph'
     block_list = list(range(blocking.numberOfBlocks))
     ndist.mergeSubgraphs(graph_path,

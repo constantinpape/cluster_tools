@@ -181,11 +181,7 @@ def _serialize_new_problem(graph_path, n_new_nodes, new_uv_ids,
     g_out = f_out.require_group('s%i' % next_scale)
     g_out.require_group('sub_graphs')
 
-    if scale == 0:
-        block_in_prefix = os.path.join(graph_path, 'sub_graphs', 's%i' % scale, 'block_')
-    else:
-        block_in_prefix = os.path.join(output_path, 's%i' % scale, 'sub_graphs', 'block_')
-
+    block_in_prefix = os.path.join(output_path, 's%i' % scale, 'sub_graphs', 'block_')
     block_out_prefix = os.path.join(output_path, 's%i' % next_scale, 'sub_graphs', 'block_')
 
     factor = 2**scale

@@ -101,7 +101,7 @@ def map_edge_ids(job_id, config_path):
                            roiEnd=list(shape),
                            blockShape=block_shape)
     input_key = 'graph'
-    block_prefix = 'sub_graphs/s%s/block_' % scale
+    block_prefix = 's%i/sub_graphs/block_' % scale
     ndist.mapEdgeIdsForAllBlocks(graph_path, input_key,
                                  blockPrefix=block_prefix,
                                  numberOfBlocks=blocking.numberOfBlocks,

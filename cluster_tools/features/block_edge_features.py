@@ -58,12 +58,14 @@ class BlockEdgeFeaturesBase(luigi.Task):
         with vu.file_reader(self.output_path) as f:
             f.require_group('blocks')
 
+        # TODO make the scale at which we extract features accessible
         # update the config with input and output paths and keys
         # as well as block shape
         config.update({'input_path': self.input_path, 'input_key': self.input_key,
                        'labels_path': self.labels_path, 'labels_key': self.labels_key,
                        'output_path': self.output_path,
-                       'graph_block_prefix': os.path.join(self.graph_path, 'sub_graphs', 's0', 'block_')})
+                       'graph_block_prefix': os.path.join(self.graph_path, 's0',
+                                                          'sub_graphs', 'block_')})
 
         if self.n_retries == 0:
             # get shape and make block config
@@ -130,6 +132,8 @@ def block_edge_features(job_id, config_path):
         dtype = f[input_key].dtype
         input_dim = f[input_key].ndim
 
+    out_prefix = os.path.join(output_path, 'blocks')
+
     # TODO print block success in c++ !
     if offsets is None:
         # TODO implement accumulation with filters on the fly (need halo)
@@ -140,8 +144,7 @@ def block_edge_features(job_id, config_path):
         boundary_function(graph_block_prefix,
                           input_path, input_key,
                           labels_path, labels_key,
-                          block_list,
-                          os.path.join(output_path, 'blocks'))
+                          block_list, out_prefix)
     else:
         assert input_dim == 4
         assert filters is None
@@ -151,8 +154,7 @@ def block_edge_features(job_id, config_path):
         affinity_function(graph_block_prefix,
                           input_path, input_key,
                           labels_path, labels_key,
-                          block_list, os.path.join(output_path, 'blocks'),
-                          offsets)
+                          block_list, out_prefix, offsets)
     fu.log_job_success(job_id)
 
 

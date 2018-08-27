@@ -74,8 +74,9 @@ class MergeEdgeFeaturesBase(luigi.Task):
             block_ids = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
 
         # update the task config
-        config.update({'graph_block_prefix': os.path.join(self.graph_path, 'sub_graphs',
-                                                          's0', 'block_'),
+        # TODO make scale we extract features at accessible
+        config.update({'graph_block_prefix': os.path.join(self.graph_path, 's0',
+                                                          'sub_graphs', 'block_'),
                        'feature_block_prefix': os.path.join(self.output_path,
                                                             'blocks', 'block_'),
                        'output_path': self.output_path, 'output_key': self.output_key,

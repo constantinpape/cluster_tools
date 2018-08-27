@@ -35,6 +35,13 @@ class InitialSubGraphsBase(luigi.Task):
     def requires(self):
         return self.dependency
 
+    @staticmethod
+    def default_task_config():
+        # we use this to get also get the common default config
+        config = LocalTask.default_task_config()
+        config.update({'ignore_label': True})
+        return config
+
     def clean_up_for_retry(self, block_list):
         # TODO does this work with the mixin pattern?
         super().clean_up_for_retry(block_list)
@@ -98,7 +105,8 @@ class InitialSubGraphsLSF(InitialSubGraphsBase, LSFTask):
 #
 
 
-def _graph_block(block_id, blocking, input_path, input_key, graph_path):
+def _graph_block(block_id, blocking, input_path, input_key, graph_path,
+                 ignore_label):
     fu.log("start processing block %i" % block_id)
     halo = [1, 1, 1]
     block = blocking.getBlockWithHalo(block_id, halo)
@@ -108,10 +116,11 @@ def _graph_block(block_id, blocking, input_path, input_key, graph_path):
     begin = inner_block.begin
     end = outer_block.end
 
-    block_key = 'sub_graphs/s0/block_%i' % block_id
+    block_key = 's0/sub_graphs/block_%i' % block_id
     ndist.computeMergeableRegionGraph(input_path, input_key,
                                       begin, end,
-                                      graph_path, block_key)
+                                      graph_path, block_key,
+                                      ignore_label)
     # log block success
     fu.log_block_success(block_id)
 
@@ -130,6 +139,7 @@ def initial_sub_graphs(job_id, config_path):
     block_shape = config['block_shape']
     block_list = config['block_list']
     graph_path = config['graph_path']
+    ignore_label = config.get('ignore_label', True)
 
     shape = vu.get_shape(input_path, input_key)
     blocking = nt.blocking(roiBegin=[0, 0, 0],
@@ -137,7 +147,8 @@ def initial_sub_graphs(job_id, config_path):
                            blockShape=list(block_shape))
 
     for block_id in block_list:
-        _graph_block(block_id, blocking, input_path, input_key, graph_path)
+        _graph_block(block_id, blocking, input_path, input_key, graph_path,
+                     ignore_label)
     fu.log_job_success(job_id)
 
 
