@@ -40,6 +40,15 @@ class MergeEdgeFeaturesBase(luigi.Task):
         super().clean_up_for_retry(block_list)
         # TODO remove any output of failed blocks because it might be corrupted
 
+    def _read_num_features(self, block_ids):
+        with vu.file_reader(output_path) as f:
+            for block_id in block_ids:
+                block_file = os.path.join('blocks', 'block_%i' % block_id)
+                block_path = os.path.join(output_path, block_file)
+                if not os.path.exists(block_path):
+                    continue
+                return f[block_key].shape[1]
+
     def run(self):
         # get the global config and init configs
         self.make_dirs()
@@ -54,17 +63,6 @@ class MergeEdgeFeaturesBase(luigi.Task):
             shape = f.attrs['shape']
             n_edges = f[self.graph_key].attrs['numberOfEdges']
 
-        # chunk size = 64**3
-        chunk_size = min(262144, n_edges)
-
-        # TODO use float32 features to save some memory
-        # TODO don't hardcode the number of features but get from sub features to be merged
-        n_features = 10
-        # require the output dataset
-        with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, dtype='float64', shape=(n_edges, n_features),
-                              chunks=(chunk_size, 1), compression='gzip')
-
         # if we don't have a roi, we only serialize the number of blocks
         # otherwise we serialize the blocks in roi
         if roi_begin is None:
@@ -73,12 +71,24 @@ class MergeEdgeFeaturesBase(luigi.Task):
         else:
             block_ids = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
 
+        # chunk size = 64**3
+        chunk_size = min(262144, n_edges)
+
+        # get the number of features from sub-feature block
+        n_features = self._read_num_features(block_ids)
+
+        # TODO use float32 features to save some memory
+        # require the output dataset
+        with vu.file_reader(self.output_path) as f:
+            f.require_dataset(self.output_key, dtype='float64', shape=(n_edges, n_features),
+                              chunks=(chunk_size, 1), compression='gzip')
+
         # update the task config
         # TODO make scale we extract features at accessible
+        feat_block_prefix = os.path.join(self.output_path, 'blocks', 'block_')
         config.update({'graph_block_prefix': os.path.join(self.graph_path, 's0',
                                                           'sub_graphs', 'block_'),
-                       'feature_block_prefix': os.path.join(self.output_path,
-                                                            'blocks', 'block_'),
+                       'feature_block_prefix': feat_block_prefix,
                        'output_path': self.output_path, 'output_key': self.output_key,
                        'edge_chunk_size': chunk_size, 'block_ids': block_ids,
                        'n_edges': n_edges})

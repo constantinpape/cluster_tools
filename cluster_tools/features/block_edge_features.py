@@ -7,6 +7,7 @@ import json
 
 import numpy as np
 import luigi
+import z5py
 import nifty.distributed as ndist
 
 import cluster_tools.utils.volume_utils as vu
@@ -143,38 +144,83 @@ def _accumulate(input_path, input_key,
                           block_list, out_prefix, offsets)
 
 
+def _accumulate_filter(input_, graph, labels, bb_local,
+                       filter_name, sigma, ignore_label,
+                       with_size):
+    # TODO enable apply2d
+    response = vu.apply_filter(input_, filter_name, sigma)[bb_local]
+    if input_.ndim == 4:
+        n_chan = response.shape[-1]
+        return np.concatenate([ndist.accumulateInput(graph, response[..., c], labels,
+                                                     ignore_label,
+                                                     with_size and c==n_chan-1,
+                                                     response[..., c].min(),
+                                                     response[..., c].max())
+                               for c in range(n_chan)], axis=1)
+    else:
+        return ndist.accumulateInput(graph, response, labels,
+                                     ignore_label, with_size,
+                                     response.min(), response.max())
+
+
 def _accumulate_block(block_id, blocking,
                       ds_in, ds_labels,
                       out_prefix, graph_block_prefix,
-                      filters, sigmas, halo):
+                      filters, sigmas, halo, ignore_label):
 
+    shape = ds_labels.shape
+    # get the bounding
     if sum(halo) > 0:
         block = blocking.getBlockWithHalo(block_id, halo)
+        block_shape = block.outerBlock.shape
+        bb_in = vu.block_to_bb(block.outerBlock)
+        bb = vu.block_to_bb(block.innerBlock)
+        bb_local = vu.block_to_bb(block.innerBlockLocal)
+        # increase inner bounding box by 1 in posirive direction
+        # in accordance with the graph extraction
+        bb = tuple(slice(b.start,
+                         min(b.stop + 1, sh)) for b, sh in zip(bb, shape))
+        bb_local = tuple(slice(b.start,
+                               min(b.stop + 1, bsh)) for b, bsh in zip(bb_local,
+                                                                       block_shape))
     else:
         block = blocking.getBlock(block_id)
+        bb = vu.block_to_bb(block)
+        bb = tuple(slice(b.start,
+                         min(b.stop + 1, sh)) for b, sh in zip(bb, shape))
+        bb_in = bb
+        bb_local = slice(None)
 
     input_dim = ds_in.ndim
     # TODO make choice of channels optional
     if input_dim == 4:
         bb_in = (slice(0, 3),) + bb_in
 
-    input_ = ds_in[bb_in]
+    input_ = vu.normalize(ds_in[bb_in])
     # TODO make different dim reductions optional
     if input_dim == 4:
         input_ = np.mean(input_, axis=0)
 
     # load graph
+    graph = ndist.Graph(graph_block_prefix + str(block_id))
 
     # load labels
     labels = ds_labels[bb]
 
     # TODO pre-smoothing ?!
     # accumulate the edge features
-    edge_features = [_accumulate_filter(input_, graph, labels, bb_local) for filter_name in filters
-                     for sigma in sigmas]
+    edge_features = [_accumulate_filter(input_, graph, labels, bb_local,
+                                        filter_name, sigma, ignore_label,
+                                        filter_name==filters[-1] and sigma==sigmas[-1])
+                     for filter_name in filters for sigma in sigmas]
     edge_features = np.concatenate(edge_features, axis=1)
 
     # save the features
+    save_path = out_prefix + str(block_id)
+    save_root, save_key = os.path.split(save_path)
+    with z5py.N5File(save_path) as f:
+        f.create_dataset(save_key, data=edge_features,
+                         chunks=edge_features.shape)
 
     fu.log_block_success(block_id)
 
@@ -199,6 +245,10 @@ def _accumulate_with_filters(input_path, input_key,
     blocking = nt.blocking([0, 0, 0], list(shape),
                            list(block_shape))
 
+    # determine if we have an ignore label
+    with vu.file_reader(graph_block_prefix + block_list[0]) as f:
+        ignore_label = f.attrs['ignoreLabel']
+
     with vu.file_reader(input_path) as f, vu.file_reader(labels_path) as f_l:
         ds_in = f[input_key]
         ds_labels = f_l[labels_key]
@@ -206,7 +256,7 @@ def _accumulate_with_filters(input_path, input_key,
             _accumulate_block(block_id, blocking,
                               ds_in, ds_labels,
                               out_prefix, graph_block_prefix,
-                              filters, sigmas, halo)
+                              filters, sigmas, halo, ignore_label)
 
 
 def block_edge_features(job_id, config_path):
@@ -243,7 +293,7 @@ def block_edge_features(job_id, config_path):
         assert sigmas is not None, "Need sigma values"
         _accumulate_with_filters(input_path, input_key,
                                  labels_path, labels_key,
-                                 output_path, graph_bock_prefix,
+                                 output_path, graph_block_prefix,
                                  block_list, block_shape,
                                  filters, sigmas, halo)
 
