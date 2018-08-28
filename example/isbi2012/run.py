@@ -14,7 +14,6 @@ def run(shebang):
     example_path = '/home/cpape/Work/data/isbi2012/cluster_example/isbi_train.n5'
 
     input_key = 'volumes/affinties'
-    output_key = 'volumes/watershed'
 
     max_jobs = 8
 

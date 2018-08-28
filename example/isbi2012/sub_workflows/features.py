@@ -19,7 +19,7 @@ def features_example(shebang):
     output_path = '/home/cpape/Work/data/isbi2012/cluster_example/features.n5'
 
     input_key = 'volumes/affinities'
-    labels_key = 'volumes/watershed'
+    labels_key = 'volumes/watersheds'
 
     tmp_folder = './tmp'
     config_folder = './configs'

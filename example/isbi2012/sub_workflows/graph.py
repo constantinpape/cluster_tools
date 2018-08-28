@@ -14,7 +14,7 @@ from cluster_tools.watershed.watershed import WatershedLocal
 
 def graph_example(shebang):
     input_path = '/home/cpape/Work/data/isbi2012/cluster_example/isbi_train.n5'
-    input_key = 'volumes/watershed'
+    input_key = 'volumes/watersheds'
     output_path = '/home/cpape/Work/data/isbi2012/cluster_example/graph.n5'
 
     tmp_folder = './tmp'

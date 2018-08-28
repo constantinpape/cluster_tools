@@ -134,7 +134,6 @@ def _accumulate(input_path, input_key,
                           block_list, out_prefix)
     else:
         assert input_dim == 4
-        assert filters is None
         affinity_function = ndist.extractBlockFeaturesFromAffinityMaps_uint8 if dtype == 'uint8' else \
             ndist.extractBlockFeaturesFromAffinityMaps_float32
 

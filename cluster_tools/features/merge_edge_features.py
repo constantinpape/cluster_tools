@@ -41,10 +41,10 @@ class MergeEdgeFeaturesBase(luigi.Task):
         # TODO remove any output of failed blocks because it might be corrupted
 
     def _read_num_features(self, block_ids):
-        with vu.file_reader(output_path) as f:
+        with vu.file_reader(self.output_path) as f:
             for block_id in block_ids:
-                block_file = os.path.join('blocks', 'block_%i' % block_id)
-                block_path = os.path.join(output_path, block_file)
+                block_key = os.path.join('blocks', 'block_%i' % block_id)
+                block_path = os.path.join(self.output_path, block_key)
                 if not os.path.exists(block_path):
                     continue
                 return f[block_key].shape[1]
@@ -75,7 +75,8 @@ class MergeEdgeFeaturesBase(luigi.Task):
         chunk_size = min(262144, n_edges)
 
         # get the number of features from sub-feature block
-        n_features = self._read_num_features(block_ids)
+        n_features = self._read_num_features(range(block_ids) if isinstance(block_ids, int)
+                                             else block_ids)
 
         # TODO use float32 features to save some memory
         # require the output dataset
