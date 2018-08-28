@@ -1,4 +1,3 @@
-
 #! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env/bin/python
 
 import os
@@ -41,7 +40,7 @@ def run(shebang):
                                                     costs_path=example_path,
                                                     problem_path=example_path,
                                                     node_labels_path=example_path,
-                                                    node_labels_key='node_labes',
+                                                    node_labels_key='node_labels',
                                                     output_path=example_path,
                                                     output_key='volumes/segmentation',
                                                     n_scales=1,

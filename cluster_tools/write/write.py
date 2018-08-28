@@ -185,9 +185,12 @@ def _write_block(ds_in, ds_out, blocking, block_id, node_labels):
 
     # choose the appropriate function for array or dictionary
     if isinstance(node_labels, np.ndarray):
+        # this should actually amount to the same as
+        # seg = node_labels[seg]
         seg = nt.take(node_labels, seg)
     else:
         # this copys the dict and hence is extremely RAM hungry
+        # so we make the dict as small as possible
         this_labels = nt.unique(seg)
         this_assignment = {label: node_labels[label] for label in this_labels}
         seg = nt.takeDict(this_assignment, seg)
@@ -216,8 +219,13 @@ def _load_assignments(path, key, n_threads):
     else:
         with vu.file_reader(path, 'r') as f:
             ds = f[key]
+            assert ds.ndim in (1, 2)
             ds.n_threads = n_threads
-            node_labels = ds[:, 1] if ds.ndim == 2 else ds[:]
+            node_labels = ds[:]
+            # if we have 2d node_labels, these correspond to an assignment table
+            # and we turn them into a dict for efficient downstream processing
+            if node_labels.ndim == 2:
+                node_labels = dict(zip(node_labels[:, 0], node_labels[:, 1]))
     return node_labels
 
 

@@ -8,9 +8,8 @@ from concurrent import futures
 import numpy as np
 import luigi
 import z5py
+
 import nifty.tools as nt
-# TODO boost ufd seems to be faster than nifty ufd,
-# maybe should implement wrapper
 import nifty.ufd as nufd
 import nifty.distributed as ndist
 from vigra.analysis import relabelConsecutive
@@ -112,12 +111,12 @@ class ReduceProblemLSF(ReduceProblemBase, LSFTask):
 #
 
 
-def _merge_nodes(tmp_folder, scale, n_jobs, n_nodes, uv_ids, initial_node_labeling):
+def _merge_nodes(tmp_folder, scale, n_jobs, nodes, uv_ids, initial_node_labeling):
     n_edges = len(uv_ids)
     # load the cut-edge ids from the prev. jobs and make merge edge ids
     # TODO we could parallelize this
-    cut_edge_ids = np.concatenate([np.load(os.path.join(tmp_folder,
-                                                        '1_output_s%i_%i.npy' % (scale, job_id)))
+    cut_edge_ids = np.concatenate([np.load(os.path.join(tmp_folder, 'subproblem_results',
+                                                        's%i_job%i.npy' % (scale, job_id)))
                                    for job_id in range(n_jobs)])
     cut_edge_ids = np.unique(cut_edge_ids).astype('uint64')
 
@@ -127,31 +126,33 @@ def _merge_nodes(tmp_folder, scale, n_jobs, n_nodes, uv_ids, initial_node_labeli
     merge_edges = np.ones(n_edges, dtype='bool')
     merge_edges[cut_edge_ids] = False
 
-    # NOTE we don't have edges to zero any more, so do't need to do this
-    # additionally, we make sure that all edges are cut
-    # ignore_edges = (uv_ids == 0).any(axis=1)
-    # merge_edges[ignore_edges] = False
-
     # merge node pairs with ufd
-    ufd = nufd.ufd(n_nodes)
+    ufd = nufd.boost_ufd(nodes)
     merge_pairs = uv_ids[merge_edges]
     ufd.merge(merge_pairs)
 
     # get the node results and label them consecutively
-    node_labeling = ufd.elementLabeling()
-    node_labeling, max_new_id, _ = relabelConsecutive(node_labeling, start_label=1,
+    node_labeling = ufd.find(nodes)
+    node_labeling, max_new_id, _ = relabelConsecutive(node_labeling, start_label=0,
                                                       keep_zeros=False)
-    # NOTE we don't have a zeros label, so for correct 1d indexing we need to insert it
-    node_labeling = np.concatenate((np.zeros(1, dtype=node_labeling.dtype),
-                                    node_labeling))
     n_new_nodes = max_new_id + 1
 
     # get the labeling of initial nodes
     if initial_node_labeling is None:
+        # if we don't have an initial node labeling, we are in the first scale.
+        # here, the graph nodes might not be consecutive / starting at zero.
+        # to keep the node labeling valid, we must make the labeling consecutive by inserting zeros
+
+        # check if `nodes` are consecutive and start at zero
+        node_max_id = int(nodes.max())
+        if node_max_id + 1 != len(nodes):
+            fu.log("nodes are not consecutve and/or don't start at zero")
+            fu.log("inflating node labels accordingly")
+            node_labeling = nt.inflateLabeling(nodes, node_labeling, node_max_id)
+
         new_initial_node_labeling = node_labeling
     else:
-        # should this ever become a bottleneck, we can parallelize this in nifty
-        # but for now this would really be premature optimization
+        # NOTE access like this is ok because all node labelings will be consecutive
         new_initial_node_labeling = node_labeling[initial_node_labeling]
 
     return n_new_nodes, node_labeling, new_initial_node_labeling
@@ -217,13 +218,13 @@ def _serialize_new_problem(graph_path, n_new_nodes, new_uv_ids,
     ds_edges.n_threads = n_threads
     ds_edges[:] = new_uv_ids
 
-    nodes = np.unique(new_uv_ids)
-    shape_nodes = (len(nodes),)
-    node_chunks = (min(len(nodes), 262144),)
+    new_nodes = np.unique(new_uv_ids)
+    shape_nodes = (len(new_nodes),)
+    node_chunks = (min(len(new_nodes), 262144),)
     ds_nodes = g_out.create_dataset('nodes', dtype='uint64',
                                     shape=shape_nodes, chunks=node_chunks)
     ds_nodes.n_threads = n_threads
-    ds_nodes[:] = nodes
+    ds_nodes[:] = new_nodes
 
     # serialize the node labeling
     shape_node_labeling = (len(new_initial_node_labeling),)
@@ -270,11 +271,29 @@ def reduce_problem(job_id, config_path):
     fu.log("read graph from %s, %s" % (graph_path, graph_key))
     with vu.file_reader(graph_path, 'r') as f:
         shape = f.attrs['shape']
+
+        # load graph nodes and edges
         group = f[graph_key]
+
+        # nodes
+        # we only need to load the nodes for scale 0
+        # otherwise, we already know that they are consecutive
+        if scale == 0:
+            ds = group['nodes']
+            ds.n_threads = n_threads
+            nodes = ds[:]
+            n_nodes = len(nodes)
+        else:
+            n_nodes = group.attrs['numberOfNodes']
+            nodes = np.arange(n_nodes, dtype='uint64')
+
+        # edges
         ds = group['edges']
         ds.n_threads = n_threads
         uv_ids = ds[:]
+        n_edges = len(uv_ids)
 
+        # read initial node labeling
         if scale == 0:
             initial_node_labeling = None
         else:
@@ -282,8 +301,8 @@ def reduce_problem(job_id, config_path):
             ds.n_threads = n_threads
             initial_node_labeling = ds[:]
 
-    n_nodes = uv_ids.max() + 1
-    n_edges = len(uv_ids)
+
+
     fu.log("read costs from %s, %s" % (costs_path, costs_key))
     with vu.file_reader(costs_path) as f:
         ds = f[costs_key]
@@ -296,7 +315,7 @@ def reduce_problem(job_id, config_path):
     n_new_nodes, node_labeling, new_initial_node_labeling = _merge_nodes(tmp_folder,
                                                                          scale,
                                                                          n_jobs,
-                                                                         n_nodes,
+                                                                         nodes,
                                                                          uv_ids,
                                                                          initial_node_labeling)
     # get the new edge assignment

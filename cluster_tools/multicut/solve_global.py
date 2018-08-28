@@ -107,7 +107,9 @@ def solve_global(job_id, config_path):
     # get the config
     with open(config_path) as f:
         config = json.load(f)
+    # path to the reduced problem
     input_path = config['input_path']
+    # path where the node labeling shall be written
     output_path = config['output_path']
     output_key = config['output_key']
     scale = config['scale']
@@ -139,24 +141,21 @@ def solve_global(job_id, config_path):
     graph.insertEdges(uv_ids)
     fu.log("start agglomeration")
     node_labeling = agglomerator(graph, costs)
-    # NOTE we don't have a zeros label, so for correct 1d indexing we need to insert it
-    node_labeling = np.concatenate((np.zeros(1, dtype=node_labeling.dtype),
-                                    node_labeling))
+    fu.log("finished agglomeration")
 
     # get the labeling of initial nodes
-    # should this ever become a bottleneck, we can parallelize this in nifty
-    # but for now this would really be premature optimization
-    new_initial_node_labeling = node_labeling[initial_node_labeling]
+    initial_node_labeling = node_labeling[initial_node_labeling]
+    n_nodes = len(initial_node_labeling)
 
-    node_shape = (len(new_initial_node_labeling),)
-    chunks = (min(len(new_initial_node_labeling), 524288),)
+    node_shape = (n_nodes,)
+    chunks = (min(n_nodes, 524288),)
     with vu.file_reader(output_path) as f:
         ds = f.require_dataset(output_key, dtype='uint64',
                                shape=node_shape,
                                chunks=chunks,
                                compression='gzip')
         ds.n_threads = n_threads
-        ds[:] = new_initial_node_labeling
+        ds[:] = initial_node_labeling
     fu.log('saving results to %s' % output_path)
     fu.log('and key %s' % output_key)
     fu.log_job_success(job_id)

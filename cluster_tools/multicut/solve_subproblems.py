@@ -68,6 +68,12 @@ class SolveSubproblemsBase(luigi.Task):
                        'graph_path': self.graph_path, 'graph_key': self.graph_key,
                        'scale': self.scale, 'tmp_folder': self.tmp_folder})
 
+        # make folder for the subproblem results
+        try:
+            os.mkdir(os.path.join(self.tmp_folder, 'subproblem_results'))
+        except OSError:
+            pass
+
         with vu.file_reader(self.graph_path, 'r') as f:
             shape = f.attrs['shape']
 
@@ -110,6 +116,7 @@ class SolveSubproblemsLSF(SolveSubproblemsBase, LSFTask):
 #
 
 
+# TODO relabel the local graph ???
 def _solve_block_problem(block_id, graph, block_prefix, costs, agglomerator):
     fu.log("start processing block %i" % block_id)
 
@@ -184,16 +191,21 @@ def solve_subproblems(job_id, config_path):
                  for block_id in block_list]
         results = [t.result() for t in tasks]
 
-    results = [res for res in results if res is not None]
-    if len(results) > 0:
-        cut_edge_ids = np.concatenate(results)
-        cut_edge_ids = np.unique(cut_edge_ids).astype('uint64')
-    else:
-        cut_edge_ids = np.zeros(0, dtype='uint64')
+    res_folder = os.path.join(tmp_folder, 'subproblem_results')
+    # save the individual block results for debugging
+    # TODO should be a parameter
+    # TODO could be parallelized
+    if False:
+        for block_id, res in zip(block_list, results):
+            block_res_path = os.path.join(res_folder, 's%i_block%i.npy' % (scale, block_id))
+            np.save(block_res_path, res)
 
-    # TODO log save-path
-    np.save(os.path.join(tmp_folder, '1_output_s%i_%i.npy' % (scale, job_id)),
-            cut_edge_ids)
+    cut_edge_ids = np.concatenate(results)
+    cut_edge_ids = np.unique(cut_edge_ids).astype('uint64')
+
+    job_res_path = os.path.join(res_folder, 's%i_job%i.npy' % (scale, job_id))
+    fu.log("saving cut edge results to %s" % job_res_path)
+    np.save(job_res_path, cut_edge_ids)
     fu.log_job_success(job_id)
 
 
