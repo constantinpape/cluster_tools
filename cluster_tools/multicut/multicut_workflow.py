@@ -13,7 +13,7 @@ class MulticutWorkflow(WorkflowBase):
     graph_key = luigi.Parameter()
     costs_path = luigi.Parameter()
     costs_key = luigi.Parameter()
-    n_scales = luigi.Parameter()
+    n_scales = luigi.IntParameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     merged_problem_path = luigi.Parameter()

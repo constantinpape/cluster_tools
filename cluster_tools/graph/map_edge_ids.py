@@ -27,7 +27,7 @@ class MapEdgeIdsBase(luigi.Task):
 
     # input volumes and graph
     graph_path = luigi.Parameter()
-    scale = luigi.Parameter()
+    scale = luigi.IntParameter()
     dependency = luigi.TaskParameter()
 
     def requires(self):

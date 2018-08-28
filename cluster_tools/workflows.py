@@ -36,7 +36,9 @@ class MulticutSegmentationWorkflow(WorkflowBase):
     # number of scales
     n_scales = luigi.IntParameter()
     # number of jobs used in feature merging
-    max_jobs_merge = luigi.IntParameter(default=1)
+    max_jobs_merge_features = luigi.IntParameter(default=1)
+    # number of jobs used for sub multicuts
+    max_jobs_multicut = luigi.IntParameter(default=1)
     # path to random forest (if available)
     rf_path = luigi.Parameter(default='')
     # TODO list to skip jobs
@@ -47,21 +49,21 @@ class MulticutSegmentationWorkflow(WorkflowBase):
         graph_key = 'graph'
         features_key = 'features'
         costs_key = 'costs'
-        # ws_wf = WatershedWorkflow(tmp_folder=self.tmp_folder,
-        #                           max_jobs=self.max_jobs,
-        #                           config_dir=self.config_dir,
-        #                           target=self.target,
-        #                           dependency=self.dependency,
-        #                           input_path=self.input_path,
-        #                           input_key=self.input_key,
-        #                           output_path=self.ws_path,
-        #                           output_key=self.ws_key)
+        ws_wf = WatershedWorkflow(tmp_folder=self.tmp_folder,
+                                  max_jobs=self.max_jobs,
+                                  config_dir=self.config_dir,
+                                  target=self.target,
+                                  dependency=self.dependency,
+                                  input_path=self.input_path,
+                                  input_key=self.input_key,
+                                  output_path=self.ws_path,
+                                  output_key=self.ws_key)
         graph_wf = GraphWorkflow(tmp_folder=self.tmp_folder,
                                  max_jobs=self.max_jobs,
                                  config_dir=self.config_dir,
                                  target=self.target,
-                                 # dependency=ws_wf,
-                                 dependency=self.dependency,
+                                 dependency=ws_wf,
+                                 # dependency=self.dependency,
                                  input_path=self.ws_path,
                                  input_key=self.ws_key,
                                  graph_path=self.graph_path,
@@ -80,7 +82,7 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                                            graph_key=graph_key,
                                            output_path=self.features_path,
                                            output_key=features_key,
-                                           max_jobs_merge=self.max_jobs_merge)
+                                           max_jobs_merge=self.max_jobs_merge_features)
         costs_wf = EdgeCostsWorkflow(tmp_folder=self.tmp_folder,
                                      max_jobs=self.max_jobs,
                                      config_dir=self.config_dir,
@@ -92,7 +94,7 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                                      output_key=costs_key,
                                      rf_path=self.rf_path)
         mc_wf = MulticutWorkflow(tmp_folder=self.tmp_folder,
-                                 max_jobs=self.max_jobs,
+                                 max_jobs=self.max_jobs_multicut,
                                  config_dir=self.config_dir,
                                  target=self.target,
                                  dependency=costs_wf,

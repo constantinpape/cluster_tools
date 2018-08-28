@@ -8,13 +8,11 @@ from . import merge_sub_graphs as merge_tasks
 from . import map_edge_ids as map_tasks
 
 
-# TODO add option to skip ignore label in graph
-# and implement in nifty
 class GraphWorkflow(WorkflowBase):
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
     graph_path = luigi.Parameter()
-    n_scales = luigi.Parameter()
+    n_scales = luigi.IntParameter()
 
     # for now we only support n5 / zarr input labels
     def _check_input(self):
