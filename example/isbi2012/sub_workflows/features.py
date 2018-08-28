@@ -12,7 +12,7 @@ from cluster_tools.features.block_edge_features import BlockEdgeFeaturesLocal
 NEAREST_OFFSETS = [[-1, 0, 0], [0, -1, 0], [0, 0, -1]]
 
 
-def features_example(shebang):
+def features_example(shebang, with_filters=False):
     input_path = '/home/cpape/Work/data/isbi2012/cluster_example/isbi_train.n5'
     labels_path = '/home/cpape/Work/data/isbi2012/cluster_example/isbi_train.n5'
     graph_path = '/home/cpape/Work/data/isbi2012/cluster_example/graph.n5'
@@ -31,7 +31,11 @@ def features_example(shebang):
         json.dump(global_conf, f)
 
     task_config = BlockEdgeFeaturesLocal.default_task_config()
-    task_config.update({'offsets': NEAREST_OFFSETS})
+    if with_filters:
+        task_config.update({'filters': ['gaussianSmoothing', 'laplacianOfGaussian'],
+                            'sigmas': [1., 2., 4.]})
+    else:
+        task_config.update({'offsets': NEAREST_OFFSETS})
     with open('./configs/block_edge_features.config', 'w') as f:
         json.dump(task_config, f)
 
@@ -52,4 +56,4 @@ def features_example(shebang):
 
 if __name__ == '__main__':
     shebang = '#! /home/cpape/Work/software/conda/miniconda3/envs/affogato/bin/python'
-    features_example(shebang)
+    features_example(shebang, with_filters=True)

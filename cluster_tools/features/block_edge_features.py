@@ -8,6 +8,7 @@ import json
 import numpy as np
 import luigi
 import z5py
+import nifty.tools as nt
 import nifty.distributed as ndist
 
 import cluster_tools.utils.volume_utils as vu
@@ -148,8 +149,10 @@ def _accumulate_filter(input_, graph, labels, bb_local,
                        with_size):
     # TODO enable apply2d
     response = vu.apply_filter(input_, filter_name, sigma)[bb_local]
-    if input_.ndim == 4:
+    if response.ndim == 4:
         n_chan = response.shape[-1]
+        print("accumulate multichan", filter_name, sigma)
+        assert response.shape[:-1] == labels.shape
         return np.concatenate([ndist.accumulateInput(graph, response[..., c], labels,
                                                      ignore_label,
                                                      with_size and c==n_chan-1,
@@ -157,6 +160,9 @@ def _accumulate_filter(input_, graph, labels, bb_local,
                                                      response[..., c].max())
                                for c in range(n_chan)], axis=1)
     else:
+        print("accumulate single-chan", filter_name, sigma)
+        assert response.shape == labels.shape
+        print(response.dtype)
         return ndist.accumulateInput(graph, response, labels,
                                      ignore_label, with_size,
                                      response.min(), response.max())
@@ -166,6 +172,13 @@ def _accumulate_block(block_id, blocking,
                       ds_in, ds_labels,
                       out_prefix, graph_block_prefix,
                       filters, sigmas, halo, ignore_label):
+
+    # load graph and check if this block has edges
+    graph = ndist.Graph(graph_block_prefix + str(block_id))
+    if graph.numberOfEdges == 0:
+        fu.log("block %i has no edges" % block_id)
+        fu.log_block_success(block_id)
+        return
 
     shape = ds_labels.shape
     # get the bounding
@@ -200,14 +213,12 @@ def _accumulate_block(block_id, blocking,
     if input_dim == 4:
         input_ = np.mean(input_, axis=0)
 
-    # load graph
-    graph = ndist.Graph(graph_block_prefix + str(block_id))
-
     # load labels
     labels = ds_labels[bb]
 
     # TODO pre-smoothing ?!
     # accumulate the edge features
+    print("run accumulation")
     edge_features = [_accumulate_filter(input_, graph, labels, bb_local,
                                         filter_name, sigma, ignore_label,
                                         filter_name==filters[-1] and sigma==sigmas[-1])
@@ -245,7 +256,7 @@ def _accumulate_with_filters(input_path, input_key,
                            list(block_shape))
 
     # determine if we have an ignore label
-    with vu.file_reader(graph_block_prefix + block_list[0]) as f:
+    with z5py.File(graph_block_prefix + str(block_list[0])) as f:
         ignore_label = f.attrs['ignoreLabel']
 
     with vu.file_reader(input_path) as f, vu.file_reader(labels_path) as f_l:
