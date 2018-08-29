@@ -19,7 +19,7 @@ class EdgeFeaturesWorkflow(WorkflowBase):
     graph_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
-    max_jobs_merge = luigi.IntParameter()
+    max_jobs_merge = luigi.IntParameter(default=1)
 
     # for now we only support n5 / zarr input labels
     @staticmethod

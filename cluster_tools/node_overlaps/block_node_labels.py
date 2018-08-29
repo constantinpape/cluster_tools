@@ -3,6 +3,7 @@
 import os
 import sys
 import json
+import numpy as np
 
 import luigi
 import nifty.tools as nt
@@ -155,14 +156,16 @@ def block_node_labels(job_id, config_path):
 
     # TODO change to proper blocking once we have scalable implementation
     blocking = nt.blocking([0, 0, 0],
-                           list(block_shape),
-                           list(block_shape))
+                           list(shape),
+                           list(shape))
     block_list = [0]
 
-    results = [_labels_for_block(block_id, blocking,
-                                 labels_path, labels_key,
-                                 graph_path,
-                                 input_path, input_key) for block_id in block_list]
+    with vu.file_reader(labels_path, 'r') as fl, vu.file_reader(input_path, 'r') as fi:
+        ds_labels = fl[labels_key]
+        ds_in = fi[input_key]
+        results = [_labels_for_block(block_id, blocking,
+                                     ds_labels, ds_in) for block_id in block_list]
+    # filter empty results
     results = [res for res in results if res is not None]
 
     # check if we have results
@@ -186,12 +189,12 @@ def block_node_labels(job_id, config_path):
                     overlaps[node] = node_ovlp
 
     # TODO properly save sub results for scalable implementation
-    node_ids = np.array(overlaps.keys())
+    node_ids = np.array(list(overlaps.keys()))
     node_max = node_ids.max()
     overlap_vector = np.zeros(node_max + 1, dtype='uint64')
 
-    for node, ovlp in overlaps:
-        ovl_labels, ovl_counts = np.array(ovlp.keys()), np.array(ovlp.values())
+    for node, ovlp in overlaps.items():
+        ovl_labels, ovl_counts = np.array(list(ovlp.keys())), np.array(list(ovlp.values()))
         max_ol = ovl_labels[np.argmax(ovl_counts)]
         overlap_vector[node] = max_ol
 
