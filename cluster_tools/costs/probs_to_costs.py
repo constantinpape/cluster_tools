@@ -156,12 +156,12 @@ def probs_to_costs(job_id, config_path):
 
     if transform_to_costs:
         if weight_edges:
-            # TODO the edge sizes might not be hardcoded to this feature
-            # id in the future
+            # the edge sizes are at the last feature index
             with vu.file_reader(features_path) as f:
                 ds = f[features_key]
+                n_features = ds.shape[1]
                 ds.n_threads = n_threads
-                edge_sizes = ds[:, 9:10].squeeze()
+                edge_sizes = ds[:, n_features-1:n_features].squeeze()
         else:
             edge_sizes = None
 
