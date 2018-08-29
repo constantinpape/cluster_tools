@@ -129,7 +129,7 @@ def learn_rf(job_id, config_path):
         ignore_mask = label != -1
         n_ignore = np.sum(ignore_mask)
         if n_ignore < ignore_mask.size:
-            fu.log(print("removing %i examples due to ignore mask" % n_ignore))
+            fu.log("removing %i examples due to ignore mask" % n_ignore)
             feats = feats[ignore_mask]
             label = label[ignore_mask]
 
