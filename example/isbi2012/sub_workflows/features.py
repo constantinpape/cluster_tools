@@ -4,7 +4,9 @@ import os
 import sys
 import json
 
+import numpy as np
 import luigi
+import z5py
 
 from cluster_tools.features import EdgeFeaturesWorkflow
 from cluster_tools.features.block_edge_features import BlockEdgeFeaturesLocal
@@ -33,7 +35,7 @@ def features_example(shebang, with_filters=False):
     task_config = BlockEdgeFeaturesLocal.default_task_config()
     if with_filters:
         task_config.update({'filters': ['gaussianSmoothing', 'laplacianOfGaussian'],
-                            'sigmas': [1., 2., 4.]})
+                            'sigmas': [1., 2., 4.], 'apply_in_2d': True})
     else:
         task_config.update({'offsets': NEAREST_OFFSETS})
     with open('./configs/block_edge_features.config', 'w') as f:
@@ -52,6 +54,12 @@ def features_example(shebang, with_filters=False):
                                             target='local',
                                             max_jobs=max_jobs,
                                             max_jobs_merge=1)], local_scheduler=True)
+    if ret:
+        features = z5py.File(output_path)['features'][:]
+        print(features.shape)
+        for j in range(features.shape[1]):
+            assert np.mean(features[:, j]) != 0
+            assert np.std(features[:, j]) != 0
 
 
 if __name__ == '__main__':

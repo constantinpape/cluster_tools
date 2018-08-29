@@ -39,7 +39,8 @@ class BlockEdgeFeaturesBase(luigi.Task):
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'offsets': None, 'filters': None, 'sigmas': None, 'halo': [0, 0, 0]})
+        config.update({'offsets': None, 'filters': None, 'sigmas': None, 'halo': [0, 0, 0],
+                       'apply_in_2d': False})
         return config
 
     def clean_up_for_retry(self, block_list):
@@ -146,12 +147,11 @@ def _accumulate(input_path, input_key,
 
 def _accumulate_filter(input_, graph, labels, bb_local,
                        filter_name, sigma, ignore_label,
-                       with_size):
-    # TODO enable apply2d
-    response = vu.apply_filter(input_, filter_name, sigma)[bb_local]
+                       with_size, apply_in_2d):
+    response = vu.apply_filter(input_, filter_name, sigma,
+                               apply_in_2d=apply_in_2d)[bb_local]
     if response.ndim == 4:
         n_chan = response.shape[-1]
-        print("accumulate multichan", filter_name, sigma)
         assert response.shape[:-1] == labels.shape
         return np.concatenate([ndist.accumulateInput(graph, response[..., c], labels,
                                                      ignore_label,
@@ -160,9 +160,7 @@ def _accumulate_filter(input_, graph, labels, bb_local,
                                                      response[..., c].max())
                                for c in range(n_chan)], axis=1)
     else:
-        print("accumulate single-chan", filter_name, sigma)
         assert response.shape == labels.shape
-        print(response.dtype)
         return ndist.accumulateInput(graph, response, labels,
                                      ignore_label, with_size,
                                      response.min(), response.max())
@@ -171,8 +169,10 @@ def _accumulate_filter(input_, graph, labels, bb_local,
 def _accumulate_block(block_id, blocking,
                       ds_in, ds_labels,
                       out_prefix, graph_block_prefix,
-                      filters, sigmas, halo, ignore_label):
+                      filters, sigmas, halo, ignore_label,
+                      apply_in_2d):
 
+    fu.log("start processing block %i" % block_id)
     # load graph and check if this block has edges
     graph = ndist.Graph(graph_block_prefix + str(block_id))
     if graph.numberOfEdges == 0:
@@ -218,17 +218,19 @@ def _accumulate_block(block_id, blocking,
 
     # TODO pre-smoothing ?!
     # accumulate the edge features
-    print("run accumulation")
     edge_features = [_accumulate_filter(input_, graph, labels, bb_local,
                                         filter_name, sigma, ignore_label,
-                                        filter_name==filters[-1] and sigma==sigmas[-1])
+                                        filter_name==filters[-1] and sigma==sigmas[-1],
+                                        apply_in_2d)
                      for filter_name in filters for sigma in sigmas]
     edge_features = np.concatenate(edge_features, axis=1)
 
     # save the features
     save_path = out_prefix + str(block_id)
+    fu.log("saving feature result of shape %s to %s" % (str(edge_features.shape),
+                                                        save_path))
     save_root, save_key = os.path.split(save_path)
-    with z5py.N5File(save_path) as f:
+    with z5py.N5File(save_root) as f:
         f.create_dataset(save_key, data=edge_features,
                          chunks=edge_features.shape)
 
@@ -239,10 +241,11 @@ def _accumulate_with_filters(input_path, input_key,
                              labels_path, labels_key,
                              output_path, graph_block_prefix,
                              block_list, block_shape,
-                             filters, sigmas, halo):
+                             filters, sigmas, halo,
+                             apply_in_2d):
 
     fu.log("accumulate features with applying filters:")
-    # TODO print filter and sigma values
+    # TODO log filter and sigma values
     with vu.file_reader(input_path, 'r') as f:
         ds = f[input_key]
         dtype = ds.dtype
@@ -251,7 +254,7 @@ def _accumulate_with_filters(input_path, input_key,
         if input_dim == 4:
             shape = shape[1:]
 
-    out_prefix = os.path.join(output_path, 'blocks')
+    out_prefix = os.path.join(output_path, 'blocks', 'block_')
     blocking = nt.blocking([0, 0, 0], list(shape),
                            list(block_shape))
 
@@ -266,7 +269,8 @@ def _accumulate_with_filters(input_path, input_key,
             _accumulate_block(block_id, blocking,
                               ds_in, ds_labels,
                               out_prefix, graph_block_prefix,
-                              filters, sigmas, halo, ignore_label)
+                              filters, sigmas, halo, ignore_label,
+                              apply_in_2d)
 
 
 def block_edge_features(job_id, config_path):
@@ -291,6 +295,7 @@ def block_edge_features(job_id, config_path):
     offsets = config.get('offsets', None)
     filters = config.get('filters', None)
     sigmas = config.get('sigmas', None)
+    apply_in_2d = config.get('apply_in_2d', False)
     halo = config.get('halo', [0, 0, 0])
 
     if filters is None:
@@ -305,7 +310,8 @@ def block_edge_features(job_id, config_path):
                                  labels_path, labels_key,
                                  output_path, graph_block_prefix,
                                  block_list, block_shape,
-                                 filters, sigmas, halo)
+                                 filters, sigmas, halo,
+                                 apply_in_2d)
 
     fu.log_job_success(job_id)
 

@@ -41,13 +41,17 @@ class MergeEdgeFeaturesBase(luigi.Task):
         # TODO remove any output of failed blocks because it might be corrupted
 
     def _read_num_features(self, block_ids):
+        n_feats = None
         with vu.file_reader(self.output_path) as f:
             for block_id in block_ids:
                 block_key = os.path.join('blocks', 'block_%i' % block_id)
                 block_path = os.path.join(self.output_path, block_key)
                 if not os.path.exists(block_path):
                     continue
-                return f[block_key].shape[1]
+                n_feats = f[block_key].shape[1]
+                break
+        assert n_feats is not None, "No valid feature block found"
+        return n_feats
 
     def run(self):
         # get the global config and init configs
