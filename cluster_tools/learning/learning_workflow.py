@@ -33,6 +33,7 @@ class LearningWorkflow(WorkflowBase):
         except OSError:
             pass
 
+        prev_dep = self.dependency
         for key, input_path in self.input_dict.items():
             labels_path = self.labels_dict[key]
             gt_path = self.groundtruth_dict[key]
@@ -45,6 +46,7 @@ class LearningWorkflow(WorkflowBase):
                                        max_jobs=self.max_jobs,
                                        config_dir=self.config_dir,
                                        target=self.target,
+                                       dependency=prev_dep,
                                        input_path=labels_path[0],
                                        input_key=labels_path[1],
                                        graph_path=graph_out,
@@ -92,6 +94,7 @@ class LearningWorkflow(WorkflowBase):
                             overlap_key='overlaps',
                             output_path=edge_labels_out,
                             output_key='edge_labels')
+            prev_dep = label_task
             edge_labels_dict[key] = (edge_labels_out, 'edge_labels')
 
         learn_task = getattr(learn_tasks,
@@ -102,7 +105,7 @@ class LearningWorkflow(WorkflowBase):
                              features_dict=features_dict,
                              labels_dict=edge_labels_dict,
                              output_path=self.output_path,
-                             dependency=label_task)
+                             dependency=prev_dep)
         return rf_task
 
     @staticmethod

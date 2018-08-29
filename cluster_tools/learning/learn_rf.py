@@ -112,6 +112,7 @@ def learn_rf(job_id, config_path):
     # NOTE we assert that keys of boyh dicts are identical in the main class
     for key, feat_path in features_dict.items():
         label_path = labels_dict[key]
+        fu.log("reading featurs from %s:%s, labels from %s:%s" % tuple(feat_path + label_path))
 
         with vu.file_reader(feat_path[0]) as f:
             ds = f[feat_path[1]]
@@ -126,7 +127,9 @@ def learn_rf(job_id, config_path):
 
         # check if we have an ignore label
         ignore_mask = label != -1
-        if np.sum(ignore_mask) < ignore_mask.size:
+        n_ignore = np.sum(ignore_mask)
+        if n_ignore < ignore_mask.size:
+            fu.log(print("removing %i examples due to ignore mask" % n_ignore))
             feats = feats[ignore_mask]
             label = label[ignore_mask]
 
@@ -136,6 +139,7 @@ def learn_rf(job_id, config_path):
     features = np.concatenate(features, axis=0)
     labels = np.concatenate(labels, axis=0)
 
+    fu.log("start learning random forest with %i examples and %i features" % features.shape)
     rf = RandomForestClassifier(n_estimators=n_trees,
                                 n_jobs=n_threads)
     rf.fit(features, labels)
