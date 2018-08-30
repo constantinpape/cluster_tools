@@ -38,15 +38,6 @@ class BlockNodeLabelsBase(luigi.Task):
     def requires(self):
         return self.dependency
 
-    # TODO
-    # this belongs to the merge labels task
-    # @staticmethod
-    # def default_task_config():
-    #     # we use this to get also get the common default config
-    #     config = LocalTask.default_task_config()
-    #     config.update({'ignore_label_gt': True})
-    #     return config
-
     def clean_up_for_retry(self, block_list):
         # TODO does this work with the mixin pattern?
         super().clean_up_for_retry(block_list)

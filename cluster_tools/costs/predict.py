@@ -118,7 +118,7 @@ def predict(job_id, config_path):
     output_path = config['output_path']
     output_key = config['output_key']
     n_edges = config['n_edges']
-    edge_chunk_size = config['chuk_size']
+    edge_chunk_size = config['chunk_size']
     edge_block_list = config['block_list']
 
     # assert that the edge block list is consecutive
