@@ -1,0 +1,14 @@
+name: cluster_env
+
+channels:
+  - conda-forge
+  - ilastik-forge
+
+dependencies:
+  - scikit-image
+  - scikit-learn
+  - vigra
+  - h5py
+  - z5py
+  - fastfilters
+  - luigi

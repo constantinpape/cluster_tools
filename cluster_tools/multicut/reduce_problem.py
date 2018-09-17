@@ -44,11 +44,6 @@ class ReduceProblemBase(luigi.Task):
     def requires(self):
         return self.dependency
 
-    def clean_up_for_retry(self, block_list):
-        # TODO does this work with the mixin pattern?
-        super().clean_up_for_retry(block_list)
-        # TODO remove any output of failed blocks because it might be corrupted
-
     @staticmethod
     def default_task_config():
         # we use this to get also get the common default config
@@ -128,8 +123,7 @@ def _merge_nodes(tmp_folder, scale, n_jobs, nodes, uv_ids, initial_node_labeling
 
     # merge node pairs with ufd
     ufd = nufd.boost_ufd(nodes)
-    merge_pairs = uv_ids[merge_edges]
-    ufd.merge(merge_pairs)
+    ufd.merge(uv_ids[merge_edges])
 
     # get the node results and label them consecutively
     node_labeling = ufd.find(nodes)
