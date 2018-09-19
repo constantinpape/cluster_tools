@@ -31,8 +31,13 @@ def blocks_in_volume(shape, block_shape,
     if roi_begin is None:
         return list(range(blocking_.numberOfBlocks))
     else:
-        # TODO intersect blocking with roi and return the block ids
-        raise NotImplementedError("Roi not implemented")
+        assert roi_end is not None
+        roi_end = [sh if re is None else re for re, sh in zip(roi_end, shape)]
+        block_list = blocking_.getBlockIdsOverlappingBoundingBox(list(roi_begin),
+                                                                 list(roi_end),
+                                                                 [0, 0, 0])
+        block_list = [bl.tolist() for bl in block_list]
+        return block_list
 
 
 def block_to_bb(block):

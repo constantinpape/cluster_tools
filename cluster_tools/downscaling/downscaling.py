@@ -12,6 +12,7 @@ import nifty.tools as nt
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
+from cluster_tools.utils.task_utils import DummyTask
 
 
 #
@@ -35,17 +36,22 @@ class DownscalingBase(luigi.Task):
     output_key = luigi.Parameter()
     # the scale used to downsample the data.
     # can be list to account for anisotropic downsacling
-    # however this is not supported by all implementations
-    scale_factor = luigi.ListParameter()
+    scale_factor = luigi.Parameter()
     # scale prefix for unique task identifier
     scale_prefix = luigi.Parameter()
+    halo = luigi.ListParameter(default=[])
+    effective_scale_factor = luigi.ListParameter(default=[])
+    dependency = luigi.TaskParameter(default=DummyTask())
+
+    def requires(self):
+        return self.dependency
 
     @staticmethod
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
         config.update({'library': 'vigra', 'chunks': None, 'compression': 'gzip',
-                       'halo': None, 'library_kwargs': None})
+                       'library_kwargs': None})
         return config
 
     def clean_up_for_retry(self, block_list):
@@ -53,8 +59,15 @@ class DownscalingBase(luigi.Task):
         # TODO remove any output of failed blocks because it might be corrupted
 
     def downsample_shape(self, shape):
-        new_shape = tuple(sh // sf if sh % sf == 0 else sh // sf + (sf - sh % sf)
-                          for sh, sf in zip(shape, self.scale_factor))
+        if isinstance(self.scale_factor, (list, tuple)):
+            new_shape = tuple(sh // sf if sh % sf == 0 else sh // sf + (sf - sh % sf)
+                              for sh, sf in zip(shape, self.scale_factor))
+        else:
+            sf = self.scale_factor
+            new_shape = tuple(sh // sf if sh % sf == 0 else sh // sf + (sf - sh % sf)
+                              for sh in shape)
+
+        return new_shape
 
     def run(self):
         # get the global config and init configs
@@ -69,6 +82,8 @@ class DownscalingBase(luigi.Task):
         assert len(prev_shape) == 3, "Only support 3d inputs"
         assert dtype in ('float32', 'float64', 'uint8', 'uint16'), "Need float, byte or short input, got %s" % dtype
         shape = self.downsample_shape(prev_shape)
+        self._write_log('downscaling with factor %s from shape %s to %s' % (str(self.scale_factor),
+                                                                            str(prev_shape), str(shape)))
 
         # load the downscaling config
         task_config = self.get_task_config()
@@ -76,9 +91,13 @@ class DownscalingBase(luigi.Task):
         # get the scale factor and check if we
         # do isotropic scaling
         scale_factor = self.scale_factor
-        if all(sf == scale_factor[0] for sf in scale_factor):
+        if isinstance(scale_factor, int):
+            pass
+        elif all(sf == scale_factor[0] for sf in scale_factor):
+            assert len(scale_factor) == 3
             scale_factor = scale_factor[0]
         else:
+            assert len(scale_factor) == 3
             # for now, we only support downscaling in-plane inf the scale-factor
             # is anisotropic
             assert scale_factor[0] == 1
@@ -102,10 +121,25 @@ class DownscalingBase(luigi.Task):
         # as well as block shape
         task_config.update({'input_path': self.input_path, 'input_key': self.input_key,
                             'output_path': self.output_path, 'output_key': self.output_key,
-                            'block_shape': block_shape, 'scale_factor': scale_factor})
+                            'block_shape': block_shape, 'scale_factor': scale_factor,
+                            'halo': self.halo if self.halo else None})
+
+        # if we have a roi, we need to re-sample it
+        if roi_begin is not None:
+            assert roi_end is not None
+            effective_scale = self.effective_scale_factor if self.effective_scale_factor else scale_factor
+            if isinstance(effective_scale, int):
+                roi_begin = [rb // effective_scale for rb in roi_begin]
+                roi_end= [re // effective_scale if re is not None else sh
+                          for re, sh in zip(roi_end, shape)]
+            else:
+                roi_begin = [rb // sf for rb, sf in zip(roi_begin, effective_scale)]
+                roi_end= [re // sf if re is not None else sh
+                          for re, sf, sh in zip(roi_end, effective_scale, shape)]
 
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+            self._write_log("scheduled %i blocks to run" % len(block_list))
         else:
             block_list = self.block_list
             self.clean_up_for_retry(block_list)
@@ -118,6 +152,10 @@ class DownscalingBase(luigi.Task):
         # wait till jobs finish and check for job success
         self.wait_for_jobs(self.scale_prefix)
         self.check_jobs(n_jobs, self.scale_prefix)
+
+    def output(self):
+        return luigi.LocalTarget(os.path.join(self.tmp_folder,
+                                              self.task_name + '_%s.log' % self.scale_prefix))
 
 
 class DownscalingLocal(DownscalingBase, LocalTask):
@@ -157,8 +195,8 @@ def _ds_block(blocking, block_id, ds_in, ds_out, scale_factor, halo, library_kwa
         out_bb = vu.block_to_bb(block)
         out_shape = block.shape
     else:
-        halo_ds = [ha // scale_factor] if isinstance(scale_factor, int) else\
-            [ha // sf for sf in scale_factor]
+        halo_ds = [ha // scale_factor for ha in halo] if isinstance(scale_factor, int) else\
+            [ha // sf for sf, ha in zip(scale_factor, halo)]
         block = blocking.getBlockWithHalo(block_id, halo_ds)
         in_bb = vu.block_to_bb(block.outerBlock)
         out_bb = vu.block_to_bb(block.innerBlock)
@@ -166,7 +204,7 @@ def _ds_block(blocking, block_id, ds_in, ds_out, scale_factor, halo, library_kwa
         out_shape = block.outerBlock.shape
 
     # upsample the input bounding box
-    if isinstance(sf, int):
+    if isinstance(scale_factor, int):
         in_bb = tuple(slice(ib.start * scale_factor, min(ib.stop * scale_factor, sh))
                       for ib, sh in zip(in_bb, ds_in.shape))
     else:
@@ -174,11 +212,17 @@ def _ds_block(blocking, block_id, ds_in, ds_out, scale_factor, halo, library_kwa
                       for ib, sf, sh in zip(in_bb, scale_factor, ds_in.shape))
 
     x = ds_in[in_bb]
+
+    # don't sample empty blocks
+    if np.sum(x != 0) == 0:
+        fu.log_block_success(block_id)
+        return
+
     dtype = x.dtype
     if np.dtype(dtype) != np.dtype('float32'):
         x = x.astype('float32')
 
-    if isinstance(sf, int):
+    if isinstance(scale_factor, int):
         out = vigra.sampling.resize(x, shape=out_shape, **library_kwargs)
     else:
         out = np.zeros(out_shape, dtype='float32')
@@ -186,7 +230,9 @@ def _ds_block(blocking, block_id, ds_in, ds_out, scale_factor, halo, library_kwa
             out[z] = vigra.sampling.resize(x[z], shape=out_shape[1:], **library_kwargs)
 
     if np.dtype(dtype) in (np.dtype('uint8'), np.dtype('uint16')):
-        out = np.round(out)
+        max_val = np.iinfo(np.dtype(dtype)).max
+        np.clip(out, 0, max_val, out=out)
+        np.round(out, out=out)
 
     ds_out[out_bb] = out[local_bb].astype(dtype)
 
@@ -215,7 +261,7 @@ def downscaling(job_id, config_path):
     # TODO support more impls
     assert config.get('library', 'vigra') == 'vigra'
     halo = config.get('halo', None)
-    library_kwargs = config.get(library_kwargs, None)
+    library_kwargs = config.get('library_kwargs', None)
     if library_kwargs is None:
         library_kwargs = {}
 
