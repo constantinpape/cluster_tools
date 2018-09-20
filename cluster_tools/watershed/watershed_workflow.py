@@ -12,6 +12,8 @@ class WatershedWorkflow(WorkflowBase):
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
+    mask_path = luigi.Parameter(default='')
+    mask_key = luigi.Parameter(default='')
 
     def requires(self):
         ws_task = getattr(watershed_tasks,
@@ -22,7 +24,9 @@ class WatershedWorkflow(WorkflowBase):
                      input_path=self.input_path,
                      input_key=self.input_key,
                      output_path=self.output_path,
-                     output_key=self.output_key)
+                     output_key=self.output_key,
+                     mask_path=self.mask_path,
+                     mask_key=self.mask_key)
         t2 = RelabelWorkflow(tmp_folder=self.tmp_folder,
                              max_jobs=self.max_jobs,
                              config_dir=self.config_dir,

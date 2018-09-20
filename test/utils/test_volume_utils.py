@@ -27,7 +27,7 @@ class TestVolumeUtil(unittest.TestCase):
             pass
 
     def test_file_reader(self):
-        from cluster_tools.volume_util import file_reader
+        from cluster_tools.utils.volume_utils import file_reader
 
         def _test_io(f):
             data = np.random.rand(100, 100)
@@ -51,6 +51,20 @@ class TestVolumeUtil(unittest.TestCase):
         with file_reader(path) as f:
             _test_io(f)
 
+    def test_interpol_volume(self):
+        from cluster_tools.utils.volume_utils import InterpolatedVolume
+        big_shape = (100, 1000, 1000)
+        small_shape = (10, 100, 100)
+        vol = np.random.rand(*small_shape)
+
+        for method in ('nearest', 'linear', 'spline'):
+            ivol = InterpolatedVolume(vol, big_shape, interpolation=method)
+
+            bb = np.s_[50:75, 100:250, 300:450]
+            oshape = tuple(b.stop - b.start for b in bb)
+            out = ivol[bb]
+            self.assertEqual(out.shape, oshape)
+            self.assertFalse((out == 0).all())
 
 
 if __name__ == '__main__':

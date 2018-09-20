@@ -3,6 +3,7 @@
 import os
 import sys
 import json
+from math import ceil
 
 import luigi
 import numpy as np
@@ -31,6 +32,8 @@ class WatershedBase(luigi.Task):
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
+    mask_path = luigi.Parameter(default='')
+    mask_key = luigi.Parameter(default='')
 
     @staticmethod
     def default_task_config():
@@ -44,7 +47,6 @@ class WatershedBase(luigi.Task):
         return config
 
     def clean_up_for_retry(self, block_list):
-        # TODO does this work with the mixin pattern?
         super().clean_up_for_retry(block_list)
         # TODO remove any output of failed blocks because it might be corrupted
 
@@ -83,6 +85,11 @@ class WatershedBase(luigi.Task):
         ws_config.update({'input_path': self.input_path, 'input_key': self.input_key,
                           'output_path': self.output_path, 'output_key': self.output_key,
                           'block_shape': block_shape})
+        if self.mask_path != '':
+            assert self.mask_key != ''
+            ws_config.update({'mask_path': self.mask_path, 'mask_key': self.mask_key})
+            if roi_begin is not None:
+                ws_config.update({'roi_begin': roi_begin, 'roi_end': roi_end})
 
         # check if we run a 2-pass watershed
         is_2pass = ws_config.pop('two_pass', False)
@@ -164,7 +171,7 @@ def _apply_dt(input_, config):
 
 
 # apply watershed
-def _apply_watershed(input_, dt, offset, config):
+def _apply_watershed(input_, dt, offset, config, mask=None):
     apply_2d = config.get('apply_ws_2d', True)
     sigma_seeds = config.get('sigma_seeds', 2.)
     size_filter = config.get('size_filter', 25)
@@ -184,7 +191,14 @@ def _apply_watershed(input_, dt, offset, config):
             # apply size_filter if specified
             if size_filter > 0:
                 wsz, max_id = vu.apply_size_filter(wsz, input_[z], size_filter)
-            wsz += offset
+            # mask seeds if we have a mask
+            if mask is None:
+                wsz += offset
+            else:
+                wsz[mask[z]] = 0
+                inv_mask = np.logical_not(mask[z])
+                max_id = int(wsz[inv_mask].max())
+                wsz[inv_mask] += offset
             ws[z] = wsz
             offset += max_id
 
@@ -199,13 +213,18 @@ def _apply_watershed(input_, dt, offset, config):
         # apply size_filter if specified
         if size_filter > 0:
             ws, max_id = vu.apply_size_filter(ws, input_, size_filter)
+
+        # check if we have a mask
         ws = ws.astype('uint64')
         ws += offset
+        if mask is not None:
+            ws[mask] = 0
     #
     return ws
 
 
-def _apply_watershed_with_seeds(input_, dt, offset, initial_seeds, config):
+def _apply_watershed_with_seeds(input_, dt, offset,
+                                initial_seeds, config, mask=None):
     apply_2d = config.get('apply_ws_2d', True)
     sigma_seeds = config.get('sigma_seeds', 2.)
     size_filter = config.get('size_filter', 25)
@@ -231,6 +250,9 @@ def _apply_watershed_with_seeds(input_, dt, offset, initial_seeds, config):
             seeds = vigra.analysis.localMaxima(dtz, marker=np.nan,
                                                allowAtBorder=True, allowPlateaus=True)
             seeds = vigra.analysis.labelImageWithBackground(np.isnan(seeds).view('uint8'))
+            # remove seeds in mask
+            if mask is not None:
+                seeds[mask] = 0
 
             # add offset to seeds
             seeds[seeds != 0] += offset
@@ -253,11 +275,17 @@ def _apply_watershed_with_seeds(input_, dt, offset, initial_seeds, config):
                 initial_seed_ids = np.unique(initial_seeds_z[initial_seed_mask])
                 seeds, max_id = vu.apply_size_filter(seeds, input_[z], size_filter,
                                                      exclude=initial_seed_ids)
+            # only increase by actual max-id
 
             # map back to original ids
             seeds = seeds.astype('uint64')
             seeds = nt.takeDict(new_to_old, seeds)
             ws[z] = seeds
+            if mask is not None:
+                ws[z][mask[z]] = 0
+                max_id = int(ws[z][np.logical_not(mask[z])].max())
+            # only increase offset by actual max-id
+            max_id -= offset
             offset += max_id
         return ws
 
@@ -270,6 +298,9 @@ def _apply_watershed_with_seeds(input_, dt, offset, initial_seeds, config):
         seeds = vigra.analysis.localMaxima3D(dt, marker=np.nan,
                                              allowAtBorder=True, allowPlateaus=True)
         seeds = vigra.analysis.labelVolumeWithBackground(np.isnan(seeds).view('uint8'))
+        # remove seeds in mask
+        if mask is not None:
+            seeds[mask] = 0
         seeds[seeds != 0] += offset
 
         # add the initial seeds
@@ -294,12 +325,12 @@ def _apply_watershed_with_seeds(input_, dt, offset, initial_seeds, config):
                                                  exclude=initial_seed_ids)
         seeds = seeds.astype('uint64')
         seeds = nt.takeDict(new_to_old, seeds)
+        if mask is not None:
+            seeds[mask] = 0
         return seeds
 
 
-def _ws_block(blocking, block_id, ds_in, ds_out, config, pass_):
-    fu.log("start processing block %i" % block_id)
-
+def _get_bbs(blocking, block_id, config):
     # read the input config
     halo = list(config.get('halo', [0, 0, 0]))
     if sum(halo) > 0:
@@ -311,7 +342,10 @@ def _ws_block(blocking, block_id, ds_in, ds_out, config, pass_):
         block = blocking.getBlock(block_id)
         input_bb = output_bb = vu.block_to_bb(block)
         inner_bb = np.s_[:]
+    return input_bb, inner_bb, outer_bb
 
+
+def _read_data(ds_in, input_bb, config):
     # read the input data
     if ds_in.ndim == 4:
         channel_end = config.get('channel_end', None)
@@ -325,6 +359,14 @@ def _ws_block(blocking, block_id, ds_in, ds_out, config, pass_):
         input_ = getattr(np, agglomerate)(input_, axis=0)
     else:
         input_ = vu.normalize(ds_in[input_bb])
+    return input_
+
+
+def _ws_block(blocking, block_id, ds_in, ds_out, config, pass_):
+    fu.log("start processing block %i" % block_id)
+    input_bb, inner_bb, outer_bb = _read_data(blocking, block_id,
+                                              config)
+    input_ = _read_data(ds_in, input_bb, config)
 
     # smooth input if sigma is given
     sigma_weights = config.get('sigma_weights', 2.)
@@ -359,6 +401,57 @@ def _ws_block(blocking, block_id, ds_in, ds_out, config, pass_):
     fu.log_block_success(block_id)
 
 
+def _ws_block_masked(blocking, block_id, ds_in, ds_out, mask, config, pass_):
+    fu.log("start processing block %i" % block_id)
+    input_bb, inner_bb, outer_bb = _read_data(blocking, block_id,
+                                              config)
+    # get the mask and check if we have any pixels
+    in_mask = mask[input_bb]
+    out_mask = in_mask[inner_bb]
+    if np.sum(out_mask) == 0:
+        fu.log_block_success(block_id)
+        return
+    # read the input
+    input_ = _read_data(ds_in, input_bb, config)
+
+    # smooth input if sigma is given
+    sigma_weights = config.get('sigma_weights', 2.)
+    if sigma_weights != 0:
+        # check if we apply pre-smoothing in 2d
+        presmooth_2d = config.get('apply_presmooth_2d', True)
+        input_ = vu.apply_filter(input_, 'gaussianSmoothing', sigma_weights, presmooth_2d)
+
+    # mask the input
+    inv_mask = np.logical_not(in_mask)
+    input_[inv_mask] = 1
+
+    # apply distance transform
+    dt = _apply_dt(input_, config)
+
+    # get offset to make new seeds unique between blocks
+    # (we need to relabel later to make processing efficient !)
+    offset = block_id * np.prod(blocking.blockShape)
+
+    # check which pass we are in and apply the according watershed
+    if pass_ in (1, None):
+        # single-pass watershed or first pass of two-pass watershed:
+        # -> apply normal ws and write the results to the inner volume
+        ws = _apply_watershed(input_, dt, offset, config, inv_mask)
+        ds_out[output_bb] = ws[inner_bb]
+    else:
+        # second pass of two pass watershed -> apply ws with initial seeds
+        # write the results to the inner volume
+        if len(input_bb) == 4:
+            input_bb = input_bb[1:]
+        initial_seeds = ds_out[input_bb]
+        ws = _apply_watershed_with_seeds(input_, dt, offset, initial_seeds,
+                                         config, mask)
+        ds_out[output_bb] = ws[inner_bb]
+
+    # log block success
+    fu.log_block_success(block_id)
+
+
 def watershed(job_id, config_path):
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
@@ -384,6 +477,12 @@ def watershed(job_id, config_path):
     output_path = config['output_path']
     output_key = config['output_key']
 
+    # check if we have a mask
+    with_mask = 'mask_path' in config
+    if with_mask:
+        mask_path = config['mask_path']
+        mask_key = config['mask_key']
+
     # get the blocking
     blocking = nt.blocking([0, 0, 0], shape, block_shape)
 
@@ -393,8 +492,36 @@ def watershed(job_id, config_path):
         assert ds_in.ndim in (3, 4)
         ds_out = f_out[output_key]
         assert ds_out.ndim == 3
-        for block_id in block_list:
-            _ws_block(blocking, block_id, ds_in, ds_out, config, pass_)
+
+        # note that the mask is usually small enough to keep it
+        # in memory (and we interpolate to get to the full volume)
+        # if this does not hold need to change this code!
+        if with_mask:
+
+            # helper class to interpolate mask to full volume shape
+            # cut mask to ROI if we have ROI
+            if 'roi_begin' in config:
+                assert 'roi_end' in config
+                with vu.file_reader(mask_path, 'r') as f_mask:
+                    ds_shape = f_mask[mask_key].shape
+                scale = tuple(sh / dsh for sh, dsh in zip(shape, ds_shape))
+                roi_begin = tuple(int(roib / sc) for sc, roib in zip(scale, roi_begin))
+                roi_end = tuple(int(ceil(roie / sc)) for sc, roie in zip(scale, roi_end))
+                slice_ = tuple(slice(roie, roib) for roib, roie in zip(roi_begin, roi_end))
+
+            else:
+                slice_ = np.s_[:]
+
+            with vu.file_reader(mask_path, 'r') as f_mask:
+                mask = f_mask[mask_key][slice_].astype('bool')
+
+            mask = vu.InterpolatedVolume(mask, ds_out.shape, interpolation='nearest')
+            for block_id in block_list:
+                _ws_block_masked(blocking, block_id, ds_in, ds_out, mask, config, pass_)
+
+        else:
+            for block_id in block_list:
+                _ws_block(blocking, block_id, ds_in, ds_out, config, pass_)
     # log success
     fu.log_job_success(job_id)
 

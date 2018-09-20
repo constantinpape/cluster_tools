@@ -1,9 +1,12 @@
 import json
+from math import floor, ceil
+
 import numpy as np
 import h5py
 import z5py
 import vigra
 import fastfilters
+
 from nifty.tools import blocking
 
 
@@ -107,3 +110,61 @@ def make_checkerboard_block_lists(blocking, roi_begin=None, roi_end=None):
     assert len(set(all_blocks) - expected) == 0
     assert len(blocks_a) == len(blocks_b), "%i, %i" % (len(blocks_a), len(blocks_b))
     return blocks_a, blocks_b
+
+
+class InterpolatedVolume(object):
+    def __init__(self, volume, output_shape, interpolation='nearest'):
+        assert interpolation in ('nearest', 'linear', 'spline')
+        assert isinstance(volume, np.ndarray)
+        assert len(output_shape) == volume.ndim == 3, "Only 3d supported"
+        assert all(osh > vsh for osh, vsh in zip(output_shape, volume.shape)),\
+            "Can only interpolate to larger shapes"
+        self.volume = volume
+        self.shape = output_shape
+        self.dtype = volume.dtype
+
+        self.scale = [sh / fsh for sh, fsh in zip(self.volume.shape, self.shape)]
+        self.method = interpolation
+        if np.dtype(self.dtype) == np.bool:
+            self.min, self.max = 0, 1
+        else:
+            try:
+                self.min = np.iinfo(np.dtype(self.dtype)).min
+                self.max = np.iinfo(np.dtype(self.dtype)).max
+            except ValueError:
+                self.min = np.finfo(np.dtype(self.dtype)).min
+                self.max = np.finfo(np.dtype(self.dtype)).max
+        if interpolation == 'nearest':
+            self.interpol_function = vigra.sampling.resizeImageNoInterpolation
+        elif interpolation == 'linear':
+            self.interpol_function = vigra.sampling.resizeImageLinearInterpolation
+        elif interpolation == 'spline':
+            self.interpol_function = vigra.sampling.resize
+
+    def _interpolate(self, data, shape):
+        data = vigra.sampling.resize(data.astype('float32'), shape=shape)
+        np.clip(data, self.min, self.max, out=data)
+        return data.astype(self.dtype)
+
+    # TODO implement index normalization
+    def __getitem__(self, index):
+        assert len(index) == 3
+        ret_shape = tuple(ind.stop - ind.start for ind in index)
+        index_ = tuple(slice(int(floor(ind.start * sc)),
+                             int(ceil(ind.stop * sc))) for ind, sc in zip(index, self.scale))
+        # vigra can't deal with singleton dimension
+        small_shape = tuple(idx.stop - idx.start for idx in index_)
+        index_ = tuple(slice(idx.start, idx.stop) if sh > 1 else
+                       slice(idx.start, idx.stop + 1) for idx, sh in zip(index_, small_shape))
+        data = self.volume[index_]
+
+        # speed ups for empty blocks and masks
+        dsum = data.sum()
+        if dsum == 0:
+            return np.zeros(ret_shape, dtype=self.dtype)
+        elif dsum == data.size:
+            return np.ones(ret_shape, dtype=self.dtype)
+        return self._interpolate(data, ret_shape)
+
+    def __setitem__(self, index, item):
+        raise NotImplementedError("Setitem not implemented")
