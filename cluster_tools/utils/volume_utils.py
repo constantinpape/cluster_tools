@@ -1,4 +1,5 @@
 import json
+from functools import partial
 from math import floor, ceil
 
 import numpy as np
@@ -113,7 +114,7 @@ def make_checkerboard_block_lists(blocking, roi_begin=None, roi_end=None):
 
 
 class InterpolatedVolume(object):
-    def __init__(self, volume, output_shape, interpolation='nearest'):
+    def __init__(self, volume, output_shape, interpolation='spline', spline_order=0):
         assert interpolation in ('nearest', 'linear', 'spline')
         assert isinstance(volume, np.ndarray)
         assert len(output_shape) == volume.ndim == 3, "Only 3d supported"
@@ -134,21 +135,41 @@ class InterpolatedVolume(object):
             except ValueError:
                 self.min = np.finfo(np.dtype(self.dtype)).min
                 self.max = np.finfo(np.dtype(self.dtype)).max
+
+        # FIXME vigra nearest and linear are only implemented
+        # for images. For now, spline with order 0 seems to do the job
+        # (should be the same as nearest interpolation ?!)
         if interpolation == 'nearest':
             self.interpol_function = vigra.sampling.resizeImageNoInterpolation
         elif interpolation == 'linear':
             self.interpol_function = vigra.sampling.resizeImageLinearInterpolation
         elif interpolation == 'spline':
-            self.interpol_function = vigra.sampling.resize
+            self.interpol_function = partial(vigra.sampling.resize, order=spline_order)
 
     def _interpolate(self, data, shape):
-        data = vigra.sampling.resize(data.astype('float32'), shape=shape)
+        data = self.interpol_function(data.astype('float32'), shape=shape)
         np.clip(data, self.min, self.max, out=data)
         return data.astype(self.dtype)
 
+    def _normalize_index(self, index):
+        if isinstance(index, slice):
+            index = (index,)
+        else:
+            assert isinstance(index, tuple)
+            assert len(index) <= len(self.shape)
+            assert all(isinstance(ind, slice) for ind in index)
+
+        if len(index) < len(self.shape):
+            n_missing = len(self.shape) - len(index)
+            index = index + n_missing * (slice(None),)
+        index = tuple(slice(0 if ind.start is None else ind.start,
+                            sh if ind.stop is None else ind.stop)
+                      for ind, sh in zip(index, self.shape))
+        return index
+
     # TODO implement index normalization
     def __getitem__(self, index):
-        assert len(index) == 3
+        index = self._normalize_index(index)
         ret_shape = tuple(ind.stop - ind.start for ind in index)
         index_ = tuple(slice(int(floor(ind.start * sc)),
                              int(ceil(ind.stop * sc))) for ind, sc in zip(index, self.scale))

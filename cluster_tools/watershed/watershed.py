@@ -197,7 +197,8 @@ def _apply_watershed(input_, dt, offset, config, mask=None):
             else:
                 wsz[mask[z]] = 0
                 inv_mask = np.logical_not(mask[z])
-                max_id = int(wsz[inv_mask].max())
+                # NOTE we might have no pixels in the mask for this slice
+                max_id = int(wsz[inv_mask].max()) if inv_mask.sum() > 0 else 0
                 wsz[inv_mask] += offset
             ws[z] = wsz
             offset += max_id
@@ -252,7 +253,7 @@ def _apply_watershed_with_seeds(input_, dt, offset,
             seeds = vigra.analysis.labelImageWithBackground(np.isnan(seeds).view('uint8'))
             # remove seeds in mask
             if mask is not None:
-                seeds[mask] = 0
+                seeds[mask[z]] = 0
 
             # add offset to seeds
             seeds[seeds != 0] += offset
@@ -283,7 +284,9 @@ def _apply_watershed_with_seeds(input_, dt, offset,
             ws[z] = seeds
             if mask is not None:
                 ws[z][mask[z]] = 0
-                max_id = int(ws[z][np.logical_not(mask[z])].max())
+                inv_mask = np.logical_not(mask[z])
+                # NOTE we might not have any pixels in mask for 2d slice
+                max_id = int(ws[z][inv_mask].max()) if inv_mask.sum() > 0 else 0
             # only increase offset by actual max-id
             max_id -= offset
             offset += max_id
@@ -342,7 +345,7 @@ def _get_bbs(blocking, block_id, config):
         block = blocking.getBlock(block_id)
         input_bb = output_bb = vu.block_to_bb(block)
         inner_bb = np.s_[:]
-    return input_bb, inner_bb, outer_bb
+    return input_bb, inner_bb, output_bb
 
 
 def _read_data(ds_in, input_bb, config):
@@ -364,8 +367,8 @@ def _read_data(ds_in, input_bb, config):
 
 def _ws_block(blocking, block_id, ds_in, ds_out, config, pass_):
     fu.log("start processing block %i" % block_id)
-    input_bb, inner_bb, outer_bb = _read_data(blocking, block_id,
-                                              config)
+    input_bb, inner_bb, output_bb = _get_bbs(blocking, block_id,
+                                             config)
     input_ = _read_data(ds_in, input_bb, config)
 
     # smooth input if sigma is given
@@ -403,8 +406,8 @@ def _ws_block(blocking, block_id, ds_in, ds_out, config, pass_):
 
 def _ws_block_masked(blocking, block_id, ds_in, ds_out, mask, config, pass_):
     fu.log("start processing block %i" % block_id)
-    input_bb, inner_bb, outer_bb = _read_data(blocking, block_id,
-                                              config)
+    input_bb, inner_bb, output_bb = _get_bbs(blocking, block_id,
+                                             config)
     # get the mask and check if we have any pixels
     in_mask = mask[input_bb]
     out_mask = in_mask[inner_bb]
@@ -445,7 +448,7 @@ def _ws_block_masked(blocking, block_id, ds_in, ds_out, mask, config, pass_):
             input_bb = input_bb[1:]
         initial_seeds = ds_out[input_bb]
         ws = _apply_watershed_with_seeds(input_, dt, offset, initial_seeds,
-                                         config, mask)
+                                         config, inv_mask)
         ds_out[output_bb] = ws[inner_bb]
 
     # log block success
@@ -515,7 +518,8 @@ def watershed(job_id, config_path):
             with vu.file_reader(mask_path, 'r') as f_mask:
                 mask = f_mask[mask_key][slice_].astype('bool')
 
-            mask = vu.InterpolatedVolume(mask, ds_out.shape, interpolation='nearest')
+            mask = vu.InterpolatedVolume(mask, ds_out.shape, interpolation='spline',
+                                         spline_order=0)
             for block_id in block_list:
                 _ws_block_masked(blocking, block_id, ds_in, ds_out, mask, config, pass_)
 

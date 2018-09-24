@@ -42,7 +42,7 @@ class ProbsToCostsBase(luigi.Task):
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
         config.update({'invert_inputs': False, 'transform_to_costs': True,
-                       'weight_edges': True, 'weighting_exponent': 1.,
+                       'weight_edges': False, 'weighting_exponent': 1.,
                        'beta': 0.5})
         return config
 
@@ -138,12 +138,13 @@ def probs_to_costs(job_id, config_path):
     # config for cost transformations
     invert_inputs = config.get('invert_inputs', False)
     transform_to_costs = config.get('transform_to_costs', True)
-    weight_edges = config.get('weight_edges', True)
+    weight_edges = config.get('weight_edges', False)
     weighting_exponent = config.get('weighting_exponent', 1.)
     beta = config.get('beta', 0.5)
 
     n_threads = config['threads_per_job']
 
+    fu.log("reading input from %s:%s" % (input_path, input_key))
     with vu.file_reader(input_path) as f:
         ds = f[input_key]
         ds.n_threads = n_threads
@@ -151,11 +152,19 @@ def probs_to_costs(job_id, config_path):
         slice_ = slice(None) if ds.ndim == 1 else (slice(None), slice(0, 1))
         costs = ds[slice_].squeeze()
 
+    # normalize to range 0, 1
+    min_, max_ = costs.min(), costs.max()
+    fu.log('input-range: %f %f' %  (min_, max_))
+    fu.log('%f +- %f' % (costs.mean(), costs.std()))
+
     if invert_inputs:
+        fu.log("inverting probability inputs")
         costs = 1. - costs
 
     if transform_to_costs:
+        fu.log("converting probability inputs to costs")
         if weight_edges:
+            fu.log("weighting edges by size")
             # the edge sizes are at the last feature index
             with vu.file_reader(features_path) as f:
                 ds = f[features_key]
@@ -163,6 +172,7 @@ def probs_to_costs(job_id, config_path):
                 ds.n_threads = n_threads
                 edge_sizes = ds[:, n_features-1:n_features].squeeze()
         else:
+            fu.log("no edge weighting")
             edge_sizes = None
 
         costs = _transform_probabilities_to_costs(costs, beta=beta,

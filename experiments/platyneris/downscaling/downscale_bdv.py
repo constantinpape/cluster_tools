@@ -76,6 +76,8 @@ def downscale_predictions(max_jobs=16, target='slurm'):
 
     ds_config = config['downscaling']
     ds_config.update({'threads_per_job': max_jobs})
+    ds_config.update({'mem_limit': 32})
+    ds_config.update({'time_limit': 360})
     with open(os.path.join(config_dir, 'downscaling.config'), 'w') as f:
         json.dump(ds_config, f)
 
@@ -83,7 +85,7 @@ def downscale_predictions(max_jobs=16, target='slurm'):
     scale_factors = n_scales * [[2, 2, 2]]
     halos = n_scales * [[10, 10, 10]]
 
-    resolution = (.25, .2, .2)
+    resolution = (.025, .02, .02)
     offsets = (5084, 0, 0)
 
     # transfer the offsets from measure in pixels to measure in
@@ -106,13 +108,6 @@ def downscale_predictions(max_jobs=16, target='slurm'):
                                metadata_format='bdv',
                                metadata_dict=metadata)
     success = luigi.build([task], local_scheduler=True)
-
-    if success:
-        with h5py.File('./test.h5') as f:
-            ds = f['t00000/s00/3/cells']
-            raw_ds = ds[:]
-            print(raw_ds.shape)
-        view([raw_ds])
 
 
 if __name__ == '__main__':

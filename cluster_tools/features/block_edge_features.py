@@ -40,11 +40,10 @@ class BlockEdgeFeaturesBase(luigi.Task):
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
         config.update({'offsets': None, 'filters': None, 'sigmas': None, 'halo': [0, 0, 0],
-                       'apply_in_2d': False})
+                       'apply_in_2d': False, 'channel_agglomeration': 'mean'})
         return config
 
     def clean_up_for_retry(self, block_list):
-        # TODO does this work with the mixin pattern?
         super().clean_up_for_retry(block_list)
         # TODO remove any output of failed blocks because it might be corrupted
 
@@ -125,9 +124,8 @@ def _accumulate(input_path, input_key,
     out_prefix = os.path.join(output_path, 'blocks')
     # TODO print block success in c++ !
     if offsets is None:
-        # TODO implement accumulation with filters on the fly (need halo)
-        # TODO allow reduction from 4d -> 3d before accumulating boundary map features
         assert input_dim == 3
+        fu.log('accumulate boundary map for type %s' % str(dtype))
         boundary_function = ndist.extractBlockFeaturesFromBoundaryMaps_uint8 if dtype == 'uint8' else \
             ndist.extractBlockFeaturesFromBoundaryMaps_float32
         boundary_function(graph_block_prefix,
@@ -136,6 +134,7 @@ def _accumulate(input_path, input_key,
                           block_list, out_prefix)
     else:
         assert input_dim == 4
+        fu.log('accumulate affinity map for type %s' % str(dtype))
         affinity_function = ndist.extractBlockFeaturesFromAffinityMaps_uint8 if dtype == 'uint8' else \
             ndist.extractBlockFeaturesFromAffinityMaps_float32
 
@@ -170,7 +169,7 @@ def _accumulate_block(block_id, blocking,
                       ds_in, ds_labels,
                       out_prefix, graph_block_prefix,
                       filters, sigmas, halo, ignore_label,
-                      apply_in_2d):
+                      apply_in_2d, channel_agglomeration):
 
     fu.log("start processing block %i" % block_id)
     # load graph and check if this block has edges
@@ -209,9 +208,9 @@ def _accumulate_block(block_id, blocking,
         bb_in = (slice(0, 3),) + bb_in
 
     input_ = vu.normalize(ds_in[bb_in])
-    # TODO make different dim reductions optional
     if input_dim == 4:
-        input_ = np.mean(input_, axis=0)
+        assert channel_agglomeration is not None
+        input_ = getattr(np, channel_agglomeration)(input_, axis=0)
 
     # load labels
     labels = ds_labels[bb]
@@ -242,7 +241,7 @@ def _accumulate_with_filters(input_path, input_key,
                              output_path, graph_block_prefix,
                              block_list, block_shape,
                              filters, sigmas, halo,
-                             apply_in_2d):
+                             apply_in_2d, channel_agglomeration):
 
     fu.log("accumulate features with applying filters:")
     # TODO log filter and sigma values
@@ -270,7 +269,7 @@ def _accumulate_with_filters(input_path, input_key,
                               ds_in, ds_labels,
                               out_prefix, graph_block_prefix,
                               filters, sigmas, halo, ignore_label,
-                              apply_in_2d)
+                              apply_in_2d, channel_agglomeration)
 
 
 def block_edge_features(job_id, config_path):
@@ -297,6 +296,8 @@ def block_edge_features(job_id, config_path):
     sigmas = config.get('sigmas', None)
     apply_in_2d = config.get('apply_in_2d', False)
     halo = config.get('halo', [0, 0, 0])
+    channel_agglomeration = config.get('channel_agglomeration', 'mean')
+    assert channel_agglomeration in ('mean', 'max', 'min', None)
 
     if filters is None:
         _accumulate(input_path, input_key,
@@ -311,7 +312,7 @@ def block_edge_features(job_id, config_path):
                                  output_path, graph_block_prefix,
                                  block_list, block_shape,
                                  filters, sigmas, halo,
-                                 apply_in_2d)
+                                 apply_in_2d, channel_agglomeration)
 
     fu.log_job_success(job_id)
 

@@ -47,13 +47,17 @@ def run(shebang):
                                                     tmp_folder='./tmp',
                                                     target='local',
                                                     max_jobs=max_jobs)], local_scheduler=True)
+    ret = True
     if ret:
         from cremi_tools.viewer.volumina import view
         with z5py.File(example_path) as f:
             affs = f['volumes/affinities'][:3].transpose((1, 2, 3, 0))
             ws = f['volumes/watersheds'][:]
-            seg = f['volumes/segmentation'][:]
-        view([affs, ws, seg])
+            data = [affs, ws]
+            if 'volumes/segmentation' in f:
+                seg = f['volumes/segmentation'][:]
+                data.append(seg)
+        view(data)
 
 
 if __name__ == '__main__':

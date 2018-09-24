@@ -10,6 +10,8 @@ from ..cluster_tasks import WorkflowBase
 from . import downscaling as downscale_tasks
 
 
+# pretty print xml, from:
+# http://effbot.org/zone/element-lib.htm#prettyprint
 def indent_xml(elem, level=0):
     i = "\n" + level*"  "
     if len(elem):
@@ -79,6 +81,8 @@ class WriteDownscalingMetadata(luigi.Task):
             dsc = f.require_dataset('s00/subdivisions', shape=chunks_.shape, dtype=chunks_.dtype)
             dsc[:] = chunks_
 
+    # write bdv xml, from:
+    # https://github.com/tlambert03/imarispy/blob/master/imarispy/bdv.py#L136
     def _write_bdv_xml(self):
         # TODO we have hardcoded the number of
         # channels and  time points to 1, but should support more channels

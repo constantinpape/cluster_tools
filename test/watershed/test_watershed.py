@@ -18,9 +18,11 @@ except ImportError:
     from cluster_tools.watershed.watershed import WatershedLocal
 
 
+# TODO tests with mask
 class TestWatershed(unittest.TestCase):
-    input_path = '/g/kreshuk/data/isbi2012_challenge/predictions/isbi2012_train_affinities.h5'
-    input_key = output_key = 'data'
+    input_path = '/g/kreshuk/pape/Work/data/cluster_tools_test_data/test_data.n5'
+    input_key = 'volumes/affinities_float32'
+    output_key = 'data'
     tmp_folder = './tmp'
     output_path = './tmp/ws.n5'
     config_folder = './tmp/configs'
@@ -48,8 +50,8 @@ class TestWatershed(unittest.TestCase):
         except OSError:
             pass
 
-    def _check_result(self):
-        with h5py.File(self.input_path) as f:
+    def _check_result(self, with_mask=False):
+        with z5py.File(self.input_path) as f:
             shape = f[self.input_key].shape[1:]
 
         with z5py.File(self.output_path) as f:
@@ -57,6 +59,10 @@ class TestWatershed(unittest.TestCase):
 
         self.assertEqual(res.shape, shape)
         self.assertFalse(np.allclose(res, 0))
+        if with_mask:
+            self.assertTrue(0 in res)
+        else:
+            self.assertFalse(0 in res)
 
     def _run_ws(self):
         max_jobs = 8
@@ -70,7 +76,14 @@ class TestWatershed(unittest.TestCase):
 
 
     def test_ws_2d(self):
-        # default config is alreadt watershed 2d
+        config = WatershedLocal.default_task_config()
+        config['apply_presmooth_2d'] = True
+        config['apply_dt_2d'] = True
+        config['apply_ws_2d'] = True
+        config['threshold'] = 0.25
+        config['sigma_weights'] = 0.
+        with open(os.path.join(self.config_folder, 'watershed.config'), 'w') as f:
+            json.dump(config, f)
         ret = self._run_ws()
         self.assertTrue(ret)
         self._check_result()
@@ -103,7 +116,7 @@ class TestWatershed(unittest.TestCase):
         config['apply_presmooth_2d'] = False
         config['apply_dt_2d'] = False
         config['apply_ws_2d'] = False
-        config['pixel_pitch'] = True
+        config['pixel_pitch'] = (10, 1 , 1)
         with open(os.path.join(self.config_folder, 'watershed.config'), 'w') as f:
             json.dump(config, f)
         ret = self._run_ws()

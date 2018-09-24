@@ -117,7 +117,7 @@ class SolveSubproblemsLSF(SolveSubproblemsBase, LSFTask):
 
 
 # TODO relabel the local graph ???
-def _solve_block_problem(block_id, graph, block_prefix, costs, agglomerator):
+def _solve_block_problem(block_id, graph, block_prefix, costs, agglomerator, ignore_label):
     fu.log("start processing block %i" % block_id)
 
     # load the nodes in this sub-block and map them
@@ -125,10 +125,19 @@ def _solve_block_problem(block_id, graph, block_prefix, costs, agglomerator):
     block_path = block_prefix + str(block_id)
     assert os.path.exists(block_path), block_path
     nodes = ndist.loadNodes(block_path)
+    # if we have an ignore label, remove zero from the nodes
+    # (nodes are sorted, so it will always be at pos 0)
+    if ignore_label and nodes[0] == 0:
+        nodes = nodes[1:]
+        if len(nodes) == 0:
+            fu.log_block_success(block_id)
+            return None
+
     inner_edges, outer_edges, sub_uvs = graph.extractSubgraphFromNodes(nodes)
 
     # if we had only a single node (i.e. no edge, return the outer edges)
     if len(nodes) == 1:
+        fu.log_block_success(block_id)
         return outer_edges
 
     assert len(sub_uvs) == len(inner_edges)
@@ -179,6 +188,10 @@ def solve_subproblems(job_id, config_path):
         ds.n_threads = n_threads
         costs = ds[:]
 
+    # check if the graph has ignore-label
+    with vu.file_reader(graph_path, 'r') as f:
+        ignore_label = f[graph_key].attrs['ignoreLabel']
+
     # load the graph
     # TODO parallelize ?!
     graph = ndist.Graph(os.path.join(graph_path, graph_key))
@@ -187,7 +200,7 @@ def solve_subproblems(job_id, config_path):
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(_solve_block_problem,
                            block_id, graph, block_prefix,
-                           costs, agglomerator)
+                           costs, agglomerator, ignore_label)
                  for block_id in block_list]
         results = [t.result() for t in tasks]
 
@@ -197,10 +210,12 @@ def solve_subproblems(job_id, config_path):
     # TODO could be parallelized
     if False:
         for block_id, res in zip(block_list, results):
+            if res is None:
+                continue
             block_res_path = os.path.join(res_folder, 's%i_block%i.npy' % (scale, block_id))
             np.save(block_res_path, res)
 
-    cut_edge_ids = np.concatenate(results)
+    cut_edge_ids = np.concatenate([res for res in results if res is not None])
     cut_edge_ids = np.unique(cut_edge_ids).astype('uint64')
 
     job_res_path = os.path.join(res_folder, 's%i_job%i.npy' % (scale, job_id))

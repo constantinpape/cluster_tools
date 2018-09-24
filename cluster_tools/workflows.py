@@ -35,6 +35,9 @@ class MulticutSegmentationWorkflow(WorkflowBase):
     output_key = luigi.Parameter()
     # number of scales
     n_scales = luigi.IntParameter()
+    # optional path to mask
+    mask_path = luigi.Parameter(default='')
+    mask_key = luigi.Parameter(default='')
     # number of jobs used in feature merging
     max_jobs_merge_features = luigi.IntParameter(default=1)
     # number of jobs used for sub multicuts
@@ -57,7 +60,9 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                                   input_path=self.input_path,
                                   input_key=self.input_key,
                                   output_path=self.ws_path,
-                                  output_key=self.ws_key)
+                                  output_key=self.ws_key,
+                                  mask_path=self.mask_path,
+                                  mask_key=self.mask_key)
         graph_wf = GraphWorkflow(tmp_folder=self.tmp_folder,
                                  max_jobs=self.max_jobs,
                                  config_dir=self.config_dir,
