@@ -5,6 +5,7 @@ import unittest
 import numpy as np
 from shutil import rmtree
 
+import vigra
 import luigi
 import h5py
 import z5py
@@ -55,7 +56,7 @@ class TestWatershed(unittest.TestCase):
             shape = f[self.input_key].shape[1:]
 
         with z5py.File(self.output_path) as f:
-            res = f[self.output_key][:]
+            res = f[self.output_key][:].astype('uint32')
 
         self.assertEqual(res.shape, shape)
         self.assertFalse(np.allclose(res, 0))
@@ -63,17 +64,24 @@ class TestWatershed(unittest.TestCase):
             self.assertTrue(0 in res)
         else:
             self.assertFalse(0 in res)
+        # make sure that we don't have disconnected segments
+        ids0 = np.unique(res)
+        res_cc = vigra.analysis.labelVolume(res)
+        ids1 = np.unique(res_cc)
+        self.assertEqual(len(ids0), len(ids1))
 
     def _run_ws(self):
         max_jobs = 8
-        ret = luigi.build([WatershedWorkflow(input_path=self.input_path, input_key=self.input_key,
-                                             output_path=self.output_path, output_key=self.output_key,
-                                             config_dir=self.config_folder,
-                                             tmp_folder=self.tmp_folder,
-                                             target=self.target,
-                                             max_jobs=max_jobs)], local_scheduler=True)
+        task = WatershedWorkflow(input_path=self.input_path,
+                                 input_key=self.input_key,
+                                 output_path=self.output_path,
+                                 output_key=self.output_key,
+                                 config_dir=self.config_folder,
+                                 tmp_folder=self.tmp_folder,
+                                 target=self.target,
+                                 max_jobs=max_jobs)
+        ret = luigi.build([task], local_scheduler=True)
         return ret
-
 
     def test_ws_2d(self):
         config = WatershedLocal.default_task_config()
@@ -88,9 +96,13 @@ class TestWatershed(unittest.TestCase):
         self.assertTrue(ret)
         self._check_result()
 
-    def test_ws_two_pass(self):
+    def test_ws_two_pass_2d(self):
         config = WatershedLocal.default_task_config()
         config['two_pass'] = True
+        config['apply_presmooth_2d'] = True
+        config['apply_dt_2d'] = True
+        config['apply_ws_2d'] = True
+        config['threshold'] = 0.25
         config['halo'] = [0, 15, 15]
         with open(os.path.join(self.config_folder, 'watershed.config'), 'w') as f:
             json.dump(config, f)
@@ -105,6 +117,21 @@ class TestWatershed(unittest.TestCase):
         config['apply_ws_2d'] = False
         config['sigma_seeds'] = (.5, 2., 2.)
         config['sigma_weights'] = (.5, 2., 2.)
+        with open(os.path.join(self.config_folder, 'watershed.config'), 'w') as f:
+            json.dump(config, f)
+        ret = self._run_ws()
+        self.assertTrue(ret)
+        self._check_result()
+
+    def test_ws_two_pass_3d(self):
+        config = WatershedLocal.default_task_config()
+        config['two_pass'] = True
+        config['apply_presmooth_2d'] = False
+        config['apply_dt_2d'] = False
+        config['apply_ws_2d'] = False
+        config['sigma_seeds'] = (.5, 2., 2.)
+        config['sigma_weights'] = (.5, 2., 2.)
+        config['halo'] = [5, 15, 15]
         with open(os.path.join(self.config_folder, 'watershed.config'), 'w') as f:
             json.dump(config, f)
         ret = self._run_ws()

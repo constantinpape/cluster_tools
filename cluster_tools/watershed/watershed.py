@@ -19,7 +19,6 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 # Watershed Tasks
 #
 
-# TODO implement watershed with mask
 class WatershedBase(luigi.Task):
     """ Watershed base class
     """
@@ -235,9 +234,7 @@ def _apply_watershed_with_seeds(input_, dt, offset,
         ws = np.zeros_like(input_, dtype='uint64')
         for z in range(ws.shape[0]):
 
-            # compute seeds for this slice
-
-            # smoothe the distance transform if specified
+            # smooth the distance transform if specified
             dtz = vu.apply_filter(dt[z], 'gaussianSmoothing',
                                   sigma_seeds) if sigma_seeds != 0 else dt[z]
 
@@ -273,23 +270,21 @@ def _apply_watershed_with_seeds(input_, dt, offset,
             # apply size_filter if specified
             if size_filter > 0:
                 # we do not filter ids from the initial seed mask
-                initial_seed_ids = np.unique(initial_seeds_z[initial_seed_mask])
                 seeds, max_id = vu.apply_size_filter(seeds, input_[z], size_filter,
-                                                     exclude=initial_seed_ids)
-            # only increase by actual max-id
-
-            # map back to original ids
-            seeds = seeds.astype('uint64')
-            seeds = nt.takeDict(new_to_old, seeds)
-            ws[z] = seeds
+                                                     exclude=initial_seeds_z)
+            # mask the result if we have a mask
             if mask is not None:
-                ws[z][mask[z]] = 0
+                seeds[mask[z]] = 0
                 inv_mask = np.logical_not(mask[z])
                 # NOTE we might not have any pixels in mask for 2d slice
-                max_id = int(ws[z][inv_mask].max()) if inv_mask.sum() > 0 else 0
-            # only increase offset by actual max-id
-            max_id -= offset
+                max_id = int(seeds[inv_mask].max()) if inv_mask.sum() > 0 else 0
+
+            # increase the offset
             offset += max_id
+
+            # map back to original ids
+            seeds = nt.takeDict(new_to_old, seeds.astype('uint64'))
+            ws[z] = seeds
         return ws
 
     # apply the watersheds in 3d
@@ -323,11 +318,10 @@ def _apply_watershed_with_seeds(input_, dt, offset,
         # apply size_filter if specified
         if size_filter > 0:
             # we do not filter ids from the initial seed mask
-            initial_seed_ids = np.unique(initial_seeds_z[initial_seed_mask])
-            seeds, max_id = vu.apply_size_filter(seeds, input_[z], size_filter,
+            initial_seed_ids = np.unique(initial_seeds[initial_seed_mask])
+            seeds, max_id = vu.apply_size_filter(seeds, input_, size_filter,
                                                  exclude=initial_seed_ids)
-        seeds = seeds.astype('uint64')
-        seeds = nt.takeDict(new_to_old, seeds)
+        seeds = nt.takeDict(new_to_old, seeds.astype('uint64'))
         if mask is not None:
             seeds[mask] = 0
         return seeds
@@ -505,12 +499,17 @@ def watershed(job_id, config_path):
             # cut mask to ROI if we have ROI
             if 'roi_begin' in config:
                 assert 'roi_end' in config
+                roi_begin = config['roi_begin']
+                roi_end = config['roi_end']
+                fu.log("Have roi %s to %s" % (str(roi_begin), str(roi_end)))
+
                 with vu.file_reader(mask_path, 'r') as f_mask:
                     ds_shape = f_mask[mask_key].shape
                 scale = tuple(sh / dsh for sh, dsh in zip(shape, ds_shape))
                 roi_begin = tuple(int(roib / sc) for sc, roib in zip(scale, roi_begin))
                 roi_end = tuple(int(ceil(roie / sc)) for sc, roie in zip(scale, roi_end))
-                slice_ = tuple(slice(roie, roib) for roib, roie in zip(roi_begin, roi_end))
+                fu.log("rois %s to %s after scaling with %s" % (str(roi_begin), str(roi_end), str(scale)))
+                slice_ = tuple(slice(roib, roie) for roib, roie in zip(roi_begin, roi_end))
 
             else:
                 slice_ = np.s_[:]

@@ -370,10 +370,9 @@ class SlurmTask(BaseClusterTask):
         """ Converts mem limit in GB to slurm format
         """
         if mem_limit > 1:
-            # TODO I don't know if float mem
             return "%iG" % mem_limit
         else:
-            return "%iM" % int (mem_limit * 1000)
+            return "%iM" % int(mem_limit * 1000)
 
     def _write_slurm_file(self, job_prefix=None):
         groupname = self.get_global_config().get('groupname', 'kreshuk')
