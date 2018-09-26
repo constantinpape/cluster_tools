@@ -77,6 +77,9 @@ class SolveSubproblemsBase(luigi.Task):
         with vu.file_reader(self.graph_path, 'r') as f:
             shape = f.attrs['shape']
 
+        factor = 2**self.scale
+        block_shape = tuple(bs * factor for bs in block_shape)
+
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
         else:

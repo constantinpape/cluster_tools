@@ -38,9 +38,9 @@ def blocks_in_volume(shape, block_shape,
         assert roi_end is not None
         roi_end = [sh if re is None else re for re, sh in zip(roi_end, shape)]
         block_list = blocking_.getBlockIdsOverlappingBoundingBox(list(roi_begin),
-                                                                 list(roi_end),
-                                                                 [0, 0, 0])
-        block_list = [bl.tolist() for bl in block_list]
+                                                                 list(roi_end))
+        block_list = block_list.tolist()
+        assert len(block_list) == len(set(block_list)), "%i, %i" % (len(block_list), len(set(block_list)))
         return block_list
 
 
@@ -167,7 +167,6 @@ class InterpolatedVolume(object):
                       for ind, sh in zip(index, self.shape))
         return index
 
-    # TODO implement index normalization
     def __getitem__(self, index):
         index = self._normalize_index(index)
         ret_shape = tuple(ind.stop - ind.start for ind in index)

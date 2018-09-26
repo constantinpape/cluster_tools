@@ -101,6 +101,7 @@ class WriteBase(luigi.Task):
         else:
             block_list = self.block_list
             self.clean_up_for_retry(block_list, self.identifier)
+        self._write_log('scheduling %i blocks to be processed' % len(block_list))
 
         n_jobs = min(len(block_list), self.max_jobs)
 

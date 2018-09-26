@@ -87,8 +87,6 @@ class WatershedBase(luigi.Task):
         if self.mask_path != '':
             assert self.mask_key != ''
             ws_config.update({'mask_path': self.mask_path, 'mask_key': self.mask_key})
-            if roi_begin is not None:
-                ws_config.update({'roi_begin': roi_begin, 'roi_end': roi_end})
 
         # check if we run a 2-pass watershed
         is_2pass = ws_config.pop('two_pass', False)
@@ -119,6 +117,7 @@ class WatershedBase(luigi.Task):
             else:
                 block_list = self.block_list
                 self.clean_up_for_retry(block_list)
+            self._write_log('scheduling %i blocks to be processed' % len(block_list))
             n_jobs = min(len(block_list), self.max_jobs)
             self._watershed_pass(n_jobs, block_list, ws_config)
 
@@ -495,27 +494,8 @@ def watershed(job_id, config_path):
         # if this does not hold need to change this code!
         if with_mask:
 
-            # helper class to interpolate mask to full volume shape
-            # cut mask to ROI if we have ROI
-            if 'roi_begin' in config:
-                assert 'roi_end' in config
-                roi_begin = config['roi_begin']
-                roi_end = config['roi_end']
-                fu.log("Have roi %s to %s" % (str(roi_begin), str(roi_end)))
-
-                with vu.file_reader(mask_path, 'r') as f_mask:
-                    ds_shape = f_mask[mask_key].shape
-                scale = tuple(sh / dsh for sh, dsh in zip(shape, ds_shape))
-                roi_begin = tuple(int(roib / sc) for sc, roib in zip(scale, roi_begin))
-                roi_end = tuple(int(ceil(roie / sc)) for sc, roie in zip(scale, roi_end))
-                fu.log("rois %s to %s after scaling with %s" % (str(roi_begin), str(roi_end), str(scale)))
-                slice_ = tuple(slice(roib, roie) for roib, roie in zip(roi_begin, roi_end))
-
-            else:
-                slice_ = np.s_[:]
-
             with vu.file_reader(mask_path, 'r') as f_mask:
-                mask = f_mask[mask_key][slice_].astype('bool')
+                mask = f_mask[mask_key][:].astype('bool')
 
             mask = vu.InterpolatedVolume(mask, ds_out.shape, interpolation='spline',
                                          spline_order=0)

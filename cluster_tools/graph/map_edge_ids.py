@@ -42,13 +42,19 @@ class MapEdgeIdsBase(luigi.Task):
         # load the watershed config
         config = self.get_task_config()
 
+        with vu.file_reader(self.graph_path) as f:
+            shape = f.attrs['shape']
+
+        factor = 2**self.scale
+        block_shape = tuple(sh * factor for sh in block_shape)
+        block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+
         # update the config with input and graph paths and keys
         # as well as block shape
-        config.update({'graph_path': self.graph_path, 'block_shape': block_shape,
-                       'scale': self.scale})
+        config.update({'graph_path': self.graph_path, 'scale': self.scale})
 
         # prime and run the job
-        self.prepare_jobs(1, None, config)
+        self.prepare_jobs(1, block_list, config)
         self.submit_jobs(1)
 
         # wait till jobs finish and check for job success
@@ -89,23 +95,15 @@ def map_edge_ids(job_id, config_path):
         config = json.load(f)
     scale = config['scale']
     graph_path = config['graph_path']
-    initial_block_shape = config['block_shape']
+    block_list = config['block_list']
     n_threads = config['threads_per_job']
 
-    factor = 2**scale
-    block_shape = [factor * bs for bs in initial_block_shape]
-
-    with vu.file_reader(graph_path) as f:
-        shape = f.attrs['shape']
-    blocking = nt.blocking(roiBegin=[0, 0, 0],
-                           roiEnd=list(shape),
-                           blockShape=block_shape)
     input_key = 'graph'
     block_prefix = 's%i/sub_graphs/block_' % scale
-    ndist.mapEdgeIdsForAllBlocks(graph_path, input_key,
-                                 blockPrefix=block_prefix,
-                                 numberOfBlocks=blocking.numberOfBlocks,
-                                 numberOfThreads=n_threads)
+    ndist.mapEdgeIds(graph_path, input_key,
+                     blockPrefix=block_prefix,
+                     blockIds=block_list,
+                     numberOfThreads=n_threads)
     fu.log_job_success(job_id)
 
 

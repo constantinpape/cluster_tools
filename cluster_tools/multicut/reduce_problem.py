@@ -66,9 +66,16 @@ class ReduceProblemBase(luigi.Task):
                        'graph_path': self.graph_path, 'graph_key': self.graph_key,
                        'output_path': self.output_path, 'tmp_folder': self.tmp_folder,
                        'scale': self.scale, 'block_shape': block_shape})
+        if roi_begin is not None:
+            assert roi_end is not None
+            config.update({'roi_begin': roi_begin,
+                           'roi_end': roi_end})
 
         with vu.file_reader(self.graph_path, 'r') as f:
             shape = f.attrs['shape']
+
+        factor = 2**self.scale
+        block_shape = tuple(bs * factor for bs in block_shape)
 
         block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
         n_jobs = min(len(block_list), self.max_jobs)
@@ -89,7 +96,7 @@ class ReduceProblemLocal(ReduceProblemBase, LocalTask):
     pass
 
 
-class ReduceProblemsSlurm(ReduceProblemBase, SlurmTask):
+class ReduceProblemSlurm(ReduceProblemBase, SlurmTask):
     """ ReduceProblem on slurm cluster
     """
     pass
@@ -169,7 +176,8 @@ def _serialize_new_problem(graph_path, n_new_nodes, new_uv_ids,
                            node_labeling, edge_labeling,
                            new_costs, new_initial_node_labeling,
                            shape, scale, initial_block_shape,
-                           output_path, n_threads):
+                           output_path, n_threads,
+                           roi_begin, roi_end):
 
     next_scale = scale + 1
     f_out= z5py.File(output_path)
@@ -185,9 +193,7 @@ def _serialize_new_problem(graph_path, n_new_nodes, new_uv_ids,
     new_factor = 2**(scale + 1)
     new_block_shape = [new_factor * bs for bs in initial_block_shape]
 
-    # TODO need to adapt this for roi
-    n_blocks = nt.blocking([0, 0, 0], shape, new_block_shape).numberOfBlocks
-    block_ids = list(range(n_blocks))
+    block_ids = vu.blocks_in_volume(shape, new_block_shape, roi_begin, roi_end)
 
     ndist.serializeMergedGraph(graphBlockPrefix=block_in_prefix,
                                shape=shape,
@@ -259,6 +265,8 @@ def reduce_problem(job_id, config_path):
     n_jobs = config['n_jobs']
     accumulation_method = config.get('accumulation_method', 'sum')
     n_threads = config['threads_per_job']
+    roi_begin = config.get('roi_begin', None)
+    roi_end = config.get('roi_end', None)
 
     # get the number of nodes and uv-ids at this scale level
     # as well as the initial node labeling
@@ -295,8 +303,6 @@ def reduce_problem(job_id, config_path):
             ds.n_threads = n_threads
             initial_node_labeling = ds[:]
 
-
-
     fu.log("read costs from %s, %s" % (costs_path, costs_key))
     with vu.file_reader(costs_path) as f:
         ds = f[costs_key]
@@ -323,7 +329,8 @@ def reduce_problem(job_id, config_path):
                                          node_labeling, edge_labeling,
                                          new_costs, new_initial_node_labeling,
                                          shape, scale, initial_block_shape,
-                                         output_path, n_threads)
+                                         output_path, n_threads,
+                                         roi_begin, roi_end)
 
     fu.log("Reduced graph from %i to %i nodes; %i to %i edges." % (n_nodes, n_new_nodes,
                                                                    n_edges, n_new_edges))
