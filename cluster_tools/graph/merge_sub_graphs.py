@@ -99,6 +99,11 @@ class MergeSubGraphsBase(luigi.Task):
         else:
             self._run_scale(config, block_shape, roi_begin, roi_end)
 
+    # part of the luigi API
+    def output(self):
+        return luigi.LocalTarget(os.path.join(self.tmp_folder,
+                                              self.task_name + '_s%i.log' % self.scale))
+
 
 
 class MergeSubGraphsLocal(MergeSubGraphsBase, LocalTask):

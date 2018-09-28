@@ -61,6 +61,11 @@ class MapEdgeIdsBase(luigi.Task):
         self.wait_for_jobs()
         self.check_jobs(1)
 
+    # part of the luigi API
+    def output(self):
+        return luigi.LocalTarget(os.path.join(self.tmp_folder,
+                                              self.task_name + '_s%i.log' % self.scale))
+
 
 class MapEdgeIdsLocal(MapEdgeIdsBase, LocalTask):
     """ MapEdgeIds on local machine
