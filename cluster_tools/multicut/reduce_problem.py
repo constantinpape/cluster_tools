@@ -89,6 +89,11 @@ class ReduceProblemBase(luigi.Task):
         self.wait_for_jobs()
         self.check_jobs(1)
 
+    # part of the luigi API
+    def output(self):
+        return luigi.LocalTarget(os.path.join(self.tmp_folder,
+                                              self.task_name + '_s%i.log' % self.scale))
+
 
 class ReduceProblemLocal(ReduceProblemBase, LocalTask):
     """ ReduceProblem on local machine
@@ -210,6 +215,7 @@ def _serialize_new_problem(graph_path, n_new_nodes, new_uv_ids,
     n_new_edges = len(new_uv_ids)
     g_out.attrs['numberOfNodes'] = n_new_nodes
     g_out.attrs['numberOfEdges'] = n_new_edges
+    g_out.attrs['ignoreLabel'] = False
 
     shape_edges = (n_new_edges, 2)
     edge_chunks = (min(n_new_edges, 262144), 2)

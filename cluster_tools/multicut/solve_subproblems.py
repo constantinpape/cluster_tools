@@ -42,7 +42,6 @@ class SolveSubproblemsBase(luigi.Task):
         return self.dependency
 
     def clean_up_for_retry(self, block_list):
-        # TODO does this work with the mixin pattern?
         super().clean_up_for_retry(block_list)
         # TODO remove any output of failed blocks because it might be corrupted
 
@@ -94,6 +93,11 @@ class SolveSubproblemsBase(luigi.Task):
         # wait till jobs finish and check for job success
         self.wait_for_jobs()
         self.check_jobs(n_jobs)
+
+    # part of the luigi API
+    def output(self):
+        return luigi.LocalTarget(os.path.join(self.tmp_folder,
+                                              self.task_name + '_s%i.log' % self.scale))
 
 
 class SolveSubproblemsLocal(SolveSubproblemsBase, LocalTask):

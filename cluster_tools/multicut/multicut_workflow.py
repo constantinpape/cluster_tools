@@ -37,7 +37,7 @@ class MulticutWorkflow(WorkflowBase):
                 costs_key = self.costs_key
             else:
                 graph_path = self.merged_problem_path
-                graph_key = 's%i/graph' % scale
+                graph_key = 's%i' % scale
                 costs_path = self.merged_problem_path
                 costs_key = 's%i/costs' % scale
             t_sub = subproblem_task(tmp_folder=self.tmp_folder,

@@ -37,11 +37,6 @@ class SolveGlobalBase(luigi.Task):
     def requires(self):
         return self.dependency
 
-    def clean_up_for_retry(self, block_list):
-        # TODO does this work with the mixin pattern?
-        super().clean_up_for_retry(block_list)
-        # TODO remove any output of failed blocks because it might be corrupted
-
     @staticmethod
     def default_task_config():
         # we use this to get also get the common default config
@@ -74,6 +69,11 @@ class SolveGlobalBase(luigi.Task):
         self._write_log('and key %s' % self.output_key)
 
         self.check_jobs(1)
+
+    # part of the luigi API
+    def output(self):
+        return luigi.LocalTarget(os.path.join(self.tmp_folder,
+                                              self.task_name + '_s%i.log' % self.scale))
 
 
 class SolveGlobalLocal(SolveGlobalBase, LocalTask):
@@ -116,6 +116,7 @@ def solve_global(job_id, config_path):
     n_threads = config['threads_per_job']
     agglomerator_key = config['agglomerator']
 
+    fu.log("using agglomerator %s" % agglomerator_key)
     agglomerator = su.key_to_agglomerator(agglomerator_key)
 
     # TODO this should come from input variable
@@ -146,6 +147,13 @@ def solve_global(job_id, config_path):
     # get the labeling of initial nodes
     initial_node_labeling = node_labeling[initial_node_labeling]
     n_nodes = len(initial_node_labeling)
+
+    # make sure zero is mapped to 0
+    # TODO check that we actually have an ignore label
+    if initial_node_labeling[0] != 0:
+        new_max_label = node_labeling.max() + 1
+        initial_node_labeling[initial_node_labeling == 0] = new_max_label
+        initial_node_labeling[0] = 0
 
     node_shape = (n_nodes,)
     chunks = (min(n_nodes, 524288),)
