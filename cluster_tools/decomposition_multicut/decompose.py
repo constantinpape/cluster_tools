@@ -115,8 +115,8 @@ def decompose(job_id, config_path):
         ignore_label = f[graph_key].attrs['ignoreLabel']
 
     # load the graph
-    # TODO parallelize ?!
-    graph = ndist.Graph(os.path.join(graph_path, graph_key))
+    graph = ndist.Graph(os.path.join(graph_path, graph_key),
+                        numberOfThreads=n_threads)
 
     # mark repulsive edges as cut
     edge_labels = costs < 0

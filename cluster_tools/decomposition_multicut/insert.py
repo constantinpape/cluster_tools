@@ -114,8 +114,8 @@ def insert(job_id, config_path):
     n_jobs = config['n_jobs']
 
     # load the graph
-    # TODO parallelize ?!
-    graph = ndist.Graph(os.path.join(graph_path, graph_key))
+    graph = ndist.Graph(os.path.join(graph_path, graph_key),
+                        numberOfThreads=n_threads)
     with vu.file_reader(graph_path, 'r') as f:
         ignore_label = f[graph_key].attrs['ignoreLabel']
 

@@ -22,16 +22,15 @@ from cluster_tools.utils.segmentation_utils import multicut_gaec
 def run_wf(block_id, tmp_folder, max_jobs,
            target='local', with_rf=False):
 
-    input_path = '/g/kreshuk/data/arendt/platyneris_v1/membrane_training_data/validation/predictions/val_block_0%i_unet_lr_v3_ds122.n5' % block_id
     input_path = '/g/kreshuk/data/arendt/platyneris_v1/membrane_training_data/validation/predictions/val_block_0%i_unet_lr_v3_bmap.n5' % block_id
-    input_path = '/g/kreshuk/data/arendt/platyneris_v1/membrane_training_data/validation/predictions/val_block_01_unet_lr_v3_bmap.n5'
+    # input_path = '/g/kreshuk/data/arendt/platyneris_v1/membrane_training_data/validation/predictions/val_block_0%i_unet_lr_v3_ds122.n5' % block_id
     input_key = 'data'
 
-    # mask_path = './test_val_mask.h5'
-    # mask_key = 'data'
+    mask_path = './test_val_mask.h5'
+    mask_key = 'data'
 
-    mask_path = ''
-    mask_key = ''
+    # mask_path = ''
+    # mask_key = ''
 
     if with_rf:
         exp_path = '/g/kreshuk/data/arendt/platyneris_v1/membrane_training_data/validation/segmentation/val_block_0%i_rf.n5' % block_id
@@ -41,20 +40,44 @@ def run_wf(block_id, tmp_folder, max_jobs,
         exp_path = '/g/kreshuk/data/arendt/platyneris_v1/membrane_training_data/validation/segmentation/val_block_0%i.n5' % block_id
         rf_path = ''
 
-    configs = MulticutSegmentationWorkflow.get_config()
+    use_decomposer = False
+    configs = MulticutSegmentationWorkflow.get_config(use_decomposer)
+
+    if not os.path.exists('config'):
+        os.mkdir('config')
+
+    roi_begin, roi_end = None, None
+    # roi_begin = [50, 0, 0]
+    # roi_end = [100, 2048, 2048]
+
+    global_config = configs['global']
+    global_config.update({'shebang': "#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env/bin/python",
+                          'roi_begin': roi_begin,
+                          'roi_end': roi_end})
+    with open('./config/global.config', 'w') as f:
+        json.dump(global_config, f)
 
     ws_config = configs['watershed']
+    # TODO completely debug the two-pass watershed
+    two_pass_ws = False
     ws_config.update({'threshold': .25, 'apply_presmooth_2d': False,
                       'sigma_weights': (1., 2., 2.), 'apply_dt_2d': False,
-                      'pixel_pitch': (2, 1, 1), 'two_pass': True,
+                      'pixel_pitch': (2, 1, 1), 'two_pass': two_pass_ws,
                       'halo': [0, 50, 50]})
     with open('./config/watershed.config', 'w') as f:
-        json.dump(ws_config ,f)
+        json.dump(ws_config, f)
+
+    subprob_config = configs['solve_subproblems']
+    subprob_config.update({'weight_edges': False,
+                           'threads_per_job': max_jobs})
+    with open('./config/solve_subproblems.config', 'w') as f:
+        json.dump(subprob_config, f)
 
     feat_config = configs['block_edge_features']
     if with_rf:
         feat_config.update({'filters': ['gaussianSmoothing'],
-                            'sigmas': [(0.5, 1., 1.), (1., 2., 2.), (2., 4., 4.), (4., 8., 8.)],
+                            'sigmas': [(0.5, 1., 1.), (1., 2., 2.),
+                                       (2., 4., 4.), (4., 8., 8.)],
                             'halo': (8, 16, 16),
                             'channel_agglomeration': 'mean'})
 
@@ -73,8 +96,12 @@ def run_wf(block_id, tmp_folder, max_jobs,
         json.dump(feat_config ,f)
 
     # set number of threads for sum jobs
-    tasks = ['merge_sub_graphs', 'merge_edge_features', 'probs_to_costs',
-             'solve_subproblems', 'reduce_problem', 'solve_global']
+    if use_decomposer:
+        tasks = ['merge_sub_graphs', 'merge_edge_features', 'probs_to_costs',
+                 'solve_subproblems', 'decompose', 'insert']
+    else:
+        tasks = ['merge_sub_graphs', 'merge_edge_features', 'probs_to_costs',
+                 'solve_subproblems', 'reduce_problem', 'solve_global']
 
     for tt in tasks:
         config = configs[tt]
@@ -89,8 +116,9 @@ def run_wf(block_id, tmp_folder, max_jobs,
                                                     costs_path=exp_path, problem_path=exp_path,
                                                     node_labels_path=exp_path, node_labels_key='node_labels',
                                                     output_path=exp_path, output_key='volumes/segmentation',
+                                                    use_decomposition_multicut=use_decomposer,
                                                     rf_path=rf_path,
-                                                    n_scales=1,
+                                                    n_scales=2,
                                                     config_dir='./config',
                                                     tmp_folder=tmp_folder,
                                                     target=target,
@@ -106,8 +134,8 @@ def run_wf(block_id, tmp_folder, max_jobs,
             ds = f[input_key]
             ds.n_threads = max_jobs
             affs = ds[:]
-            # affs = ds[0:3,]
-        # data = [affs.transpose((1, 2, 3, 0))]
+            if affs.ndim == 4:
+                affs = affs.transpose((1, 2, 3, 0))
         data = [affs]
 
         with z5py.File(exp_path) as f:
@@ -223,7 +251,7 @@ def make_mask():
     mask = np.zeros(ds_shape, dtype='uint8')
     center = tuple(sh // 2 for sh in ds_shape)
     size = tuple(3 * ce // 4 for ce in center)
-    bb = tuple(slice(ce - si, ce + si) for ce, si in zip(center, size))
+    bb = (slice(None),) + tuple(slice(ce - si, ce + si) for ce, si in zip(center[1:], size[1:]))
     print(bb)
     mask[bb] = 1
     with h5py.File('./test_val_mask.h5', 'w') as f:
@@ -247,4 +275,4 @@ if __name__ == '__main__':
     block_id = 1
     run_wf(block_id, tmp_folder, max_jobs, target=target, with_rf=with_rf)
     # debug_feats()
-    debug_costs()
+    # debug_costs()

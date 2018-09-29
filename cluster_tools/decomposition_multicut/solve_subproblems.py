@@ -179,8 +179,8 @@ def solve_subproblems(job_id, config_path):
         graph_labels = ds[:]
 
     # load the graph
-    # TODO parallelize ?!
-    graph = ndist.Graph(os.path.join(graph_path, graph_key))
+    graph = ndist.Graph(os.path.join(graph_path, graph_key),
+                        numberOfThreads=n_threads)
     agglomerator = su.key_to_agglomerator(agglomerator_key)
 
     with futures.ThreadPoolExecutor(n_threads) as tp:

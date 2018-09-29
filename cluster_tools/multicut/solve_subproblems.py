@@ -193,6 +193,7 @@ def solve_subproblems(job_id, config_path):
     block_prefix = os.path.join(graph_path, 's%i' % scale,
                                 'sub_graphs', 'block_')
 
+    fu.log("reading costs from %s:%s" % (costs_path, costs_key))
     with vu.file_reader(costs_path, 'r') as f:
         ds = f[costs_key]
         ds.n_threads = n_threads
@@ -201,10 +202,14 @@ def solve_subproblems(job_id, config_path):
     # check if the graph has ignore-label
     with vu.file_reader(graph_path, 'r') as f:
         ignore_label = f[graph_key].attrs['ignoreLabel']
+    fu.log("ignore label is %s" % ('true' if ignore_label else 'false'))
 
     # load the graph
     # TODO parallelize ?!
-    graph = ndist.Graph(os.path.join(graph_path, graph_key))
+    fu.log("reading graph from %s:%s" % (graph_path, graph_key))
+    graph = ndist.Graph(os.path.join(graph_path, graph_key),
+                        numberOfThreads=n_threads)
+    fu.log("using agglomerator %s" % agglomerator_key)
     agglomerator = su.key_to_agglomerator(agglomerator_key)
 
     with futures.ThreadPoolExecutor(n_threads) as tp:
