@@ -3,6 +3,7 @@
 import os
 import sys
 import json
+from concurrent import futures
 
 import numpy as np
 import luigi
@@ -240,6 +241,25 @@ def _ds_block(blocking, block_id, ds_in, ds_out, scale_factor, halo, library_kwa
     fu.log_block_success(block_id)
 
 
+def _submit_blocks(ds_in, ds_out, block_shape, block_list,
+                   scale_factor, halo,
+                   library_kwargs, n_threads):
+
+    # get the blocking
+    shape = ds_out.shape
+    blocking = nt.blocking([0, 0, 0], shape, block_shape)
+
+    if n_threads <= 1:
+        for block_id in block_list:
+            _ds_block(blocking, block_id, ds_in, ds_out,
+                      scale_factor, halo, library_kwargs)
+    else:
+        with futures.ThreadPoolExecutor(n_threads) as tp:
+            tasks = [tp.submit(_ds_block, blocking, block_id, ds_in, ds_out,
+                               scale_factor, halo, library_kwargs) for block_id in block_list]
+            [t.result() for t in tasks]
+
+
 def downscaling(job_id, config_path):
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
@@ -264,19 +284,25 @@ def downscaling(job_id, config_path):
     library_kwargs = config.get('library_kwargs', None)
     if library_kwargs is None:
         library_kwargs = {}
+    n_threads = config.get('threads_per_job', 1)
 
     # submit blocks
-    with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
-        ds_in  = f_in[input_key]
-        ds_out = f_out[output_key]
+    # check if in and out - file are the same
+    # because hdf5 does not like opening files twice
+    if input_path == output_path:
+        with vu.file_reader(output_path) as f:
+            ds_in  = f[input_key]
+            ds_out = f[output_key]
+            _submit_blocks(ds_in, ds_out, block_shape, block_list, scale_factor, halo,
+                           library_kwargs, n_threads)
 
-        shape = ds_out.shape
-        # get the blocking
-        blocking = nt.blocking([0, 0, 0], shape, block_shape)
+    else:
+        with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
+            ds_in  = f_in[input_key]
+            ds_out = f_out[output_key]
+            _submit_blocks(ds_in, ds_out, block_shape, block_list, scale_factor, halo,
+                           library_kwargs, n_threads)
 
-        for block_id in block_list:
-            _ds_block(blocking, block_id, ds_in, ds_out,
-                      scale_factor, halo, library_kwargs)
     # log success
     fu.log_job_success(job_id)
 

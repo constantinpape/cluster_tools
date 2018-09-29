@@ -37,7 +37,8 @@ def learn_rf():
     feats_conf = configs['block_edge_features']
     feats_conf.update({'filters': ['gaussianSmoothing'],
                        'sigmas': [(0.5, 1., 1.), (1., 2., 2.), (2., 4., 4.), (4., 8., 8.)],
-                       'halo': (8, 16, 16)})
+                       'halo': (8, 16, 16),
+                       'channel_agglomeration': 'max'})
     with open('./config/block_edge_features.config', 'w') as f:
         json.dump(feats_conf, f)
 

@@ -19,7 +19,6 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 # Watershed Tasks
 #
 
-# TODO implement watershed with mask
 class WatershedBase(luigi.Task):
     """ Watershed base class
     """
@@ -88,8 +87,6 @@ class WatershedBase(luigi.Task):
         if self.mask_path != '':
             assert self.mask_key != ''
             ws_config.update({'mask_path': self.mask_path, 'mask_key': self.mask_key})
-            if roi_begin is not None:
-                ws_config.update({'roi_begin': roi_begin, 'roi_end': roi_end})
 
         # check if we run a 2-pass watershed
         is_2pass = ws_config.pop('two_pass', False)
@@ -120,6 +117,7 @@ class WatershedBase(luigi.Task):
             else:
                 block_list = self.block_list
                 self.clean_up_for_retry(block_list)
+            self._write_log('scheduling %i blocks to be processed' % len(block_list))
             n_jobs = min(len(block_list), self.max_jobs)
             self._watershed_pass(n_jobs, block_list, ws_config)
 
@@ -197,7 +195,8 @@ def _apply_watershed(input_, dt, offset, config, mask=None):
             else:
                 wsz[mask[z]] = 0
                 inv_mask = np.logical_not(mask[z])
-                max_id = int(wsz[inv_mask].max())
+                # NOTE we might have no pixels in the mask for this slice
+                max_id = int(wsz[inv_mask].max()) if inv_mask.sum() > 0 else 0
                 wsz[inv_mask] += offset
             ws[z] = wsz
             offset += max_id
@@ -234,9 +233,7 @@ def _apply_watershed_with_seeds(input_, dt, offset,
         ws = np.zeros_like(input_, dtype='uint64')
         for z in range(ws.shape[0]):
 
-            # compute seeds for this slice
-
-            # smoothe the distance transform if specified
+            # smooth the distance transform if specified
             dtz = vu.apply_filter(dt[z], 'gaussianSmoothing',
                                   sigma_seeds) if sigma_seeds != 0 else dt[z]
 
@@ -252,7 +249,7 @@ def _apply_watershed_with_seeds(input_, dt, offset,
             seeds = vigra.analysis.labelImageWithBackground(np.isnan(seeds).view('uint8'))
             # remove seeds in mask
             if mask is not None:
-                seeds[mask] = 0
+                seeds[mask[z]] = 0
 
             # add offset to seeds
             seeds[seeds != 0] += offset
@@ -272,21 +269,21 @@ def _apply_watershed_with_seeds(input_, dt, offset,
             # apply size_filter if specified
             if size_filter > 0:
                 # we do not filter ids from the initial seed mask
-                initial_seed_ids = np.unique(initial_seeds_z[initial_seed_mask])
                 seeds, max_id = vu.apply_size_filter(seeds, input_[z], size_filter,
-                                                     exclude=initial_seed_ids)
-            # only increase by actual max-id
+                                                     exclude=initial_seeds_z)
+            # mask the result if we have a mask
+            if mask is not None:
+                seeds[mask[z]] = 0
+                inv_mask = np.logical_not(mask[z])
+                # NOTE we might not have any pixels in mask for 2d slice
+                max_id = int(seeds[inv_mask].max()) if inv_mask.sum() > 0 else 0
+
+            # increase the offset
+            offset += max_id
 
             # map back to original ids
-            seeds = seeds.astype('uint64')
-            seeds = nt.takeDict(new_to_old, seeds)
+            seeds = nt.takeDict(new_to_old, seeds.astype('uint64'))
             ws[z] = seeds
-            if mask is not None:
-                ws[z][mask[z]] = 0
-                max_id = int(ws[z][np.logical_not(mask[z])].max())
-            # only increase offset by actual max-id
-            max_id -= offset
-            offset += max_id
         return ws
 
     # apply the watersheds in 3d
@@ -320,11 +317,10 @@ def _apply_watershed_with_seeds(input_, dt, offset,
         # apply size_filter if specified
         if size_filter > 0:
             # we do not filter ids from the initial seed mask
-            initial_seed_ids = np.unique(initial_seeds_z[initial_seed_mask])
-            seeds, max_id = vu.apply_size_filter(seeds, input_[z], size_filter,
+            initial_seed_ids = np.unique(initial_seeds[initial_seed_mask])
+            seeds, max_id = vu.apply_size_filter(seeds, input_, size_filter,
                                                  exclude=initial_seed_ids)
-        seeds = seeds.astype('uint64')
-        seeds = nt.takeDict(new_to_old, seeds)
+        seeds = nt.takeDict(new_to_old, seeds.astype('uint64'))
         if mask is not None:
             seeds[mask] = 0
         return seeds
@@ -342,7 +338,7 @@ def _get_bbs(blocking, block_id, config):
         block = blocking.getBlock(block_id)
         input_bb = output_bb = vu.block_to_bb(block)
         inner_bb = np.s_[:]
-    return input_bb, inner_bb, outer_bb
+    return input_bb, inner_bb, output_bb
 
 
 def _read_data(ds_in, input_bb, config):
@@ -364,8 +360,8 @@ def _read_data(ds_in, input_bb, config):
 
 def _ws_block(blocking, block_id, ds_in, ds_out, config, pass_):
     fu.log("start processing block %i" % block_id)
-    input_bb, inner_bb, outer_bb = _read_data(blocking, block_id,
-                                              config)
+    input_bb, inner_bb, output_bb = _get_bbs(blocking, block_id,
+                                             config)
     input_ = _read_data(ds_in, input_bb, config)
 
     # smooth input if sigma is given
@@ -403,10 +399,10 @@ def _ws_block(blocking, block_id, ds_in, ds_out, config, pass_):
 
 def _ws_block_masked(blocking, block_id, ds_in, ds_out, mask, config, pass_):
     fu.log("start processing block %i" % block_id)
-    input_bb, inner_bb, outer_bb = _read_data(blocking, block_id,
-                                              config)
+    input_bb, inner_bb, output_bb = _get_bbs(blocking, block_id,
+                                             config)
     # get the mask and check if we have any pixels
-    in_mask = mask[input_bb]
+    in_mask = mask[input_bb].astype('bool')
     out_mask = in_mask[inner_bb]
     if np.sum(out_mask) == 0:
         fu.log_block_success(block_id)
@@ -445,11 +441,29 @@ def _ws_block_masked(blocking, block_id, ds_in, ds_out, mask, config, pass_):
             input_bb = input_bb[1:]
         initial_seeds = ds_out[input_bb]
         ws = _apply_watershed_with_seeds(input_, dt, offset, initial_seeds,
-                                         config, mask)
+                                         config, inv_mask)
         ds_out[output_bb] = ws[inner_bb]
 
     # log block success
     fu.log_block_success(block_id)
+
+
+def load_mask(mask_path, mask_key, shape):
+    with vu.file_reader(mask_path, 'r') as f_mask:
+        mshape = mask.shape
+
+    # check if th mask is at full - shape, otherwise interpolate
+    if mshape == shape:
+        # TODO this only works for n5
+        mask = z5py.File(mask_path)[mask_key]
+
+    else:
+        with vu.file_reader(mask_path, 'r') as f_mask:
+            mask = f_mask[mask_key][:].astype('bool')
+
+        mask = vu.InterpolatedVolume(mask, ds_out.shape, interpolation='spline',
+                                     spline_order=0)
+    return mask
 
 
 def watershed(job_id, config_path):
@@ -497,25 +511,7 @@ def watershed(job_id, config_path):
         # in memory (and we interpolate to get to the full volume)
         # if this does not hold need to change this code!
         if with_mask:
-
-            # helper class to interpolate mask to full volume shape
-            # cut mask to ROI if we have ROI
-            if 'roi_begin' in config:
-                assert 'roi_end' in config
-                with vu.file_reader(mask_path, 'r') as f_mask:
-                    ds_shape = f_mask[mask_key].shape
-                scale = tuple(sh / dsh for sh, dsh in zip(shape, ds_shape))
-                roi_begin = tuple(int(roib / sc) for sc, roib in zip(scale, roi_begin))
-                roi_end = tuple(int(ceil(roie / sc)) for sc, roie in zip(scale, roi_end))
-                slice_ = tuple(slice(roie, roib) for roib, roie in zip(roi_begin, roi_end))
-
-            else:
-                slice_ = np.s_[:]
-
-            with vu.file_reader(mask_path, 'r') as f_mask:
-                mask = f_mask[mask_key][slice_].astype('bool')
-
-            mask = vu.InterpolatedVolume(mask, ds_out.shape, interpolation='nearest')
+            mask = _load_mask(mask_path, mask_key, shape)
             for block_id in block_list:
                 _ws_block_masked(blocking, block_id, ds_in, ds_out, mask, config, pass_)
 

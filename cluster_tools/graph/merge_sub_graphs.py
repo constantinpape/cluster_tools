@@ -35,18 +35,16 @@ class MergeSubGraphsBase(luigi.Task):
         return self.dependency
 
     def clean_up_for_retry(self, block_list):
-        # TODO does this work with the mixin pattern?
         super().clean_up_for_retry(block_list)
         # TODO remove any output of failed blocks because it might be corrupted
 
-    def _run_scale(self, config):
+    def _run_scale(self, config, block_shape, roi_begin, roi_end):
         # make graph file and write shape as attribute
         with vu.file_reader(self.graph_path) as f:
             shape = f.attrs['shape']
 
-        factor = 2**scale
+        factor = 2**self.scale
         block_shape = tuple(sh * factor for sh in block_shape)
-
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
         else:
@@ -62,11 +60,20 @@ class MergeSubGraphsBase(luigi.Task):
         self.wait_for_jobs()
         self.check_jobs(n_jobs)
 
-    def _run_last_scale(self, config):
-        # we don't allow for retry when merging the last scale
-        self.allow_retry = False
+    def _run_last_scale(self, config, block_shape, roi_begin, roi_end):
+        with vu.file_reader(self.graph_path) as f:
+            shape = f.attrs['shape']
+
+        factor = 2**self.scale
+        block_shape = tuple(sh * factor for sh in block_shape)
+        if self.n_retries == 0:
+            block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+        else:
+            block_list = self.block_list
+            self.clean_up_for_retry(block_list)
+
         # prime and run the jobs
-        self.prepare_jobs(1, None, config)
+        self.prepare_jobs(1, block_list, config)
         self.submit_jobs(1)
 
         # wait till jobs finish and check for job success
@@ -88,9 +95,14 @@ class MergeSubGraphsBase(luigi.Task):
                        'scale': self.scale, 'merge_complete_graph': self.merge_complete_graph})
 
         if self.merge_complete_graph:
-            self._run_last_scale(config)
+            self._run_last_scale(config, block_shape, roi_begin, roi_end)
         else:
-            self._run_scale(config)
+            self._run_scale(config, block_shape, roi_begin, roi_end)
+
+    # part of the luigi API
+    def output(self):
+        return luigi.LocalTarget(os.path.join(self.tmp_folder,
+                                              self.task_name + '_s%i.log' % self.scale))
 
 
 
@@ -117,10 +129,9 @@ class MergeSubGraphsLSF(MergeSubGraphsBase, LSFTask):
 #
 
 
-def _merge_graph(graph_path, scale, blocking, shape, n_threads):
+def _merge_graph(graph_path, scale, block_list, blocking, shape, n_threads):
     block_prefix = 's%i/sub_graphs/block_' % scale
     output_key = 'graph'
-    block_list = list(range(blocking.numberOfBlocks))
     ndist.mergeSubgraphs(graph_path,
                          blockPrefix=block_prefix,
                          blockIds=block_list,
@@ -158,6 +169,7 @@ def merge_sub_graphs(job_id, config_path):
     initial_block_shape = config['block_shape']
     graph_path = config['graph_path']
     merge_complete_graph = config['merge_complete_graph']
+    block_list = config['block_list']
 
     with vu.file_reader(graph_path) as f:
         shape = f.attrs['shape']
@@ -170,7 +182,7 @@ def merge_sub_graphs(job_id, config_path):
     if merge_complete_graph:
         fu.log("merge complete graph at scale %i" % scale)
         n_threads = config['threads_per_job']
-        _merge_graph(graph_path, scale, blocking, shape, n_threads)
+        _merge_graph(graph_path, scale, block_list, blocking, shape, n_threads)
 
     else:
         fu.log("merging subgraphs at scale %i" % scale)
@@ -179,7 +191,6 @@ def merge_sub_graphs(job_id, config_path):
         previous_blocking = nt.blocking(roiBegin=[0, 0, 0],
                                         roiEnd=list(shape),
                                         blockShape=previous_block_shape)
-        block_list = config['block_list']
         for block_id in block_list:
             _merge_subblocks(block_id, blocking, previous_blocking, graph_path, scale)
 

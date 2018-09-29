@@ -1,2 +1,2 @@
 from .workflows import MulticutSegmentationWorkflow
-from .learning import LearningWorkflow
+# from .learning import LearningWorkflow

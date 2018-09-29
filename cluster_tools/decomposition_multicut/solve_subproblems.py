@@ -34,7 +34,7 @@ class SolveSubproblemsBase(luigi.Task):
     costs_key = luigi.Parameter()
     graph_path = luigi.Parameter()
     graph_key = luigi.Parameter()
-    scale = luigi.IntParameter()
+    decomposition_path = luigi.Parameter()
     #
     dependency = luigi.TaskParameter()
 
@@ -55,7 +55,7 @@ class SolveSubproblemsBase(luigi.Task):
     def run(self):
         # get the global config and init configs
         self.make_dirs()
-        shebang, block_shape, roi_begin, roi_end = self.global_config_values()
+        shebang = self.global_config_values()[0]
         self.init(shebang)
 
         # load the task config
@@ -65,7 +65,7 @@ class SolveSubproblemsBase(luigi.Task):
         # as well as block shape
         config.update({'costs_path': self.costs_path, 'costs_key': self.costs_key,
                        'graph_path': self.graph_path, 'graph_key': self.graph_key,
-                       'scale': self.scale, 'tmp_folder': self.tmp_folder})
+                       'decomposition_path': self.decomposition_path, 'tmp_folder': self.tmp_folder})
 
         # make folder for the subproblem results
         try:
@@ -73,14 +73,10 @@ class SolveSubproblemsBase(luigi.Task):
         except OSError:
             pass
 
-        with vu.file_reader(self.graph_path, 'r') as f:
-            shape = f.attrs['shape']
-
-        factor = 2**self.scale
-        block_shape = tuple(bs * factor for bs in block_shape)
-
         if self.n_retries == 0:
-            block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+            with vu.file_reader(self.decomposition_path, 'r') as f:
+                max_id = f['graph_labels'].attrs['max_id']
+            block_list = list(range(1, max_id + 1))
         else:
             block_list = self.block_list
             self.clean_up_for_retry(block_list)
@@ -93,11 +89,6 @@ class SolveSubproblemsBase(luigi.Task):
         # wait till jobs finish and check for job success
         self.wait_for_jobs()
         self.check_jobs(n_jobs)
-
-    # part of the luigi API
-    def output(self):
-        return luigi.LocalTarget(os.path.join(self.tmp_folder,
-                                              self.task_name + '_s%i.log' % self.scale))
 
 
 class SolveSubproblemsLocal(SolveSubproblemsBase, LocalTask):
@@ -123,33 +114,23 @@ class SolveSubproblemsLSF(SolveSubproblemsBase, LSFTask):
 #
 
 
-# TODO relabel the local graph ???
-def _solve_block_problem(block_id, graph, block_prefix, costs, agglomerator, ignore_label):
-    fu.log("start processing block %i" % block_id)
+# TODO relabel the local graph !!!
+def _solve_component(component_id, graph, graph_labels, costs, agglomerator):
+    fu.log("start processing block %i" % component_id)
 
-    # load the nodes in this sub-block and map them
-    # to our current node-labeling
-    block_path = block_prefix + str(block_id)
-    assert os.path.exists(block_path), block_path
-    nodes = ndist.loadNodes(block_path)
-    # if we have an ignore label, remove zero from the nodes
-    # (nodes are sorted, so it will always be at pos 0)
-    if ignore_label and nodes[0] == 0:
-        nodes = nodes[1:]
-        if len(nodes) == 0:
-            fu.log_block_success(block_id)
-            return None
+    # get the nodes belonging to the current
+    # component
+    nodes = np.where(graph_labels == component_id)[0].astype('uint64')
 
-    inner_edges, outer_edges, sub_uvs = graph.extractSubgraphFromNodes(nodes)
-
-    # if we had only a single node (i.e. no edge, return the outer edges)
-    if len(nodes) == 1:
-        fu.log_block_success(block_id)
-        return outer_edges
-
+    inner_edges, _, sub_uvs = graph.extractSubgraphFromNodes(nodes)
     assert len(sub_uvs) == len(inner_edges)
-    assert len(sub_uvs) > 0, str(block_id)
 
+    # if we had only a single node (i.e. no edge, return None)
+    if len(sub_uvs) == 0:
+        fu.log_block_success(component_id)
+        return None
+
+    # TODO relabel !
     n_local_nodes = int(sub_uvs.max() + 1)
     sub_graph = nifty.graph.undirectedGraph(n_local_nodes)
     sub_graph.insertEdges(sub_uvs)
@@ -162,9 +143,8 @@ def _solve_block_problem(block_id, graph, block_prefix, costs, agglomerator, ign
 
     assert len(sub_edgeresult) == len(inner_edges)
     cut_edge_ids = inner_edges[sub_edgeresult]
-    cut_edge_ids = np.concatenate([cut_edge_ids, outer_edges])
 
-    fu.log_block_success(block_id)
+    fu.log_block_success(component_id)
     return cut_edge_ids
 
 
@@ -181,23 +161,21 @@ def solve_subproblems(job_id, config_path):
     costs_key = config['costs_key']
     graph_path = config['graph_path']
     graph_key = config['graph_key']
+    decomposition_path = config['decomposition_path']
     tmp_folder = config['tmp_folder']
-    scale = config['scale']
-    block_list = config['block_list']
+    component_list = config['block_list']
     n_threads = config['threads_per_job']
     agglomerator_key = config['agglomerator']
-
-    block_prefix = os.path.join(graph_path, 's%i' % scale,
-                                'sub_graphs', 'block_')
 
     with vu.file_reader(costs_path, 'r') as f:
         ds = f[costs_key]
         ds.n_threads = n_threads
         costs = ds[:]
 
-    # check if the graph has ignore-label
-    with vu.file_reader(graph_path, 'r') as f:
-        ignore_label = f[graph_key].attrs['ignoreLabel']
+    with vu.file_reader(decomposition_path, 'r') as f:
+        ds = f['graph_labels']
+        ds.n_threads = n_threads
+        graph_labels = ds[:]
 
     # load the graph
     # TODO parallelize ?!
@@ -205,27 +183,17 @@ def solve_subproblems(job_id, config_path):
     agglomerator = su.key_to_agglomerator(agglomerator_key)
 
     with futures.ThreadPoolExecutor(n_threads) as tp:
-        tasks = [tp.submit(_solve_block_problem,
-                           block_id, graph, block_prefix,
-                           costs, agglomerator, ignore_label)
-                 for block_id in block_list]
+        tasks = [tp.submit(_solve_component,
+                           component_id, graph, graph_labels,
+                           costs, agglomerator)
+                 for component_id in component_list]
         results = [t.result() for t in tasks]
 
-    res_folder = os.path.join(tmp_folder, 'subproblem_results')
-    # save the individual block results for debugging
-    # TODO should be a parameter
-    # TODO could be parallelized
-    if False:
-        for block_id, res in zip(block_list, results):
-            if res is None:
-                continue
-            block_res_path = os.path.join(res_folder, 's%i_block%i.npy' % (scale, block_id))
-            np.save(block_res_path, res)
-
     cut_edge_ids = np.concatenate([res for res in results if res is not None])
-    cut_edge_ids = np.unique(cut_edge_ids).astype('uint64')
+    cut_edge_ids = np.unique(cut_edge_ids)
 
-    job_res_path = os.path.join(res_folder, 's%i_job%i.npy' % (scale, job_id))
+    res_folder = os.path.join(tmp_folder, 'subproblem_results')
+    job_res_path = os.path.join(res_folder, 'job%i.npy' % job_id)
     fu.log("saving cut edge results to %s" % job_res_path)
     np.save(job_res_path, cut_edge_ids)
     fu.log_job_success(job_id)

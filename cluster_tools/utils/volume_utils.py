@@ -1,11 +1,18 @@
 import json
+from functools import partial
 from math import floor, ceil
 
 import numpy as np
 import h5py
 import z5py
 import vigra
-import fastfilters
+
+# use vigra filters as fallback if we don't have
+# fastfilters available
+try:
+    import fastfilters as ff
+except ImportError:
+    import vigra.filters as ff
 
 from nifty.tools import blocking
 
@@ -37,9 +44,9 @@ def blocks_in_volume(shape, block_shape,
         assert roi_end is not None
         roi_end = [sh if re is None else re for re, sh in zip(roi_end, shape)]
         block_list = blocking_.getBlockIdsOverlappingBoundingBox(list(roi_begin),
-                                                                 list(roi_end),
-                                                                 [0, 0, 0])
-        block_list = [bl.tolist() for bl in block_list]
+                                                                 list(roi_end))
+        block_list = block_list.tolist()
+        assert len(block_list) == len(set(block_list)), "%i, %i" % (len(block_list), len(set(block_list)))
         return block_list
 
 
@@ -56,11 +63,11 @@ def apply_filter(input_, filter_name, sigma, apply_in_2d=False):
         return filt(input_, sigma)
     # apply 2d filter to individual slices
     elif apply_in_2d:
-        filt = getattr(fastfilters, filter_name)
+        filt = getattr(ff, filter_name)
         return np.concatenate([filt(in_z, sigma)[None] for in_z in input_], axis=0)
     # apply 3d fillter
     else:
-        filt = getattr(fastfilters, filter_name)
+        filt = getattr(ff, filter_name)
         return filt(input_, sigma)
 
 
@@ -113,7 +120,7 @@ def make_checkerboard_block_lists(blocking, roi_begin=None, roi_end=None):
 
 
 class InterpolatedVolume(object):
-    def __init__(self, volume, output_shape, interpolation='nearest'):
+    def __init__(self, volume, output_shape, interpolation='spline', spline_order=0):
         assert interpolation in ('nearest', 'linear', 'spline')
         assert isinstance(volume, np.ndarray)
         assert len(output_shape) == volume.ndim == 3, "Only 3d supported"
@@ -134,21 +141,40 @@ class InterpolatedVolume(object):
             except ValueError:
                 self.min = np.finfo(np.dtype(self.dtype)).min
                 self.max = np.finfo(np.dtype(self.dtype)).max
+
+        # FIXME vigra nearest and linear are only implemented
+        # for images. For now, spline with order 0 seems to do the job
+        # (should be the same as nearest interpolation ?!)
         if interpolation == 'nearest':
             self.interpol_function = vigra.sampling.resizeImageNoInterpolation
         elif interpolation == 'linear':
             self.interpol_function = vigra.sampling.resizeImageLinearInterpolation
         elif interpolation == 'spline':
-            self.interpol_function = vigra.sampling.resize
+            self.interpol_function = partial(vigra.sampling.resize, order=spline_order)
 
     def _interpolate(self, data, shape):
-        data = vigra.sampling.resize(data.astype('float32'), shape=shape)
+        data = self.interpol_function(data.astype('float32'), shape=shape)
         np.clip(data, self.min, self.max, out=data)
         return data.astype(self.dtype)
 
-    # TODO implement index normalization
+    def _normalize_index(self, index):
+        if isinstance(index, slice):
+            index = (index,)
+        else:
+            assert isinstance(index, tuple)
+            assert len(index) <= len(self.shape)
+            assert all(isinstance(ind, slice) for ind in index)
+
+        if len(index) < len(self.shape):
+            n_missing = len(self.shape) - len(index)
+            index = index + n_missing * (slice(None),)
+        index = tuple(slice(0 if ind.start is None else ind.start,
+                            sh if ind.stop is None else ind.stop)
+                      for ind, sh in zip(index, self.shape))
+        return index
+
     def __getitem__(self, index):
-        assert len(index) == 3
+        index = self._normalize_index(index)
         ret_shape = tuple(ind.stop - ind.start for ind in index)
         index_ = tuple(slice(int(floor(ind.start * sc)),
                              int(ceil(ind.stop * sc))) for ind, sc in zip(index, self.scale))

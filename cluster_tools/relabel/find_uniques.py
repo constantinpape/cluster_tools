@@ -48,6 +48,7 @@ class FindUniquesBase(luigi.Task):
         # we don't need any additional config besides the paths
         config = {"input_path": self.input_path, "input_key": self.input_key,
                   "block_shape": block_shape, "tmp_folder": self.tmp_folder}
+        self._write_log('scheduling %i blocks to be processed' % len(block_list))
 
         # prime and run the jobs
         self.prepare_jobs(n_jobs, block_list, config)
