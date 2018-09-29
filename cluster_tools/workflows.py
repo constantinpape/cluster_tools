@@ -43,12 +43,13 @@ class MulticutSegmentationWorkflow(WorkflowBase):
     # number of jobs used for sub multicuts
     max_jobs_multicut = luigi.IntParameter(default=1)
     # use decomposer workflow
-    use_demposition_multicut = luigi.BoolParameter(default=False)
+    use_decomposition_multicut = luigi.BoolParameter(default=False)
+    skip_ws = luigi.BoolParameter(default=False)
     # path to random forest (if available)
     rf_path = luigi.Parameter(default='')
     # TODO list to skip jobs
 
-    def _get_mc_wf(self):
+    def _get_mc_wf(self, dep):
         # hard-coded keys
         graph_key = 'graph'
         features_key = 'features'
@@ -58,7 +59,7 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                                           max_jobs=self.max_jobs_multicut,
                                           config_dir=self.config_dir,
                                           target=self.target,
-                                          dependency=costs_wf,
+                                          dependency=dep,
                                           graph_path=self.graph_path,
                                           graph_key=graph_key,
                                           costs_path=self.costs_path,
@@ -71,7 +72,7 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                                      max_jobs=self.max_jobs_multicut,
                                      config_dir=self.config_dir,
                                      target=self.target,
-                                     dependency=costs_wf,
+                                     dependency=dep,
                                      graph_path=self.graph_path,
                                      graph_key=graph_key,
                                      costs_path=self.costs_path,
@@ -88,17 +89,21 @@ class MulticutSegmentationWorkflow(WorkflowBase):
         graph_key = 'graph'
         features_key = 'features'
         costs_key = 'costs'
-        ws_wf = WatershedWorkflow(tmp_folder=self.tmp_folder,
-                                  max_jobs=self.max_jobs,
-                                  config_dir=self.config_dir,
-                                  target=self.target,
-                                  dependency=self.dependency,
-                                  input_path=self.input_path,
-                                  input_key=self.input_key,
-                                  output_path=self.ws_path,
-                                  output_key=self.ws_key,
-                                  mask_path=self.mask_path,
-                                  mask_key=self.mask_key)
+        if self.skip_ws:
+            assert os.path.exists(os.path.join(self.ws_path, self.ws_key))
+            ws_wf = self.dependency
+        else:
+            ws_wf = WatershedWorkflow(tmp_folder=self.tmp_folder,
+                                      max_jobs=self.max_jobs,
+                                      config_dir=self.config_dir,
+                                      target=self.target,
+                                      dependency=self.dependency,
+                                      input_path=self.input_path,
+                                      input_key=self.input_key,
+                                      output_path=self.ws_path,
+                                      output_key=self.ws_key,
+                                      mask_path=self.mask_path,
+                                      mask_key=self.mask_key)
         # return ws_wf
         # TODO in the current implementation, we can only compute the
         # graph with n_scales=1, otherwise we will clash with the
@@ -138,7 +143,7 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                                      output_path=self.costs_path,
                                      output_key=costs_key,
                                      rf_path=self.rf_path)
-        mc_wf = self._get_mc_wf()
+        mc_wf = self._get_mc_wf(costs_wf)
         write_task = getattr(write_tasks,
                              self._get_task_name('Write'))
         t = write_task(tmp_folder=self.tmp_folder,
@@ -153,12 +158,12 @@ class MulticutSegmentationWorkflow(WorkflowBase):
         return t
 
     @staticmethod
-    def get_config():
+    def get_config(use_decomposition_multicut=False):
         config = {**WatershedWorkflow.get_config(),
                   **GraphWorkflow.get_config(),
                   **EdgeFeaturesWorkflow.get_config(),
                   **EdgeCostsWorkflow.get_config()}
-        if self.use_decomposition_multicut:
+        if use_decomposition_multicut:
             config.update(**DecompositionWorkflow.get_config())
         else:
             config.update(**MulticutWorkflow.get_config())
