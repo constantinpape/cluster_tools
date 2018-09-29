@@ -43,7 +43,6 @@ class InitialSubGraphsBase(luigi.Task):
         return config
 
     def clean_up_for_retry(self, block_list):
-        # TODO does this work with the mixin pattern?
         super().clean_up_for_retry(block_list)
         # TODO remove any output of failed blocks because it might be corrupted
 

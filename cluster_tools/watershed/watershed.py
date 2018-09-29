@@ -448,24 +448,6 @@ def _ws_block_masked(blocking, block_id, ds_in, ds_out, mask, config, pass_):
     fu.log_block_success(block_id)
 
 
-def load_mask(mask_path, mask_key, shape):
-    with vu.file_reader(mask_path, 'r') as f_mask:
-        mshape = mask.shape
-
-    # check if th mask is at full - shape, otherwise interpolate
-    if mshape == shape:
-        # TODO this only works for n5
-        mask = z5py.File(mask_path)[mask_key]
-
-    else:
-        with vu.file_reader(mask_path, 'r') as f_mask:
-            mask = f_mask[mask_key][:].astype('bool')
-
-        mask = vu.InterpolatedVolume(mask, ds_out.shape, interpolation='spline',
-                                     spline_order=0)
-    return mask
-
-
 def watershed(job_id, config_path):
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
@@ -511,7 +493,7 @@ def watershed(job_id, config_path):
         # in memory (and we interpolate to get to the full volume)
         # if this does not hold need to change this code!
         if with_mask:
-            mask = _load_mask(mask_path, mask_key, shape)
+            mask = vu.load_mask(mask_path, mask_key, shape)
             for block_id in block_list:
                 _ws_block_masked(blocking, block_id, ds_in, ds_out, mask, config, pass_)
 
