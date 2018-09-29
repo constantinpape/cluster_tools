@@ -177,7 +177,8 @@ def _get_new_edges(uv_ids, node_labeling, costs, accumulation_method, n_threads)
     return new_uv_ids, edge_labeling, new_costs
 
 
-def _serialize_new_problem(graph_path, n_new_nodes, new_uv_ids,
+def _serialize_new_problem(graph_path, graph_key,
+                           n_new_nodes, new_uv_ids,
                            node_labeling, edge_labeling,
                            new_costs, new_initial_node_labeling,
                            shape, scale, initial_block_shape,
@@ -215,7 +216,10 @@ def _serialize_new_problem(graph_path, n_new_nodes, new_uv_ids,
     n_new_edges = len(new_uv_ids)
     g_out.attrs['numberOfNodes'] = n_new_nodes
     g_out.attrs['numberOfEdges'] = n_new_edges
-    g_out.attrs['ignoreLabel'] = False
+
+    with vu.file_reader(graph_path, 'r') as f:
+        ignore_label = f[graph_key].attrs['ignoreLabel']
+    g_out.attrs['ignoreLabel'] = ignore_label
 
     shape_edges = (n_new_edges, 2)
     edge_chunks = (min(n_new_edges, 262144), 2)
@@ -331,7 +335,8 @@ def reduce_problem(job_id, config_path):
 
     # serialize the input graph and costs for the next scale level
     fu.log("serialize new problem to %s/s%i" % (output_path, scale))
-    n_new_edges = _serialize_new_problem(graph_path, n_new_nodes, new_uv_ids,
+    n_new_edges = _serialize_new_problem(graph_path, graph_key,
+                                         n_new_nodes, new_uv_ids,
                                          node_labeling, edge_labeling,
                                          new_costs, new_initial_node_labeling,
                                          shape, scale, initial_block_shape,
