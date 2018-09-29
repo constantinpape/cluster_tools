@@ -10,7 +10,7 @@ import z5py
 from cluster_tools import MulticutSegmentationWorkflow
 
 
-def run(shebang):
+def run(shebang, with_rf=False):
     example_path = '/home/cpape/Work/data/isbi2012/cluster_example/isbi_train.n5'
 
     input_key = 'volumes/affinties'
@@ -30,6 +30,16 @@ def run(shebang):
     with open('./configs/watershed.config', 'w') as f:
         json.dump(ws_conf, f)
 
+    if with_rf:
+        feat_config = configs['block_edge_features']
+        feat_config.update({'filters': ['gaussianSmoothing', 'laplacianOfGaussian'],
+                            'sigmas': [1., 2., 4.], 'apply_in_2d': True})
+        with open('./configs/block_edge_features.config', 'w') as f:
+            json.dump(feat_config, f)
+        rf_path = './rf.pkl'
+    else:
+        rf_path = ''
+
     ret = luigi.build([MulticutSegmentationWorkflow(input_path=example_path,
                                                     input_key='volumes/affinities',
                                                     ws_path=example_path,
@@ -42,6 +52,7 @@ def run(shebang):
                                                     node_labels_key='node_labels',
                                                     output_path=example_path,
                                                     output_key='volumes/segmentation',
+                                                    rf_path=rf_path,
                                                     n_scales=1,
                                                     config_dir='./configs',
                                                     tmp_folder='./tmp',
@@ -58,4 +69,4 @@ def run(shebang):
 
 if __name__ == '__main__':
     shebang = '#! /home/cpape/Work/software/conda/miniconda3/envs/affogato/bin/python'
-    run(shebang)
+    run(shebang, with_rf=True)

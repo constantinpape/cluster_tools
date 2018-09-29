@@ -15,7 +15,7 @@ def run(shebang):
 
     input_dict = {'train': (example_path, 'volumes/affinities')}
     labels_dict = {'train': (example_path, 'volumes/watersheds')}
-    groundtruth_dict = {'train': (example_path, 'volumes/segmentation')}
+    groundtruth_dict = {'train': (example_path, 'volumes/groundtruth')}
 
     max_jobs = 8
 
@@ -26,6 +26,12 @@ def run(shebang):
                         'block_shape': (25, 256, 256)})
     with open('./configs/global.config', 'w') as f:
         json.dump(global_conf, f)
+
+    feat_config = configs['block_edge_features']
+    feat_config.update({'filters': ['gaussianSmoothing', 'laplacianOfGaussian'],
+                        'sigmas': [1., 2., 4.], 'apply_in_2d': True})
+    with open('./configs/block_edge_features.config', 'w') as f:
+        json.dump(feat_config, f)
 
     rf_path = './rf.pkl'
     ret = luigi.build([LearningWorkflow(input_dict=input_dict,
