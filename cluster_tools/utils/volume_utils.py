@@ -6,7 +6,13 @@ import numpy as np
 import h5py
 import z5py
 import vigra
-import fastfilters
+
+# use vigra filters as fallback if we don't have
+# fastfilters available
+try:
+    import fastfilters as ff
+except ImportError:
+    import vigra.filters as ff
 
 from nifty.tools import blocking
 
@@ -57,11 +63,11 @@ def apply_filter(input_, filter_name, sigma, apply_in_2d=False):
         return filt(input_, sigma)
     # apply 2d filter to individual slices
     elif apply_in_2d:
-        filt = getattr(fastfilters, filter_name)
+        filt = getattr(ff, filter_name)
         return np.concatenate([filt(in_z, sigma)[None] for in_z in input_], axis=0)
     # apply 3d fillter
     else:
-        filt = getattr(fastfilters, filter_name)
+        filt = getattr(ff, filter_name)
         return filt(input_, sigma)
 
 

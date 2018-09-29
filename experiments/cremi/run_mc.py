@@ -11,12 +11,14 @@ import z5py
 from cluster_tools import MulticutSegmentationWorkflow
 
 
-def run_wf(sample, tmp_folder, max_jobs, target='local'):
+def run_wf(sample, max_jobs, target='local'):
 
-    input_path = '/g/kreshuk/data/arendt/platyneris_v1/membrane_training_data/validation/predictions/val_block_0%i_unet_lr_v3_bmap.n5' % block_id
-    input_key = 'data'
-    mask_key = 'data'
-    ws_key = ''
+    tmp_folder = './tmp_%s' % sample
+    input_path = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cremi_new/sample%s.n5' % sample
+    exp_path = input_path[:-3] + '_exp.n5'
+    input_key = 'predictions/full_affs'
+    mask_key = 'masks/original_mask'
+    ws_key = 'segmentation/watershed'
 
     rf_path = ''
 
@@ -28,7 +30,7 @@ def run_wf(sample, tmp_folder, max_jobs, target='local'):
     roi_begin, roi_end = None, None
 
     global_config = configs['global']
-    global_config.update({'shebang': "#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env/bin/python",
+    global_config.update({'shebang': "#! /groups/saalfeld/home/papec/Work/software/conda/miniconda3/envs/cluster_env/bin/python",
                           'roi_begin': roi_begin,
                           'roi_end': roi_end})
     with open('./config/global.config', 'w') as f:
@@ -41,15 +43,7 @@ def run_wf(sample, tmp_folder, max_jobs, target='local'):
         json.dump(subprob_config, f)
 
     feat_config = configs['block_edge_features']
-    if with_rf:
-        feat_config.update({'filters': ['gaussianSmoothing'],
-                            'sigmas': [(0.5, 1., 1.), (1., 2., 2.),
-                                       (2., 4., 4.), (4., 8., 8.)],
-                            'halo': (8, 16, 16),
-                            'channel_agglomeration': 'mean'})
-
-    else:
-        feat_config.update({'offsets': [[-1, 0, 0], [0, -1, 0], [0, 0, -1]]})
+    feat_config.update({'offsets': [[-1, 0, 0], [0, -1, 0], [0, 0, -1]]})
     with open('./config/block_edge_features.config', 'w') as f:
         json.dump(feat_config ,f)
 
@@ -64,13 +58,14 @@ def run_wf(sample, tmp_folder, max_jobs, target='local'):
             json.dump(config, f)
 
     ret = luigi.build([MulticutSegmentationWorkflow(input_path=input_path, input_key=input_key,
-                                                    mask_path=mask_path, mask_key=mask_key,
+                                                    mask_path=input_path, mask_key=mask_key,
                                                     ws_path=input_path, ws_key=ws_key,
                                                     graph_path=exp_path, features_path=exp_path,
                                                     costs_path=exp_path, problem_path=exp_path,
                                                     node_labels_path=exp_path, node_labels_key='node_labels',
-                                                    output_path=exp_path, output_key='volumes/segmentation',
+                                                    output_path=input_path, output_key='segmentations/multicut',
                                                     use_decomposition_multicut=False,
+                                                    skip_ws=True,
                                                     rf_path=rf_path,
                                                     n_scales=2,
                                                     config_dir='./config',
@@ -80,20 +75,9 @@ def run_wf(sample, tmp_folder, max_jobs, target='local'):
 
 
 if __name__ == '__main__':
-    with_rf = False
-
-    if with_rf:
-        tmp_folder = './tmp_plat_val_rf'
-    else:
-        tmp_folder = './tmp_plat_val'
-
-    # target = 'slurm'
-    # max_jobs = 32
 
     target = 'local'
-    max_jobs = 8
+    max_jobs = 32
 
-    block_id = 1
-    run_wf(block_id, tmp_folder, max_jobs, target=target, with_rf=with_rf)
-    # debug_feats()
-    # debug_costs()
+    for sample in ('A',):
+        run_wf(sample, max_jobs, target=target)
