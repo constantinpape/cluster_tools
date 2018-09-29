@@ -6,6 +6,7 @@ import json
 from concurrent import futures
 
 import numpy as np
+import vigra
 import luigi
 import nifty
 import nifty.tools as nt
@@ -123,7 +124,6 @@ class SolveSubproblemsLSF(SolveSubproblemsBase, LSFTask):
 #
 
 
-# TODO relabel the local graph ???
 def _solve_block_problem(block_id, graph, block_prefix, costs, agglomerator, ignore_label):
     fu.log("start processing block %i" % block_id)
 
@@ -150,7 +150,10 @@ def _solve_block_problem(block_id, graph, block_prefix, costs, agglomerator, ign
     assert len(sub_uvs) == len(inner_edges)
     assert len(sub_uvs) > 0, str(block_id)
 
-    n_local_nodes = int(sub_uvs.max() + 1)
+    # relabel the sub-uvs for more efficient processing
+    sub_uvs, max_id, _ = vigra.analysis.relabelConsecutive(sub_uvs, start_label=0,
+                                                           keep_zeros=False)
+    n_local_nodes = max_id + 1
     sub_graph = nifty.graph.undirectedGraph(n_local_nodes)
     sub_graph.insertEdges(sub_uvs)
 

@@ -114,7 +114,6 @@ class SolveSubproblemsLSF(SolveSubproblemsBase, LSFTask):
 #
 
 
-# TODO relabel the local graph !!!
 def _solve_component(component_id, graph, graph_labels, costs, agglomerator):
     fu.log("start processing block %i" % component_id)
 
@@ -130,8 +129,10 @@ def _solve_component(component_id, graph, graph_labels, costs, agglomerator):
         fu.log_block_success(component_id)
         return None
 
-    # TODO relabel !
-    n_local_nodes = int(sub_uvs.max() + 1)
+    # relabel the sub-uvs for more efficient processing
+    sub_uvs, max_id, _ = vigra.analysis.relabelConsecutive(sub_uvs, start_label=0,
+                                                           keep_zeros=False)
+    n_local_nodes = max_id + 1
     sub_graph = nifty.graph.undirectedGraph(n_local_nodes)
     sub_graph.insertEdges(sub_uvs)
 
