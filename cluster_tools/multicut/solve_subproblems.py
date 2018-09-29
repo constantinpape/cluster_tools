@@ -140,7 +140,8 @@ def _solve_block_problem(block_id, graph, block_prefix, costs, agglomerator, ign
             fu.log_block_success(block_id)
             return None
 
-    inner_edges, outer_edges, sub_uvs = graph.extractSubgraphFromNodes(nodes)
+    # we allow for invalid nodes here, which can occur for un-connected graphs resulting from bad masks ...
+    inner_edges, outer_edges, sub_uvs = graph.extractSubgraphFromNodes(nodes, allowInvalidNodes=True)
 
     # if we had only a single node (i.e. no edge, return the outer edges)
     if len(nodes) == 1:

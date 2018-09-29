@@ -124,8 +124,10 @@ def _merge_nodes(tmp_folder, scale, n_jobs, nodes, uv_ids, initial_node_labeling
     # TODO we could parallelize this
     cut_edge_ids = np.concatenate([np.load(os.path.join(tmp_folder, 'subproblem_results',
                                                         's%i_job%i.npy' % (scale, job_id)))
-                                   for job_id in range(n_jobs)])
-    cut_edge_ids = np.unique(cut_edge_ids).astype('uint64')
+                                   for job_id in range(n_jobs)]).astype('uint64')
+    # we only need to run unique if we have more than one job
+    if n_jobs > 1:
+        cut_edge_ids = np.unique(cut_edge_ids)
 
     assert len(cut_edge_ids) < n_edges, "%i = %i, does not reduce problem" % (len(cut_edge_ids),
                                                                               n_edges)
@@ -139,14 +141,20 @@ def _merge_nodes(tmp_folder, scale, n_jobs, nodes, uv_ids, initial_node_labeling
 
     # get the node results and label them consecutively
     node_labeling = ufd.find(nodes)
-    node_labeling, max_new_id, _ = relabelConsecutive(node_labeling, start_label=0,
-                                                      keep_zeros=False)
+    node_labeling, max_new_id, _ = relabelConsecutive(node_labeling, start_label=0, keep_zeros=False)
+    # make sure that zero is still mapped to zero
+    if node_labeling[0] != 0:
+        # if it isn't, swap labels accordingly
+        zero_label = node_labeling[0]
+        to_relabel = node_labeling == 0
+        node_labeling[node_labeling == zero_label] = 0
+        node_labeling[to_relabel] = zero_laebl
     n_new_nodes = max_new_id + 1
 
     # get the labeling of initial nodes
     if initial_node_labeling is None:
         # if we don't have an initial node labeling, we are in the first scale.
-        # here, the graph nodes might not be consecutive / starting at zero.
+        # here, the graph nodes might not be consecutive / not start at zero.
         # to keep the node labeling valid, we must make the labeling consecutive by inserting zeros
 
         # check if `nodes` are consecutive and start at zero
@@ -170,10 +178,11 @@ def _get_new_edges(uv_ids, node_labeling, costs, accumulation_method, n_threads)
     edge_labeling = edge_mapping.edgeMapping()
     new_costs = edge_mapping.mapEdgeValues(costs, accumulation_method,
                                            numberOfThreads=n_threads)
-    assert new_uv_ids.max() <= node_labeling.max(), "%i, %i" % (new_uv_ids.max(),
+    assert new_uv_ids.max() == node_labeling.max(), "%i, %i" % (new_uv_ids.max(),
                                                                 node_labeling.max())
     assert len(new_uv_ids) == len(new_costs)
     assert len(edge_labeling) == len(uv_ids)
+
     return new_uv_ids, edge_labeling, new_costs
 
 
@@ -199,18 +208,21 @@ def _serialize_new_problem(graph_path, graph_key,
     new_factor = 2**(scale + 1)
     new_block_shape = [new_factor * bs for bs in initial_block_shape]
 
+    # NOTE we do not need to serialize the sub-edges in the current implementation
+    # of the blockwise multicut workflow, because we always load the full graph
+    # in 'solve_subproblems'
+    # serialize the new sub-graphs
     block_ids = vu.blocks_in_volume(shape, new_block_shape, roi_begin, roi_end)
-
     ndist.serializeMergedGraph(graphBlockPrefix=block_in_prefix,
                                shape=shape,
                                blockShape=block_shape,
                                newBlockShape=new_block_shape,
                                newBlockIds=block_ids,
-                               numberOfNewNodes=n_new_nodes,
                                nodeLabeling=node_labeling,
                                edgeLabeling=edge_labeling,
                                graphOutPrefix=block_out_prefix,
-                               numberOfThreads=n_threads)
+                               numberOfThreads=n_threads,
+                               serializeEdges=False)
 
     # serialize the full graph for the next scale level
     n_new_edges = len(new_uv_ids)
@@ -221,37 +233,21 @@ def _serialize_new_problem(graph_path, graph_key,
         ignore_label = f[graph_key].attrs['ignoreLabel']
     g_out.attrs['ignoreLabel'] = ignore_label
 
-    shape_edges = (n_new_edges, 2)
-    edge_chunks = (min(n_new_edges, 262144), 2)
-    ds_edges = g_out.create_dataset('edges', dtype='uint64',
-                                    shape=shape_edges, chunks=edge_chunks)
-    ds_edges.n_threads = n_threads
-    ds_edges[:] = new_uv_ids
+    def _serialize(name, data, dtype='uint64'):
+        ser_chunks = (min(data.shape[0], 262144), 2) if data.ndim == 2 else\
+            (min(data.shape[0], 262144),)
+        ds_ser = g_out.require_dataset(name, dtype=dtype, shape=data.shape,
+                                       chunks=ser_chunks, compression='gzip')
+        ds_ser.n_threads = n_threads
+        ds_ser[:] = data
 
-    new_nodes = np.unique(new_uv_ids)
-    shape_nodes = (len(new_nodes),)
-    node_chunks = (min(len(new_nodes), 262144),)
-    ds_nodes = g_out.create_dataset('nodes', dtype='uint64',
-                                    shape=shape_nodes, chunks=node_chunks)
-    ds_nodes.n_threads = n_threads
-    ds_nodes[:] = new_nodes
-
-    # serialize the node labeling
-    shape_node_labeling = (len(new_initial_node_labeling),)
-    node_chunks = (min(len(new_initial_node_labeling), 262144),)
-    ds_node_labeling = g_out.create_dataset('node_labeling', dtype='uint64',
-                                            shape=shape_node_labeling,
-                                            chunks=node_chunks)
-    ds_node_labeling.n_threads = n_threads
-    ds_node_labeling[:] = new_initial_node_labeling
-
-    # serialize the new costs
-    shape_costs = (len(new_costs),)
-    cost_chunks = (min(len(new_costs), 262144),)
-    ds_costs = g_out.require_dataset('costs', dtype='float32',
-                                     shape=shape_costs, chunks=cost_chunks)
-    ds_costs.n_threads = n_threads
-    ds_costs[:] = new_costs
+    # NOTE we don not need to serialize the nodes cause they are
+    # consecutive anyways
+    # _serialize('nodes', np.arange(n_new_nodes).astype('uint64'))
+    # serialize the new graph, the node labeling and the new costs
+    _serialize('edges', new_uv_ids)
+    _serialize('node_labeling', new_initial_node_labeling)
+    _serialize('costs', new_costs, dtype='float32')
 
     return n_new_edges
 
