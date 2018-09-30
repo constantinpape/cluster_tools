@@ -44,6 +44,8 @@ class DownscalingBase(luigi.Task):
     effective_scale_factor = luigi.ListParameter(default=[])
     dependency = luigi.TaskParameter(default=DummyTask())
 
+    interpolatable_types = ('float32', 'float64', 'uint8', 'uint16')
+
     def requires(self):
         return self.dependency
 
@@ -81,13 +83,24 @@ class DownscalingBase(luigi.Task):
             prev_shape = f[self.input_key].shape
             dtype = f[self.input_key].dtype
         assert len(prev_shape) == 3, "Only support 3d inputs"
-        assert dtype in ('float32', 'float64', 'uint8', 'uint16'), "Need float, byte or short input, got %s" % dtype
+
+
         shape = self.downsample_shape(prev_shape)
         self._write_log('downscaling with factor %s from shape %s to %s' % (str(self.scale_factor),
                                                                             str(prev_shape), str(shape)))
 
         # load the downscaling config
         task_config = self.get_task_config()
+
+        # make sure that we have order 0 downscaling if our datatype is not interpolatable
+        library = task_config.get('library', 'vigra')
+        if library != 'vigra':
+            raise NotImplementedError("Donwnscaling is only supported via vigra, not %s" % library)
+        if dtype not in self.interpolatable_types:
+            opts = task_config.get('library_kwargs', {})
+            opts = {} if opts is None else opts
+            order = opts.get('order', None)
+            assert order == 0, "datatype %s is not interpolatable, set 'library_kwargs' = {'order': 0} to downscale it" % dtype
 
         # get the scale factor and check if we
         # do isotropic scaling
