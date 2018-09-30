@@ -123,6 +123,7 @@ def solve_global(job_id, config_path):
     with vu.file_reader(input_path) as f:
         group = f['s%i' % scale]
         n_nodes = group.attrs['numberOfNodes']
+        ignore_label = group.attrs['ignoreLabel']
 
         ds = group['edges']
         ds.n_threads = n_threads
@@ -141,17 +142,16 @@ def solve_global(job_id, config_path):
     graph = nifty.graph.undirectedGraph(n_nodes)
     graph.insertEdges(uv_ids)
     fu.log("start agglomeration")
-    node_labeling = agglomerator(graph, costs)
+    node_labeling = agglomerator(graph, costs, n_threads=n_threads)
     fu.log("finished agglomeration")
 
     # get the labeling of initial nodes
     initial_node_labeling = node_labeling[initial_node_labeling]
     n_nodes = len(initial_node_labeling)
 
-    # make sure zero is mapped to 0
-    # TODO check that we actually have an ignore label
-    if initial_node_labeling[0] != 0:
-        new_max_label = node_labeling.max() + 1
+    # make sure zero is mapped to 0 if we have an ignore label
+    if ignore_label and initial_node_labeling[0] != 0:
+        new_max_label = int(node_labeling.max() + 1)
         initial_node_labeling[initial_node_labeling == 0] = new_max_label
         initial_node_labeling[0] = 0
 
@@ -164,8 +164,8 @@ def solve_global(job_id, config_path):
                                compression='gzip')
         ds.n_threads = n_threads
         ds[:] = initial_node_labeling
-    fu.log('saving results to %s' % output_path)
-    fu.log('and key %s' % output_key)
+
+    fu.log('saving results to %s:%s' % (output_path, output_key))
     fu.log_job_success(job_id)
 
 
