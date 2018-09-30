@@ -51,6 +51,18 @@ class ReduceProblemBase(luigi.Task):
         config.update({'accumulation_method': 'sum'})
         return config
 
+    def _log_reduction(self):
+        with vu.file_reader(self.graph_path, 'r') as f:
+            n_nodes = f[self.graph_key].attrs['numberOfNodes']
+            n_edges = f[self.graph_key].attrs['numberOfEdges']
+        with vu.file_reader(self.output_path, 'r') as f:
+            key = 's%i' % (self.scale + 1,)
+            n_new_nodes = f[key].attrs['numberOfNodes']
+            n_new_edges = f[key].attrs['numberOfEdges']
+        self._write_log("Reduced graph from %i to %i nodes; %i to %i edges." % (n_nodes, n_new_nodes,
+                                                                                n_edges, n_new_edges))
+
+
     def run(self):
         # get the global config and init configs
         self.make_dirs()
@@ -88,6 +100,9 @@ class ReduceProblemBase(luigi.Task):
         # wait till jobs finish and check for job success
         self.wait_for_jobs()
         self.check_jobs(1)
+
+        # log the problem reduction
+        self._log_reduction()
 
     # part of the luigi API
     def output(self):
