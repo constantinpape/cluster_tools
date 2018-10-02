@@ -67,7 +67,7 @@ class WriteDownscalingMetadata(luigi.Task):
             resolution = self.metadata_dict.get("resolution", 3 * [1.])[::-1]
             f[self.output_key_prefix].attrs["resolution"] = resolution
             offsets = self.metadata_dict.get("offsets", 3 * [1.])[::-1]
-            f[self.output_key_prefix].attrs["offsets"] = offsets
+            f[self.output_key_prefix].attrs["offset"] = offsets
 
     def _write_metadata_bdv(self, scales, chunks):
         # we need to reorder scales and resoultions,
