@@ -122,6 +122,7 @@ class DownscalingBase(luigi.Task):
         if chunks is None:
             chunks = tuple(bs // 2 for bs in block_shape)
         else:
+            chunks = tuple(chunks)
             # TODO verify chunks further
             assert len(chunks) == 3, "Chunks must be 3d"
 
