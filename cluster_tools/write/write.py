@@ -230,6 +230,17 @@ def _load_assignments(path, key, n_threads):
     return node_labels
 
 
+def _write_maxlabel(output_path, output_key, node_labels):
+    if isinstance(node_labels, np.ndarray):
+        max_id = int(node_labels.max())
+    elif isinstance(node_labels, dict):
+        max_id = int(np.max(node_labels.values()))
+    else:
+        raise AttributeError("Invalide type %s" % type(node_labels))
+    with vu.file_reader(output_path) as f:
+        f[output_key].attrs['maxId'] = max_id
+
+
 def write(job_id, config_path):
     fu.log("start processing job %i" % job_id)
     fu.log("loading config from %s" % config_path)
@@ -304,6 +315,11 @@ def write(job_id, config_path):
                 else:
                     _write_with_offsets(ds_in, ds_out, blocking, block_list,
                                         n_threads, node_labels, offset_path)
+
+    # write the max-label
+    # for job 0
+    if job_id == 0:
+        _write_maxlabel(output_path, output_key, node_labels)
     fu.log_job_success(job_id)
 
 
