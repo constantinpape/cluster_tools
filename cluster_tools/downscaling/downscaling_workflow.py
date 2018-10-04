@@ -46,6 +46,11 @@ class WriteDownscalingMetadata(luigi.Task):
             ds = f[out_key]
             ds.attrs['downsamplingFactors'] = effective_scale[::-1]
 
+    def _copy_max_id(self, f):
+        attrs0 = f['%s/s0' % self.output_key_prefix].attrs
+        if 'maxId' in attrs0:
+            f[self.output_key].attrs['maxId'] = attrs0['maxId']
+
     def _paintera_metadata(self):
         effective_scale = [1, 1, 1]
         for scale, scale_factor in enumerate(self.scale_factors):
@@ -68,6 +73,8 @@ class WriteDownscalingMetadata(luigi.Task):
             f[self.output_key_prefix].attrs["resolution"] = resolution
             offsets = self.metadata_dict.get("offsets", 3 * [0.])[::-1]
             f[self.output_key_prefix].attrs["offsets"] = offsets
+            # copy max-id if it exists
+            self._copy_max_id(f)
 
     def _write_metadata_bdv(self, scales, chunks):
         # we need to reorder scales and resoultions,
