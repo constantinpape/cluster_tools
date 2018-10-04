@@ -41,7 +41,7 @@ class WriteDownscalingMetadata(luigi.Task):
     def requires(self):
         return self.dependency
 
-    def _write_metadata_paintera(self, out_key, scale_factor, effective_scale):
+    def _write_metadata_paintera(self, out_key, effective_scale):
         with file_reader(self.output_path) as f:
             ds = f[out_key]
             ds.attrs['downsamplingFactors'] = effective_scale[::-1]
@@ -62,11 +62,11 @@ class WriteDownscalingMetadata(luigi.Task):
                 effective_scale = [eff * sf for sf, eff in zip(scale_factor, effective_scale)]
             self._write_metadata_paintera(out_key, effective_scale)
         # write multiscale attribute and metadata
-        with self.file_reader(self.output_path) as f:
+        with file_reader(self.output_path) as f:
             f[self.output_key_prefix].attrs["multiScale"] = True
             resolution = self.metadata_dict.get("resolution", 3 * [1.])[::-1]
             f[self.output_key_prefix].attrs["resolution"] = resolution
-            offsets = self.metadata_dict.get("offsets", 3 * [1.])[::-1]
+            offsets = self.metadata_dict.get("offsets", 3 * [0.])[::-1]
             f[self.output_key_prefix].attrs["offsets"] = offsets
 
     def _write_metadata_bdv(self, scales, chunks):
@@ -171,10 +171,12 @@ class WriteDownscalingMetadata(luigi.Task):
         self._write_bdv_xml()
 
     def run(self):
-        if self.metadata_format == 'custom':
-            self._custom_metadata()
+        if self.metadata_format == 'paintera':
+            self._paintera_metadata()
         elif self.metadata_format == 'bdv':
             self._bdv_metadata()
+        else:
+            raise RuntimeError("Invalid metadata format %s" % self.metadata_format)
         with open(self.output().path, 'w') as f:
             f.write('write metadata successfull')
 
