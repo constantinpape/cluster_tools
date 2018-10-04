@@ -1,1 +1,1 @@
-from . downscaling_workflow import DownscalingWorkflow
+from . downscaling_workflow import DownscalingWorkflow, PainteraToBdvWorkflow
