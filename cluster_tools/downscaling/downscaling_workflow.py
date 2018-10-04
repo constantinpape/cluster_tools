@@ -73,6 +73,7 @@ class WriteDownscalingMetadata(luigi.Task):
             f[self.output_key_prefix].attrs["multiScale"] = True
             resolution = self.metadata_dict.get("resolution", 3 * [1.])[::-1]
             f[self.output_key_prefix].attrs["resolution"] = resolution
+
             offsets = self.metadata_dict.get("offsets", 3 * [0.])[::-1]
             f[self.output_key_prefix].attrs["offset"] = offsets
             # copy max-id if it exists
