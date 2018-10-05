@@ -157,6 +157,7 @@ def _copy_blocks(ds_in, ds_out, block_shape, block_list,
         blocking = nt.blocking(roi_begin, roi_end, list(block_shape))
 
     for block_id in range(blocking.numberOfBlocks):
+        fu.log("start processing block %i" % block_id)
         block = blocking.getBlock(block_id)
         bb_in = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
         if roi_begin is not None:
@@ -164,7 +165,13 @@ def _copy_blocks(ds_in, ds_out, block_shape, block_list,
                            for beg, end, off in zip(block.begin, block.end, roi_begin))
         else:
             bb_out = bb_in
-        ds_out[bb_out] = ds_in[bb_in]
+        data = ds_in[bb_in]
+        # don't write empty blocks
+        if np.sum(data) == 0:
+            fu.log_block_success(block_id)
+            continue
+        ds_out[bb_out] = data
+        fu.log_block_success(block_id)
 
 
 def copy_to_h5(job_id, config_path):
