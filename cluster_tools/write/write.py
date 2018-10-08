@@ -234,7 +234,7 @@ def _write_maxlabel(output_path, output_key, node_labels):
     if isinstance(node_labels, np.ndarray):
         max_id = int(node_labels.max())
     elif isinstance(node_labels, dict):
-        max_id = int(np.max(node_labels.values()))
+        max_id = int(np.max(list(node_labels.values())))
     else:
         raise AttributeError("Invalide type %s" % type(node_labels))
     with vu.file_reader(output_path) as f:
