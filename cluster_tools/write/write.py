@@ -285,6 +285,11 @@ def write(job_id, config_path):
             else:
                 _write_with_offsets(ds_in, ds_out, blocking, block_list,
                                     n_threads, node_labels, offset_path)
+        # write the max-label
+        # for job 0
+        if job_id == 0:
+            _write_maxlabel(input_path, input_key, node_labels)
+
     else:
         # even if we do not write in-place, we might still write to the same output_file,
         # but different datasets
@@ -315,12 +320,13 @@ def write(job_id, config_path):
                 else:
                     _write_with_offsets(ds_in, ds_out, blocking, block_list,
                                         n_threads, node_labels, offset_path)
+        # write the max-label
+        # for job 0
+        if job_id == 0:
+            _write_maxlabel(output_path, output_key, node_labels)
 
-    # write the max-label
-    # for job 0
-    if job_id == 0:
-        _write_maxlabel(output_path, output_key, node_labels)
     fu.log_job_success(job_id)
+
 
 
 if __name__ == '__main__':
