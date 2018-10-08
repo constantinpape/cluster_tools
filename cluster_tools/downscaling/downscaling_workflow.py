@@ -202,7 +202,6 @@ class WriteDownscalingMetadata(luigi.Task):
                                               'write_downscaling_metadata.log'))
 
 
-
 class DownscalingWorkflow(WorkflowBase):
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
@@ -308,7 +307,7 @@ class DownscalingWorkflow(WorkflowBase):
                                           metadata_format=self.metadata_format,
                                           metadata_dict=self.metadata_dict,
                                           scale_factors=self.scale_factors,
-                                          dependency=t)
+                                          dependency=t_prev)
         return t_meta
 
     @staticmethod
@@ -415,7 +414,7 @@ class PainteraToBdvWorkflow(WorkflowBase):
                                           metadata_format='bdv',
                                           metadata_dict=metadata_dict,
                                           scale_factors=scale_factors,
-                                          dependency=t)
+                                          dependency=t_prev)
         return t_meta
 
     @staticmethod

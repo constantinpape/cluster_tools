@@ -198,7 +198,7 @@ class InterpolatedVolume(object):
 
 def load_mask(mask_path, mask_key, shape):
     with file_reader(mask_path, 'r') as f_mask:
-        mshape = mask.shape
+        mshape = f_mask[mask_key].shape
 
     # check if th mask is at full - shape, otherwise interpolate
     if mshape == shape:
@@ -208,6 +208,6 @@ def load_mask(mask_path, mask_key, shape):
     else:
         with file_reader(mask_path, 'r') as f_mask:
             mask = f_mask[mask_key][:].astype('bool')
-        mask = vu.InterpolatedVolume(mask, shape, interpolation='spline',
-                                     spline_order=0)
+        mask = InterpolatedVolume(mask, shape, interpolation='spline',
+                                  spline_order=0)
     return mask
