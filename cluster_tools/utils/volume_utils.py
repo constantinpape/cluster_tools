@@ -125,7 +125,7 @@ class InterpolatedVolume(object):
         assert isinstance(volume, np.ndarray)
         assert len(output_shape) == volume.ndim == 3, "Only 3d supported"
         assert all(osh > vsh for osh, vsh in zip(output_shape, volume.shape)),\
-            "Can only interpolate to larger shapes"
+            "Can only interpolate to larger shapes, got %s %s" % (str(output_shape), str(volume.shape))
         self.volume = volume
         self.shape = output_shape
         self.dtype = volume.dtype
@@ -201,7 +201,7 @@ def load_mask(mask_path, mask_key, shape):
         mshape = f_mask[mask_key].shape
 
     # check if th mask is at full - shape, otherwise interpolate
-    if mshape == shape:
+    if tuple(mshape) == tuple(shape):
         # TODO this only works for n5
         mask = z5py.File(mask_path)[mask_key]
 
