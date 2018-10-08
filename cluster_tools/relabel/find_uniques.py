@@ -24,6 +24,7 @@ class FindUniquesBase(luigi.Task):
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
     dependency = luigi.TaskParameter()
+    return_counts = luigi.BoolParameter(default=False)
 
     def requires(self):
         return self.dependency
@@ -47,7 +48,8 @@ class FindUniquesBase(luigi.Task):
 
         # we don't need any additional config besides the paths
         config = {"input_path": self.input_path, "input_key": self.input_key,
-                  "block_shape": block_shape, "tmp_folder": self.tmp_folder}
+                  "block_shape": block_shape, "tmp_folder": self.tmp_folder,
+                  "return_counts": self.return_counts}
         self._write_log('scheduling %i blocks to be processed' % len(block_list))
 
         # prime and run the jobs
@@ -85,17 +87,20 @@ class FindUniquesLSF(FindUniquesBase, LSFTask):
 #
 
 
-def uniques_in_block(block_id, blocking, ds):
+def uniques_in_block(block_id, blocking, ds, return_counts):
     fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
-    bb = tuple(slice(b, e) for b, e in zip(block.begin, block.end))
+    bb = vu.block_to_bb(block)
     labels = ds[bb]
-    # TODO why don't we use numpy unique ???
-    # uniques = np.unique(labels)
-    uniques = nt.unique(labels)
-    # log block success
-    fu.log_block_success(block_id)
-    return uniques
+
+    if return_counts:
+        uniques, counts = np.unique(labels, return_counts=True)
+        fu.log_block_success(block_id)
+        return uniques, counts
+    else:
+        uniques = nt.unique(labels)
+        fu.log_block_success(block_id)
+        return uniques
 
 
 def find_uniques(job_id, config_path):
@@ -110,6 +115,7 @@ def find_uniques(job_id, config_path):
     block_list = config['block_list']
     block_shape = config['block_shape']
     tmp_folder = config['tmp_folder']
+    return_counts = config['return_counts']
 
     # open the input file
     with vu.file_reader(input_path, 'r') as f:
@@ -120,12 +126,27 @@ def find_uniques(job_id, config_path):
                                blockShape=list(block_shape))
 
         # find uniques for all blocks
-        uniques = [uniques_in_block(block_id, blocking, ds) for block_id in block_list]
-    # TODO why don't we use numpy unique ???
-    uniques = nt.unique(np.concatenate(uniques))
+        uniques = [uniques_in_block(block_id, blocking, ds, return_counts)
+                   for block_id in block_list]
+
+    if return_counts:
+        unique_values = nt.unique(np.concatenate([un[0] for un in uniques]))
+        counts = np.zeros(int(unique_values[-1] + 1), dtype='uint64')
+        for uniques_block, counts_block in uniques:
+            counts[uniques_block] += counts_block.astype('uint64')
+        counts = counts[counts != 0]
+        assert len(counts) == len(unique_values)
+
+        count_path = os.path.join(tmp_folder, 'counts_job_%i.npy' % job_id)
+        np.save(count_path, count_values)
+
+    else:
+        unique_values = nt.unique(np.concatenate(uniques))
+
+    # save the uniques for this job
     save_path = os.path.join(tmp_folder, 'find_uniques_job_%i.npy' % job_id)
     fu.log("saving results to %s" % save_path)
-    np.save(save_path, uniques)
+    np.save(save_path, unique_values)
     # log success
     fu.log_job_success(job_id)
 

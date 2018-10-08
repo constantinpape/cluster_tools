@@ -19,16 +19,17 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 # Find Labeling Tasks
 #
 
-class FindLabelingBase(luigi.Task):
-    """ FindLabeling base class
+class SizeFilterBlocksBase(luigi.Task):
+    """ SizeFilterBlocks base class
     """
 
-    task_name = 'find_labeling'
+    task_name = 'size_filter_blocks'
     src_file = os.path.abspath(__file__)
     allow_retry = False
 
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
+    size_threshold = luigi.IntParameter()
     # task that is required before running this task
     dependency = luigi.TaskParameter()
 
@@ -47,7 +48,8 @@ class FindLabelingBase(luigi.Task):
         n_jobs = min(len(block_list), self.max_jobs)
 
         config = {'input_path': self.input_path, 'input_key': self.input_key,
-                  'tmp_folder': self.tmp_folder, 'n_jobs': n_jobs}
+                  'tmp_folder': self.tmp_folder, 'n_jobs': n_jobs,
+                  'size_threshold': self.size_threshold}
 
         # we only have a single job to find the labeling
         self.prepare_jobs(1, None, config)
@@ -56,34 +58,34 @@ class FindLabelingBase(luigi.Task):
         # wait till jobs finish and check for job success
         self.wait_for_jobs()
         # log the save-path again
-        save_path = os.path.join(self.tmp_folder, 'relabeling.pkl')
+        save_path = os.path.join(self.tmp_folder, 'discard_ids.npy')
         self._write_log("saving results to %s" % save_path)
         self.check_jobs(1)
 
 
-class FindLabelingLocal(FindLabelingBase, LocalTask):
+class SizeFilterBlocksLocal(SizeFilterBlocksBase, LocalTask):
     """
-    FindLabeling on local machine
-    """
-    pass
-
-
-class FindLabelingSlurm(FindLabelingBase, SlurmTask):
-    """
-    FindLabeling on slurm cluster
+    SizeFilterBlocks on local machine
     """
     pass
 
 
-class FindLabelingLSF(FindLabelingBase, LSFTask):
+class SizeFilterBlocksSlurm(SizeFilterBlocksBase, SlurmTask):
     """
-    FindLabeling on lsf cluster
+    SizeFilterBlocks on slurm cluster
+    """
+    pass
+
+
+class SizeFilterBlocksLSF(SizeFilterBlocksBase, LSFTask):
+    """
+    SizeFilterBlocks on lsf cluster
     """
     pass
 
 
 
-def find_labeling(job_id, config_path):
+def size_filter_blocks(job_id, config_path):
 
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
@@ -94,19 +96,26 @@ def find_labeling(job_id, config_path):
     tmp_folder = config['tmp_folder']
     input_path = config['input_path']
     input_key = config['input_key']
+    size_threshold = config['size_threshold']
 
     # TODO this could be parallelized
-    uniques = np.concatenate([np.load(os.path.join(tmp_folder, 'find_uniques_job_%i.npy' % job_id))
-                              for job_id in range(n_jobs)])
-    uniques = nt.unique(uniques)
-    _, max_id, mapping = vigra.analysis.relabelConsecutive(uniques,
-                                                           keep_zeros=True,
-                                                           start_label=1)
+    unique_values = np.concatenate([np.load(os.path.join(tmp_folder, 'find_uniques_job_%i.npy' % job_id))
+                                    for job_id in range(n_jobs)])
+    count_values = np.concatenate([np.load(os.path.join(tmp_folder, 'counts_job_%i.npy' % job_id))
+                                   for job_id in range(n_jobs)])
+    uniques = nt.unique(unique_values)
+    counts = np.zeros(int(uniques[-1]) + 1, dtype='uint64')
 
-    save_path = os.path.join(tmp_folder, 'relabeling.pkl')
+    for uniques_job, counts_job in zip(unique_values, count_values):
+        counts[uniques_job] += counts_job.astype('uint64')
+    counts = counts[counts != 0]
+    assert len(counts) == len(uniques)
+
+    discard_ids = uniques[counts < size_threshold]
+
+    save_path = os.path.join(tmp_folder, 'discard_ids.npy')
     fu.log("saving results to %s" % save_path)
-    with open(save_path, 'wb') as f:
-        pickle.dump(mapping, f)
+    np.save(save_path, discard_ids)
     # log success
     fu.log_job_success(job_id)
 
@@ -115,4 +124,4 @@ if __name__ == '__main__':
     path = sys.argv[1]
     assert os.path.exists(path), path
     job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
-    find_labeling(job_id, path)
+    size_filter_blocks(job_id, path)
