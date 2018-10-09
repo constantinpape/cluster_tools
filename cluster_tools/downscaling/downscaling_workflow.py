@@ -1,7 +1,8 @@
 import os
 import json
-from copy import deepcopy
 import xml.etree.ElementTree as ET
+from copy import deepcopy
+from datetime import datetime
 
 import numpy as np
 import luigi
@@ -43,6 +44,11 @@ class WriteDownscalingMetadata(luigi.Task):
     def requires(self):
         return self.dependency
 
+    def _write_log(self, msg):
+        log_file = self.output().path
+        with open(log_file, 'a') as f:
+            f.write('%s: %s\n' % (str(datetime.now()), msg))
+
     def _write_metadata_paintera(self, out_key, effective_scale):
         with file_reader(self.output_path) as f:
             ds = f[out_key]
@@ -51,7 +57,7 @@ class WriteDownscalingMetadata(luigi.Task):
     def _copy_max_id(self, f):
         attrs0 = f['%s/s0' % self.output_key_prefix].attrs
         if 'maxId' in attrs0:
-            f[self.output_key].attrs['maxId'] = attrs0['maxId']
+            f[self.output_key_prefix].attrs['maxId'] = attrs0['maxId']
 
     def _paintera_metadata(self):
         effective_scale = [1, 1, 1]
@@ -172,18 +178,26 @@ class WriteDownscalingMetadata(luigi.Task):
 
         # iterate over the scales
         for scale, scale_factor in enumerate(self.scale_factors):
+            self._write_log("getting metadata for scale %i: factor %s" % (scale, str(scale_factor)))
+
             # compute the effective scale at this level
             if isinstance(scale_factor, int):
                 effective_scale = [eff * scale_factor for eff in effective_scale]
             else:
                 effective_scale = [eff * sf for sf, eff in zip(scale_factor, effective_scale)]
-            scales.append(effective_scale[::-1])
+
+            self._write_log("results in effective scale %s" % str(effective_scale))
             # get the chunk size for this level
             out_key = 't00000/s00/%i/cells' % (scale + 1,)
             with file_reader(self.output_path, 'r') as f:
-                print(out_key)
+                # check if this dataset exists
+                if out_key not in f:
+                    continue
                 chunk = f[out_key].chunks[::-1]
+
+            scales.append(effective_scale[::-1])
             chunks.append(chunk)
+
         self._write_metadata_bdv(np.array(scales), np.array(chunks))
         self._write_bdv_xml()
 
@@ -194,8 +208,7 @@ class WriteDownscalingMetadata(luigi.Task):
             self._bdv_metadata()
         else:
             raise RuntimeError("Invalid metadata format %s" % self.metadata_format)
-        with open(self.output().path, 'w') as f:
-            f.write('write metadata successfull')
+        self._write_log('write metadata successfull')
 
     def output(self):
         return luigi.LocalTarget(os.path.join(self.tmp_folder,
@@ -260,6 +273,8 @@ class DownscalingWorkflow(WorkflowBase):
     def _link_scale_zero_n5(self, trgt):
         with file_reader(self.input_path) as f:
             if trgt not in f:
+                print(trgt)
+                print(self.input_key)
                 os.symlink(os.path.join(self.input_path, self.input_key),
                            os.path.join(self.input_path, trgt))
 
@@ -374,9 +389,8 @@ class PainteraToBdvWorkflow(WorkflowBase):
                 if isinstance(effective_scale, int):
                     effective_scale = 3 * [effective_scale]
 
-            # we don't add scale 0
             if scale > 0:
-                scale_factors.append(effective_scale)
+                scale_factors.append([eff / prev for eff, prev in zip(effective_scale, prev_scale)])
 
             prev_scale = deepcopy(effective_scale)
 
