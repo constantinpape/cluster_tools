@@ -38,7 +38,7 @@ class CopyToH5Base(luigi.Task):
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'chunks': None, 'compression': 'gzip'})
+        config.update({'chunks': None, 'compression': 'gzip', 'dtype': None})
         return config
 
     def requires(self):
@@ -57,13 +57,21 @@ class CopyToH5Base(luigi.Task):
         # get shape, dtype and make block config
         with vu.file_reader(self.input_path, 'r') as f:
             shape = f[self.input_key].shape
-            dtype = f[self.input_key].dtype
+            ds_dtype = f[self.input_key].dtype
             ds_chunks = f[self.input_key].chunks
         assert len(shape) == 3, "Only support 3d inputs"
 
         # load the copy_to_h5 config
         task_config = self.get_task_config()
         compression = task_config.pop('compression', 'gzip')
+
+        dtype = task_config.pop('dtype', None)
+        if dtype is None:
+            dtype = ds_dtype
+
+        if isinstance(dtype, np.dtype):
+            dtype = dtype.name
+
         chunks = task_config.pop('chunks', None)
         if chunks is None:
             chunks = ds_chunks
@@ -73,7 +81,7 @@ class CopyToH5Base(luigi.Task):
         # as well as block shape
         task_config.update({'input_path': self.input_path, 'input_key': self.input_key,
                             'output_path': self.output_path, 'output_key': self.output_key,
-                            'block_shape': block_shape})
+                            'block_shape': block_shape, 'dtype': dtype})
 
         if roi_begin is not None:
 
@@ -91,6 +99,12 @@ class CopyToH5Base(luigi.Task):
 
             shape = tuple(roie - roib for roib, roie in zip(roi_begin, roi_end))
             task_config.update({'roi_begin': roi_begin, 'roi_end': roi_end})
+
+        # check that the chunks are smaller than the shape, otherwise
+        # skip this job
+        if any(ch > sh for ch, sh in zip(chunks, shape)):
+            self._write_log("chunks %s are bigger than shape %s, not scheduling any jobs" % (str(chunks), str(shape)))
+            return
 
         # require output dataset
         with vu.file_reader(self.output_path) as f:
@@ -149,7 +163,7 @@ class CopyToH5LSF(CopyToH5Base, LSFTask):
 
 
 def _copy_blocks(ds_in, ds_out, block_shape, block_list,
-                 roi_begin=None, roi_end=None):
+                 dtype, roi_begin=None, roi_end=None):
 
     if roi_begin is None:
         blocking = nt.blocking([0, 0, 0], list(ds_in.shape), list(block_shape))
@@ -170,7 +184,7 @@ def _copy_blocks(ds_in, ds_out, block_shape, block_list,
         if np.sum(data) == 0:
             fu.log_block_success(block_id)
             continue
-        ds_out[bb_out] = data
+        ds_out[bb_out] = data.astype(dtype)
         fu.log_block_success(block_id)
 
 
@@ -190,6 +204,7 @@ def copy_to_h5(job_id, config_path):
     # read the output config
     output_path = config['output_path']
     output_key = config['output_key']
+    dtype = config['dtype']
 
     roi_begin = config.get('roi_begin', None)
     roi_end = config.get('roi_end', None)
@@ -202,7 +217,7 @@ def copy_to_h5(job_id, config_path):
         ds_in.n_threads = n_threads
         ds_out = f_out[output_key]
         _copy_blocks(ds_in, ds_out, block_shape, block_list,
-                     roi_begin, roi_end)
+                     dtype, roi_begin, roi_end)
 
     # log success
     fu.log_job_success(job_id)
