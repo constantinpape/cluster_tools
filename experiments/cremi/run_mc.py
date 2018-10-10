@@ -15,7 +15,7 @@ def run_wf(sample, max_jobs, target='local'):
 
     tmp_folder = './tmp_%s' % sample
     input_path = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cremi_new/sample%s.n5' % sample
-    exp_path = input_path[:-3] + '_exp.n5'
+    exp_path = 'sample%s_exp.n5' % sample
     input_key = 'predictions/full_affs'
     mask_key = 'masks/original_mask'
     ws_key = 'segmentation/watershed'
@@ -53,7 +53,8 @@ def run_wf(sample, max_jobs, target='local'):
 
     for tt in tasks:
         config = configs[tt]
-        config.update({'threads_per_job': max_jobs})
+        n_threads = max_jobs if tt != 'reduce_problem' else 4
+        config.update({'threads_per_job': n_threads})
         with open('./config/%s.config' % tt, 'w') as f:
             json.dump(config, f)
 
@@ -63,15 +64,16 @@ def run_wf(sample, max_jobs, target='local'):
                                                     graph_path=exp_path, features_path=exp_path,
                                                     costs_path=exp_path, problem_path=exp_path,
                                                     node_labels_path=exp_path, node_labels_key='node_labels',
-                                                    output_path=input_path, output_key='segmentations/multicut',
+                                                    output_path=input_path, output_key='segmentation/multicut',
                                                     use_decomposition_multicut=False,
-                                                    skip_ws=True,
+                                                    skip_ws=False,
                                                     rf_path=rf_path,
-                                                    n_scales=2,
+                                                    n_scales=1,
                                                     config_dir='./config',
                                                     tmp_folder=tmp_folder,
                                                     target=target,
                                                     max_jobs=max_jobs)], local_scheduler=True)
+    assert ret, "Sample %s failed" % sample
 
 
 if __name__ == '__main__':
@@ -79,5 +81,7 @@ if __name__ == '__main__':
     target = 'local'
     max_jobs = 32
 
-    for sample in ('A',):
+    samples = ('A',)
+    samples = ('A', 'B', 'C', 'A+', 'B+', 'C+')
+    for sample in samples:
         run_wf(sample, max_jobs, target=target)
