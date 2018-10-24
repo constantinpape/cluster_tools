@@ -26,11 +26,11 @@ def downscale_test():
         json.dump(global_config, f)
 
     ds_config = config['downscaling']
-    ds_config.update({'threads_per_job': 8})
+    ds_config.update({'threads_per_job': 8, 'chunks': (25, 64, 64)})
     with open(os.path.join(config_dir, 'downscaling.config'), 'w') as f:
         json.dump(ds_config, f)
 
-    scale_factors = [2, 2, 2]
+    scale_factors = [[1, 2, 2], 2, 2]
     halos = [[10, 10, 10], [10, 10, 10], [10, 10, 10]]
 
     metadata = {'unit': 'micrometer',
@@ -41,9 +41,8 @@ def downscale_test():
                                max_jobs=1,
                                config_dir=config_dir,
                                target='local',
-                               input_path='./test.h5',
-                               input_key='volumes/raw',
-                               output_path='./test.h5',
+                               input_path='./bdv_mipmap-raw.h5',
+                               input_key='raw',
                                scale_factors=scale_factors,
                                halos=halos,
                                metadata_format='bdv',
@@ -51,7 +50,7 @@ def downscale_test():
     success = luigi.build([task], local_scheduler=True)
 
     if success:
-        with h5py.File('./test.h5') as f:
+        with h5py.File('./bdv_mipmap-raw.h5') as f:
             ds = f['t00000/s00/3/cells']
             raw_ds = ds[:]
             print(raw_ds.shape)
@@ -102,7 +101,6 @@ def downscale_predictions(max_jobs=16, target='slurm'):
                                target=target,
                                input_path=path,
                                input_key='boundary_channel',
-                               output_path=path,
                                scale_factors=scale_factors,
                                halos=halos,
                                metadata_format='bdv',
@@ -111,5 +109,5 @@ def downscale_predictions(max_jobs=16, target='slurm'):
 
 
 if __name__ == '__main__':
-    downscale_predictions()
-    # downscale_test()
+    # downscale_predictions(target='local')
+    downscale_test()

@@ -20,6 +20,9 @@ from cluster_tools.utils.task_utils import DummyTask
 # skeletonize tasks
 #
 
+
+# TODO it would make more sense to output skeletons in swc format
+# or some other format
 class SkeletonizeBase(luigi.Task):
     """ Skeletonize base class
     """
@@ -99,6 +102,47 @@ class SkeletonizeLSF(SkeletonizeBase, LSFTask):
 #
 
 
+def skeletonize_multithreaded(seg, ids, n_threads):
+    # allocate output
+    skel_vol = np.zeros_like(seg, dtype='uint64')
+
+    def skeletonize_id(seg_id):
+        seg_mask = seg == seg_id
+        # FIXME: does not lift the gil
+        skel = skeletonize_3d(seg_mask)
+        # skimage transforms to uint8 and assigns maxval to skelpoints
+        skel_vol[skel == 255] = seg_id
+
+    with futures.ThreadPoolExecutor(n_threads) as tp:
+        tasks = [tp.submit(skeletonize_id, seg_id)
+                 for seg_id in ids]
+        [t.result() for t in tasks]
+    return skel_vol
+
+
+def skeletonize_segment(seg_mask):
+    # skimage transforms to uint8 and assigns maxval to skelpoints
+    return np.where(skeletonize_3d(seg_mask) == 255)
+
+
+def skeletonize_mp(seg, ids, n_threads):
+    # allocate output
+    skel_vol = np.zeros_like(seg, dtype='uint64')
+
+    with futures.ProcessPoolExecutor(n_threads) as pp:
+        tasks = [pp.submit(skeletonize_segment, seg == seg_id) for seg_id in ids]
+        results = {seg_id: t.result() for seg_id, t in zip(ids, tasks)}
+
+    def write_res(seg_id):
+        res = results[seg_id]
+        skel_vol[res] = seg_id
+
+    with futures.ThreadPoolExecutor(n_threads) as tp:
+        tasks = [tp.submit(write_res, seg_id) for seg_id in ids]
+        [t.result() for t in tasks]
+    return skel_vol
+
+
 def skeletonize(job_id, config_path):
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
@@ -127,24 +171,17 @@ def skeletonize(job_id, config_path):
     if ids[0] == 0:
         ids = ids[1:]
 
-    # allocate output
-    seg_vol = np.zeros_like(seg, dtype='uint64')
-
-    def skeletonize_id(seg_id):
-        seg_mask = seg == seg_id
-        skel = skeletonize_3d(seg_mask)
-        seg_vol[skel == 1] = seg_id
-
-    with futures.ThreadPoolExecutor(n_threads) as tp:
-        tasks = [tp.submit(skeletonize_id, seg_id)
-                 for seg_id in ids]
-        [t.result() for t in tasks]
+    fu.log("computing skeletons for %i ids" % len(ids))
+    # FIXME this is too slow because skeletonize 3d does not lift gil
+    # skel_vol = skeletonize_multi_threaded(seg, ids, n_threads)
+    skel_vol = skeletonize_mp(seg, ids, n_threads)
 
     # write the output
     with vu.file_reader(output_path) as f_out:
         ds_out = f_out[output_key]
         ds_out.n_threads = n_threads
-        ds_out[:] = seg_vol
+        ds_out[:] = skel_vol
+
 
     # log success
     fu.log_job_success(job_id)

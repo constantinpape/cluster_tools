@@ -90,7 +90,8 @@ class MulticutSegmentationWorkflow(WorkflowBase):
         features_key = 'features'
         costs_key = 'costs'
         if self.skip_ws:
-            assert os.path.exists(os.path.join(self.ws_path, self.ws_key))
+            assert os.path.exists(os.path.join(self.ws_path, self.ws_key)), "%s:%s" % (self.ws_path,
+                                                                                       self.ws_key)
             ws_wf = self.dependency
         else:
             ws_wf = WatershedWorkflow(tmp_folder=self.tmp_folder,

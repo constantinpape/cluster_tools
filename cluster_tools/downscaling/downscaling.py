@@ -22,8 +22,7 @@ from cluster_tools.utils.task_utils import DummyTask
 # downscaling tasks
 #
 
-# TODO which algorithms do we support ?
-# detail-preserving downscaling ?
+
 class DownscalingBase(luigi.Task):
     """ downscaling base class
     """
@@ -126,6 +125,7 @@ class DownscalingBase(luigi.Task):
             chunks = tuple(chunks)
             # TODO verify chunks further
             assert len(chunks) == 3, "Chunks must be 3d"
+        chunks = tuple(min(ch, sh) for sh, ch in zip(shape, chunks))
 
         compression = task_config.pop('compression', 'gzip')
         # require output dataset

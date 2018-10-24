@@ -11,8 +11,7 @@ import numpy as np
 import luigi
 import nifty
 import nifty.tools as nt
-from skimage.morphology import upsample_skeletons_3d
-from scipy.morphology import distance_transform_edt
+from scipy.ndimage.morphology import distance_transform_edt
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu

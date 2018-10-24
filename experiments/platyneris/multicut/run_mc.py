@@ -111,7 +111,8 @@ def run_wf(block_id, tmp_folder, max_jobs,
 
     ret = luigi.build([MulticutSegmentationWorkflow(input_path=input_path, input_key=input_key,
                                                     mask_path=mask_path, mask_key=mask_key,
-                                                    ws_path=exp_path, ws_key='volumes/watershed',
+                                                    # ws_path=exp_path, ws_key='volumes/watershed',
+                                                    ws_path=input_path, ws_key='watershed',
                                                     graph_path=exp_path, features_path=exp_path,
                                                     costs_path=exp_path, problem_path=exp_path,
                                                     node_labels_path=exp_path, node_labels_key='node_labels',
@@ -122,6 +123,7 @@ def run_wf(block_id, tmp_folder, max_jobs,
                                                     config_dir='./config',
                                                     tmp_folder=tmp_folder,
                                                     target=target,
+                                                    skip_ws=True,
                                                     max_jobs=max_jobs)], local_scheduler=True)
     # ret = True
     # view the results if we are local and the
@@ -136,14 +138,19 @@ def run_wf(block_id, tmp_folder, max_jobs,
             affs = ds[:]
             if affs.ndim == 4:
                 affs = affs.transpose((1, 2, 3, 0))
-        data = [affs]
 
-        with z5py.File(exp_path) as f:
-            ds = f['volumes/watershed']
+            ds = f['watershed']
             ds.n_threads = max_jobs
             ws = ds[:]
-            data.append(ws)
-            shape = ds.shape
+
+        data = [affs, ws]
+
+        with z5py.File(exp_path) as f:
+            # ds = f['volumes/watershed']
+            # ds.n_threads = max_jobs
+            # ws = ds[:]
+            # data.append(ws)
+            # shape = ds.shape
 
             if 'volumes/segmentation' in f:
                 ds = f['volumes/segmentation']

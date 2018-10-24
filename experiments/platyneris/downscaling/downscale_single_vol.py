@@ -36,7 +36,6 @@ def downscale_test():
                                target='local',
                                input_path='./test.n5',
                                input_key='volumes/raw/s0',
-                               output_path='./test.n5',
                                output_key_prefix='volumes/raw',
                                scale_factors=scale_factors,
                                halos=halos)
@@ -60,7 +59,11 @@ def get_roi(roi_name):
             'block5': [[1857, 11848, 15848], [2243, 15152, 19152]],
             'block6': [[1407, 11848, 15648], [1793, 15152, 18952]],
             'block7': [[1957,  9848, 18848], [2343, 13152, 22152]],
-            'block8': [[1807, 14348, 13348], [2193, 17652, 16652]]}
+            'block8': [[1807, 14348, 13348], [2193, 17652, 16652]],
+            'lower_roi': [[0, 0, 0], [5084, None, None]],
+            'upper_roi': [[6819, 0, 0], [None, None, None]],
+            'full': [[0, 0, 0], [None, None, None]]
+           }
     return rois[roi_name]
 
 
@@ -93,8 +96,8 @@ def downscale_volume(roi_name, max_jobs=250, target='slurm'):
     with open(os.path.join(config_dir, 'downscaling.config'), 'w') as f:
         json.dump(task_config, f)
 
-    scale_factors = [[1, 2, 2], 2, 2]
-    halos = [[0, 10, 10], [10, 10, 10], [10, 10, 10]]
+    scale_factors = [[1, 2, 2], 2, 2, 2, 2]
+    halos = [[0, 10, 10], [10, 10, 10], [10, 10, 10], [10, 10, 10], [10, 10, 10]]
     # scale_factors = [[1, 2, 2]]
     # halos = [[0, 10, 10]]
 
@@ -106,7 +109,6 @@ def downscale_volume(roi_name, max_jobs=250, target='slurm'):
                                target=target,
                                input_path=path,
                                input_key='volumes/raw/s0',
-                               output_path=path,
                                output_key_prefix='volumes/raw',
                                scale_factors=scale_factors,
                                halos=halos)
@@ -127,7 +129,8 @@ def downscale_volume(roi_name, max_jobs=250, target='slurm'):
 
 
 if __name__ == '__main__':
+    downscale_volume('full', max_jobs=100, target='slurm')
     # downscale_test()
-    block_ids = range(1, 9)
-    for block_id in block_ids:
-        downscale_volume('block%i' % block_id, max_jobs=8, target='local')
+    # block_ids = range(1, 9)
+    # for block_id in block_ids:
+    #     downscale_volume('block%i' % block_id, max_jobs=8, target='local')
