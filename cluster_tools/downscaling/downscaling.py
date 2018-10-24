@@ -96,11 +96,12 @@ class DownscalingBase(luigi.Task):
         library = task_config.get('library', 'vigra')
         if library not in ('vigra', 'skimage'):
             raise NotImplementedError("Donwnscaling is only supported via vigra or skimage, not %s" % library)
-        if dtype not in self.interpolatable_types:
+        if dtype not in self.interpolatable_types and library == 'vigra':
             opts = task_config.get('library_kwargs', {})
             opts = {} if opts is None else opts
             order = opts.get('order', None)
-            assert order == 0, "datatype %s is not interpolatable, set 'library_kwargs' = {'order': 0} to downscale it" % dtype
+            assert order == 0,\
+                "datatype %s is not interpolatable, set 'library_kwargs' = {'order': 0} to downscale it" % dtype
 
         # get the scale factor and check if we
         # do isotropic scaling
@@ -252,13 +253,17 @@ def _ds_block(blocking, block_id, ds_in, ds_out, scale_factor, halo, sampler):
         np.clip(out, 0, max_val, out=out)
         np.round(out, out=out)
 
-    ds_out[out_bb] = out[local_bb].astype(dtype)
+    try:
+        ds_out[out_bb] = out[local_bb].astype(dtype)
+    except IndexError as e:
+        raise(IndexError("%s, %s, %s" % (str(out_bb), str(local_bb), str(out.shape))))
 
     # log block success
     fu.log_block_success(block_id)
 
 
-def majority_vote(inp):
+# take axis as parameter to be compatible with block_reduce
+def majority_vote(inp, axis=-1):
     ids, sizes = np.unique(inp, return_counts=True)
     return ids[np.argmax(sizes)]
 
