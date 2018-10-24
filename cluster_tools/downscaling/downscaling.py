@@ -3,12 +3,14 @@
 import os
 import sys
 import json
+from functools import partial
 from concurrent import futures
 
 import numpy as np
 import luigi
 import vigra
 import nifty.tools as nt
+from skimage.measure import block_reduce
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -21,7 +23,6 @@ from cluster_tools.utils.task_utils import DummyTask
 #
 
 # TODO which algorithms do we support ?
-# check scipy
 # detail-preserving downscaling ?
 class DownscalingBase(luigi.Task):
     """ downscaling base class
@@ -94,8 +95,8 @@ class DownscalingBase(luigi.Task):
 
         # make sure that we have order 0 downscaling if our datatype is not interpolatable
         library = task_config.get('library', 'vigra')
-        if library != 'vigra':
-            raise NotImplementedError("Donwnscaling is only supported via vigra, not %s" % library)
+        if library not in ('vigra', 'skimage'):
+            raise NotImplementedError("Donwnscaling is only supported via vigra or skimage, not %s" % library)
         if dtype not in self.interpolatable_types:
             opts = task_config.get('library_kwargs', {})
             opts = {} if opts is None else opts
@@ -199,7 +200,7 @@ class DownscalingLSF(DownscalingBase, LSFTask):
 #
 
 
-def _ds_block(blocking, block_id, ds_in, ds_out, scale_factor, halo, library_kwargs):
+def _ds_block(blocking, block_id, ds_in, ds_out, scale_factor, halo, sampler):
     fu.log("start processing block %i" % block_id)
 
     # load the block (output dataset / downsampled) coordinates
@@ -238,11 +239,13 @@ def _ds_block(blocking, block_id, ds_in, ds_out, scale_factor, halo, library_kwa
         x = x.astype('float32')
 
     if isinstance(scale_factor, int):
-        out = vigra.sampling.resize(x, shape=out_shape, **library_kwargs)
+        # out = vigra.sampling.resize(x, shape=out_shape, **library_kwargs)
+        out = sampler(x, shape=out_shape)
     else:
         out = np.zeros(out_shape, dtype='float32')
         for z in range(out_shape[0]):
-            out[z] = vigra.sampling.resize(x[z], shape=out_shape[1:], **library_kwargs)
+            # out[z] = vigra.sampling.resize(x[z], shape=out_shape[1:], **library_kwargs)
+            out[z] = sampler(x[z], shape=out_shape[1:])
 
     if np.dtype(dtype) in (np.dtype('uint8'), np.dtype('uint16')):
         max_val = np.iinfo(np.dtype(dtype)).max
@@ -255,22 +258,43 @@ def _ds_block(blocking, block_id, ds_in, ds_out, scale_factor, halo, library_kwa
     fu.log_block_success(block_id)
 
 
+def majority_vote(inp):
+    ids, sizes = np.unique(inp, return_counts=True)
+    return ids[np.argmax(sizes)]
+
+
+def ds_majority_vote(x, shape):
+    block_size = tuple(sh // ts for sh, ts in zip(x.shape, shape))
+    out = block_reduce(x, block_size, func=majority_vote)
+    # TODO pad if necessary
+    return out
+
+
 def _submit_blocks(ds_in, ds_out, block_shape, block_list,
-                   scale_factor, halo,
+                   scale_factor, halo, library,
                    library_kwargs, n_threads):
 
     # get the blocking
     shape = ds_out.shape
     blocking = nt.blocking([0, 0, 0], shape, block_shape)
 
+    if library == 'vigra':
+        sampler = partial(vigra.sampling.resize, **library_kwargs)
+    elif library == 'skimage':
+        # for no, we only support majority downsampling for labels with skimage
+        assert not library_kwargs, "skimage downsampling supports no kwargs"
+        sampler = ds_majority_vote
+    else:
+        raise NotImplementedError("Downsampling with %s not implemented" % library)
+
     if n_threads <= 1:
         for block_id in block_list:
             _ds_block(blocking, block_id, ds_in, ds_out,
-                      scale_factor, halo, library_kwargs)
+                      scale_factor, halo, sampler)
     else:
         with futures.ThreadPoolExecutor(n_threads) as tp:
             tasks = [tp.submit(_ds_block, blocking, block_id, ds_in, ds_out,
-                               scale_factor, halo, library_kwargs) for block_id in block_list]
+                               scale_factor, halo, sampler) for block_id in block_list]
             [t.result() for t in tasks]
 
 
@@ -292,12 +316,11 @@ def downscaling(job_id, config_path):
     output_key = config['output_key']
 
     scale_factor = config['scale_factor']
-    # TODO support more impls
-    assert config.get('library', 'vigra') == 'vigra'
-    halo = config.get('halo', None)
+    library = config.get('library', 'vigra')
     library_kwargs = config.get('library_kwargs', None)
     if library_kwargs is None:
         library_kwargs = {}
+    halo = config.get('halo', None)
     n_threads = config.get('threads_per_job', 1)
 
     # submit blocks
@@ -308,14 +331,14 @@ def downscaling(job_id, config_path):
             ds_in  = f[input_key]
             ds_out = f[output_key]
             _submit_blocks(ds_in, ds_out, block_shape, block_list, scale_factor, halo,
-                           library_kwargs, n_threads)
+                           library, library_kwargs, n_threads)
 
     else:
         with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
             ds_in  = f_in[input_key]
             ds_out = f_out[output_key]
             _submit_blocks(ds_in, ds_out, block_shape, block_list, scale_factor, halo,
-                           library_kwargs, n_threads)
+                           library, library_kwargs, n_threads)
 
     # log success
     fu.log_job_success(job_id)
