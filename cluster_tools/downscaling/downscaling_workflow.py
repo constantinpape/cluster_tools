@@ -223,6 +223,7 @@ class DownscalingWorkflow(WorkflowBase):
     metadata_format = luigi.Parameter(default='paintera')
     metadata_dict = luigi.DictParameter(default={})
     output_key_prefix = luigi.Parameter(default='')
+    skip_existing_levels = luigi.BoolParameter(default=False)
 
     @staticmethod
     def validate_scale_factors(scale_factors):
@@ -278,6 +279,11 @@ class DownscalingWorkflow(WorkflowBase):
                 os.symlink(os.path.join(self.input_path, self.input_key),
                            os.path.join(self.input_path, trgt))
 
+    def _have_scale(self, scale):
+        key = self.get_scale_key(scale)
+        with file_reader(self.input_path) as f:
+            return key in f
+
     def requires(self):
         self.validate_scale_factors(self.scale_factors)
         halos = self.validate_halos(self.halos, len(self.scale_factors))
@@ -303,6 +309,12 @@ class DownscalingWorkflow(WorkflowBase):
                 effective_scale = [eff * sf for sf, eff in zip(scale_factor, effective_scale)]
 
             prefix = 's%i' % (scale + 1,)
+            # check if this scale already exists.
+            # if so, skip it if we have `skip_existing_levels` set to True
+            if self.skip_existing_levels and self._have_scale(scale):
+                in_key = out_key
+                continue
+
             t = ds_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                         config_dir=self.config_dir,
                         input_path=self.input_path, input_key=in_key,
