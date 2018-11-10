@@ -180,7 +180,7 @@ class BaseClusterTask(luigi.Task):
         """
         # time-limit in minutes
         # mem_limit in GB
-        return {'threads_per_job': 1, 'time_limit': 60, 'mem_limit': 1.}
+        return {'threads_per_job': 1, 'time_limit': 60, 'mem_limit': 1., 'qos': 'normal'}
 
     def get_global_config(self):
         """ Get the global configuration
@@ -381,6 +381,7 @@ class SlurmTask(BaseClusterTask):
         n_threads = task_config.get("threads_per_job", 1)
         time_limit = self._parse_time_limit(task_config.get("time_limit", 60))
         mem_limit = self._parse_mem_limit(task_config.get("mem_limit", 2))
+        qos = task_config.get("qos", "normal")
 
         # get file paths
         trgt_file = os.path.join(self.tmp_folder, self.task_name + '.py')
@@ -393,8 +394,9 @@ class SlurmTask(BaseClusterTask):
                           "#SBATCH -n %i\n"
                           "#SBATCH --mem %s\n"
                           "#SBATCH -t %s\n"
+                          "#SBATCH --qos=%s\n"
                           "%s %s") % (groupname, n_threads,
-                                      mem_limit, time_limit,
+                                      mem_limit, time_limit, qos,
                                       trgt_file, config_tmpl)
         script_path = os.path.join(self.tmp_folder, 'slurm_%s.sh' % job_name)
         with open(script_path, 'w') as f:
