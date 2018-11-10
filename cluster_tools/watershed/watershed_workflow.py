@@ -39,5 +39,6 @@ class WatershedWorkflow(WorkflowBase):
     @staticmethod
     def get_config():
         configs = super(WatershedWorkflow, WatershedWorkflow).get_config()
-        configs.update({'watershed': watershed_tasks.WatershedLocal.default_task_config()})
+        configs.update({'watershed': watershed_tasks.WatershedLocal.default_task_config(),
+                        **RelabelWorkflow.get_config()})
         return configs
