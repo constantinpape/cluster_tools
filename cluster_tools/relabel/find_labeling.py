@@ -4,6 +4,7 @@ import os
 import sys
 import json
 import pickle
+from concurrent import futures
 
 import luigi
 import numpy as np
@@ -46,8 +47,9 @@ class FindLabelingBase(luigi.Task):
         block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
         n_jobs = min(len(block_list), self.max_jobs)
 
-        config = {'input_path': self.input_path, 'input_key': self.input_key,
-                  'tmp_folder': self.tmp_folder, 'n_jobs': n_jobs}
+        config = self.get_task_config()
+        config.update({'input_path': self.input_path, 'input_key': self.input_key,
+                       'tmp_folder': self.tmp_folder, 'n_jobs': n_jobs})
 
         # we only have a single job to find the labeling
         self.prepare_jobs(1, None, config)
@@ -94,11 +96,20 @@ def find_labeling(job_id, config_path):
     tmp_folder = config['tmp_folder']
     input_path = config['input_path']
     input_key = config['input_key']
+    n_threads = config['threads_per_job']
+
+    def _read_input(job_id):
+        return np.load(os.path.join(tmp_folder, 'find_uniques_job_%i.npy' % job_id))
 
     # TODO this could be parallelized
-    uniques = np.concatenate([np.load(os.path.join(tmp_folder, 'find_uniques_job_%i.npy' % job_id))
-                              for job_id in range(n_jobs)])
-    uniques = nt.unique(uniques)
+    fu.log("read uniques")
+    with futures.ThreadPoolExecutor(n_threads) as tp:
+        tasks = [tp.submit(_read_input, job_id) for job_id in range(n_jobs)]
+        uniques = np.concatenate([t.result() for t in tasks])
+    fu.log("compute uniques")
+    # uniques = nt.unique(uniques)
+    uniques = np.unique(uniques)
+    fu.log("relabel")
     _, max_id, mapping = vigra.analysis.relabelConsecutive(uniques,
                                                            keep_zeros=True,
                                                            start_label=1)

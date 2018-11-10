@@ -43,3 +43,14 @@ class RelabelWorkflow(WorkflowBase):
                         identifier='relabel',
                         dependency=t2)
         return t3
+
+    @staticmethod
+    def get_config():
+        configs = super(RelabelWorkflow, RelabelWorkflow).get_config()
+        configs.update({'find_uniques':
+                        unique_tasks.FindUniquesLocal.default_task_config(),
+                        'find_labeling':
+                        labeling_tasks.FindLabelingLocal.default_task_config(),
+                        'write':
+                        write_tasks.WriteLocal.default_task_config()})
+        return configs
