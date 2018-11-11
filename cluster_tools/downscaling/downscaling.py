@@ -10,7 +10,6 @@ import numpy as np
 import luigi
 import vigra
 import nifty.tools as nt
-from skimage.measure import block_reduce
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -94,9 +93,8 @@ class DownscalingBase(luigi.Task):
 
         # make sure that we have order 0 downscaling if our datatype is not interpolatable
         library = task_config.get('library', 'vigra')
-        if library not in ('vigra', 'skimage'):
-            raise NotImplementedError("Donwnscaling is only supported via vigra or skimage, not %s" % library)
-        if dtype not in self.interpolatable_types and library == 'vigra':
+        assert library == 'vigra', "Downscaling is only supported with vigra"
+        if dtype not in self.interpolatable_types:
             opts = task_config.get('library_kwargs', {})
             opts = {} if opts is None else opts
             order = opts.get('order', None)
@@ -144,7 +142,8 @@ class DownscalingBase(luigi.Task):
         # if we have a roi, we need to re-sample it
         if roi_begin is not None:
             assert roi_end is not None
-            effective_scale = self.effective_scale_factor if self.effective_scale_factor else scale_factor
+            effective_scale = self.effective_scale_factor if\
+                self.effective_scale_factor else scale_factor
             if isinstance(effective_scale, int):
                 roi_begin = [rb // effective_scale for rb in roi_begin]
                 roi_end= [re // effective_scale if re is not None else sh
@@ -262,19 +261,6 @@ def _ds_block(blocking, block_id, ds_in, ds_out, scale_factor, halo, sampler):
     fu.log_block_success(block_id)
 
 
-# take axis as parameter to be compatible with block_reduce
-def majority_vote(inp, axis=-1):
-    ids, sizes = np.unique(inp, return_counts=True)
-    return ids[np.argmax(sizes)]
-
-
-def ds_majority_vote(x, shape):
-    block_size = tuple(sh // ts for sh, ts in zip(x.shape, shape))
-    out = block_reduce(x, block_size, func=majority_vote)
-    # TODO pad if necessary
-    return out
-
-
 def _submit_blocks(ds_in, ds_out, block_shape, block_list,
                    scale_factor, halo, library,
                    library_kwargs, n_threads):
@@ -282,15 +268,7 @@ def _submit_blocks(ds_in, ds_out, block_shape, block_list,
     # get the blocking
     shape = ds_out.shape
     blocking = nt.blocking([0, 0, 0], shape, block_shape)
-
-    if library == 'vigra':
-        sampler = partial(vigra.sampling.resize, **library_kwargs)
-    elif library == 'skimage':
-        # for no, we only support majority downsampling for labels with skimage
-        assert not library_kwargs, "skimage downsampling supports no kwargs"
-        sampler = ds_majority_vote
-    else:
-        raise NotImplementedError("Downsampling with %s not implemented" % library)
+    sampler = partial(vigra.sampling.resize, **library_kwargs)
 
     if n_threads <= 1:
         for block_id in block_list:
