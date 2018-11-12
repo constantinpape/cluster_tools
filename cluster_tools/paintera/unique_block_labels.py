@@ -147,7 +147,8 @@ def unique_block_labels(job_id, config_path):
         ds_out = f_out[output_key]
         chunks = ds.chunks
         shape = ds.shape
-        assert chunks == block_shape, "Chunks and block shape must agree"
+        assert tuple(chunks) == tuple(block_shape),\
+            "Chunks %s and block shape %s must agree" % (str(chunks), str(block_shape))
 
         blocking = nt.blocking([0, 0, 0], shape, block_shape)
 
