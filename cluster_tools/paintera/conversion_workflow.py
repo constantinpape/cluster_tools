@@ -60,11 +60,15 @@ class WritePainteraMetadata(luigi.Task):
             data_group.attrs['resolution'] = self.resolution
             data_group.attrs['isLabelMultiset'] = self.is_label_multiset
             self._write_downsampling_factors(data_group)
+            # write metadata for block to label mapping
+            scale_ds_pattern = os.path.join(self.labels_out_path, 'label-to-block-mapping', 's%%d')
+            data_group.attrs["labelBlockLookup"] = {"type": "n5-filesystem",
+                                                    "root": self.path,
+                                                    "scaleDatasetPattern": scale_ds_pattern}
             # add metadata for unique labels group
             unique_group = f[os.path.join(self.label_group, 'unique-labels')]
             unique_group.attrs['multiScale'] = True
             self._write_downsampling_factors(unique_group)
-            # TODO need to write more attrs ?
         self._write_log('write metadata successfull')
 
     def output(self):
