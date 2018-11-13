@@ -15,6 +15,7 @@ from ..downscaling import DownscalingWorkflow
 # from ..label_multisets import
 
 from . import unique_block_labels as unique_tasks
+from . import labels_to_blocks as labels_to_block_tasks
 
 
 class WritePainteraMetadata(luigi.Task):
@@ -218,7 +219,7 @@ class ConversionWorkflow(WorkflowBase):
         return t_down, scale_factors
 
     ############################################
-    # Step 4 Implementations: make block uniques
+    # Step 3 Implementations: make block uniques
     ############################################
 
     def _uniques_in_blocks(self, dependency, n_scales):
@@ -237,16 +238,54 @@ class ConversionWorkflow(WorkflowBase):
                        dependency=dep)
         return dep
 
-    ############################################
-    # Step 5 Implementations: make block uniques
-    ############################################
+    ##############################################
+    # Step 4 Implementations: invert block uniques
+    ##############################################
 
-    # TODO implement
+    def _label_block_mapping(self, dependency, n_scales):
+        task = getattr(labels_to_block_tasks, self._get_task_name('LabelBlockMapping'))
+        # require the labels-to-blocks group
+        with z5py.File(self.path) as f:
+            f.require_group(os.path.join(self.label_out_key, 'label-to-block-mapping'))
+        dep = dependency
+        for scale in range(n_scales):
+            in_key = os.path.join(self.label_out_key, 'data', 's%i' % scale)
+            out_key = os.path.join(self.label_out_key, 'label-to-block-mapping', 's%i' % scale)
+            dep = task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                       config_dir=self.config_dir,
+                       input_path=self.path, output_path=self.path,
+                       input_key=in_key, output_key=out_key,
+                       dependency=dep)
+        return dep
+
+    #####################################################
+    # Step 5 Implementations: fragment segment assignment
+    #####################################################
+
     def _fragment_segment_assignment(self, dependency):
         if self.assignment_key == '':
             return dependency
         else:
-            raise NotImplementedError("Fragment segment assignment for paintera not implemented yet")
+            # TODO should make this a task
+            with z5py.File(self.path) as f:
+                assignments = f[self.assignment_key][:]
+                n_fragments = len(assignments)
+
+                # find the fragments which have non-trivial assignment
+                segment_ids, counts = np.unique(assignments, return_counts=True)
+                fragment_ids = np.arange(n_fragments, dtype='uint64')
+                fragment_ids_to_counts = counts[segment_ids[fragment_ids]]
+                non_triv_fragments = fragment_ids[fragment_ids_to_counts > 1]
+                non_triv_segments = assignments[non_triv_fragment_ids]
+                non_triv_segments += n_fragments
+
+                # TODO do we need to assign a special value to ignore label (0) ?
+                frag_to_seg = np.vstack((non_triv_fragments, non_triv_segments))
+
+                out_key = os.path.join(self.label_out_key, 'fragment-segment-assignment')
+                chunks = (1, n_fragments)
+                f.require_dataset(out_key, data=frag_to_seg, compression='gzip', chunks=chunks)
+            return dependency
 
     def requires(self):
         # first, we make the labels at label_out_key
@@ -257,13 +296,14 @@ class ConversionWorkflow(WorkflowBase):
         # # next, compute the mapping of unique labels to blocks
         t3 = self._uniques_in_blocks(t2, len(scale_factors))
         # # next, compute the inverse mapping
-        # t4 = ''
+        t4 = self._labels_block_mapping(t3, len(scale_factors))
         # # next, compute the fragment-segment-assignment
-        t5 = self._fragment_segment_assignment(t3)
+        t5 = self._fragment_segment_assignment(t4)
         # finally, write metadata
         t6 = WritePainteraMetadata(tmp_folder=self.tmp_folder, path=self.path,
                                    label_group=self.label_out_key, scale_factors=scale_factors,
-                                   original_scale=self.label_scale, is_label_multiset=self.use_label_multiset,
+                                   original_scale=self.label_scale,
+                                   is_label_multiset=self.use_label_multiset,
                                    resolution=self.resolution, offset=self.offset,
                                    dependency=t5)
         return t6
