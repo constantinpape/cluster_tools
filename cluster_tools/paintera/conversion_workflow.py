@@ -15,7 +15,7 @@ from ..downscaling import DownscalingWorkflow
 # from ..label_multisets import
 
 from . import unique_block_labels as unique_tasks
-from . import labels_to_blocks as labels_to_block_tasks
+from . import label_block_mapping as labels_to_block_tasks
 
 
 class WritePainteraMetadata(luigi.Task):
@@ -27,6 +27,7 @@ class WritePainteraMetadata(luigi.Task):
     is_label_multiset = luigi.BoolParameter()
     resolution = luigi.ListParameter()
     offset = luigi.ListParameter()
+    max_id = luigi.IntParameter()
     dependency = luigi.TaskParameter()
 
     def _write_log(self, msg):
@@ -47,16 +48,13 @@ class WritePainteraMetadata(luigi.Task):
 
     def run(self):
         with z5py.File(self.path) as f:
-            # get the max id from the original label dataset
-            original_label_key = os.path.join(self.label_group, 'data', 's%i' % self.original_scale)
-            max_id = f[original_label_key].attrs['maxId']
             # write metadata for the top-level label group
             label_group = f[self.label_group]
             label_group.attrs['paintera_data'] = {'type': 'label'}
-            label_group.attrs['maxId'] = max_id
+            label_group.attrs['maxId'] = self.max_id
             # write metadata for the label-data group
             data_group = f[os.path.join(self.label_group, 'data')]
-            data_group.attrs['maxId'] = max_id
+            data_group.attrs['maxId'] = self.max_id
             data_group.attrs['multiScale'] = True
             data_group.attrs['offset'] = self.offset
             data_group.attrs['resolution'] = self.resolution
@@ -247,15 +245,19 @@ class ConversionWorkflow(WorkflowBase):
         # require the labels-to-blocks group
         with z5py.File(self.path) as f:
             f.require_group(os.path.join(self.label_out_key, 'label-to-block-mapping'))
+        # get the framgent max id
+        with z5py.File(self.path) as f:
+            max_id = f[self.label_in_key].attrs['maxId']
+        # compte the label to block mapping for all scales
         dep = dependency
         for scale in range(n_scales):
-            in_key = os.path.join(self.label_out_key, 'data', 's%i' % scale)
+            in_key = os.path.join(self.label_out_key, 'unique-labels', 's%i' % scale)
             out_key = os.path.join(self.label_out_key, 'label-to-block-mapping', 's%i' % scale)
             dep = task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                        config_dir=self.config_dir,
                        input_path=self.path, output_path=self.path,
                        input_key=in_key, output_key=out_key,
-                       dependency=dep)
+                       number_of_labels=max_id + 1, dependency=dep)
         return dep
 
     #####################################################
@@ -264,7 +266,10 @@ class ConversionWorkflow(WorkflowBase):
 
     def _fragment_segment_assignment(self, dependency):
         if self.assignment_key == '':
-            return dependency
+            # get the framgent max id
+            with z5py.File(self.path) as f:
+                max_id = f[self.label_in_key].attrs['maxId']
+            return dependency, max_id
         else:
             # TODO should make this a task
             with z5py.File(self.path) as f:
@@ -279,13 +284,16 @@ class ConversionWorkflow(WorkflowBase):
                 non_triv_segments = assignments[non_triv_fragment_ids]
                 non_triv_segments += n_fragments
 
+                # determine the overall max id
+                max_id = int(non_triv_segments).max()
+
                 # TODO do we need to assign a special value to ignore label (0) ?
                 frag_to_seg = np.vstack((non_triv_fragments, non_triv_segments))
 
                 out_key = os.path.join(self.label_out_key, 'fragment-segment-assignment')
                 chunks = (1, n_fragments)
                 f.require_dataset(out_key, data=frag_to_seg, compression='gzip', chunks=chunks)
-            return dependency
+            return dependency, max_id
 
     def requires(self):
         # first, we make the labels at label_out_key
@@ -296,16 +304,16 @@ class ConversionWorkflow(WorkflowBase):
         # # next, compute the mapping of unique labels to blocks
         t3 = self._uniques_in_blocks(t2, len(scale_factors))
         # # next, compute the inverse mapping
-        t4 = self._labels_block_mapping(t3, len(scale_factors))
+        t4 = self._label_block_mapping(t3, len(scale_factors))
         # # next, compute the fragment-segment-assignment
-        t5 = self._fragment_segment_assignment(t4)
+        t5, max_id = self._fragment_segment_assignment(t4)
         # finally, write metadata
         t6 = WritePainteraMetadata(tmp_folder=self.tmp_folder, path=self.path,
                                    label_group=self.label_out_key, scale_factors=scale_factors,
                                    original_scale=self.label_scale,
                                    is_label_multiset=self.use_label_multiset,
                                    resolution=self.resolution, offset=self.offset,
-                                   dependency=t5)
+                                   max_id=max_id, dependency=t5)
         return t6
 
     @staticmethod
