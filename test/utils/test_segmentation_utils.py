@@ -95,7 +95,6 @@ class TestSegmentationUtil(unittest.TestCase):
         graph, costs = self.toy_problem()
         # node_labels = multicut_decomposition(graph, costs)
         node_labels = multicut_kernighan_lin(graph, costs)
-        print(node_labels)
 
 
 if __name__ == '__main__':

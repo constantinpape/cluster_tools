@@ -32,34 +32,40 @@ def multicut_gaec(graph, costs, time_limit=None, n_threads=1):
 
 
 def multicut_decomposition(graph, costs, time_limit=None, n_threads=1):
-    # merge attractive edges with ufd
+
+    # merge attractive edges with ufd to
+    # obtain natural connected components
     merge_edges = costs > 0
     ufd = nufd.ufd(graph.numberOfNodes)
     uv_ids = graph.uvIds()
     ufd.merge(uv_ids[merge_edges])
     cc_labels = ufd.elementLabeling()
-    # relabel consecutive
+
+    # relabel component ids consecutively
     cc_labels, max_id, _ = vigra.analysis.relabelConsecutive(cc_labels, start_label=0,
                                                              keep_zeros=False)
-    print("Have", max_id + 1, "connected components")
 
     # TODO check that relabelConsecutive lifts gil ....
     # solve a component sub-problem
     def solve_component(component_id):
 
         # extract the nodes in this component
-        nodes = np.where(cc_labels == component_id)[0]
-        # print("Solving component", component_id, "of size", len(nodes))
+        sub_nodes = np.where(cc_labels == component_id)[0].astype('uint64')
         # if we only have a single node, return trivial labeling
-        if len(nodes) == 1:
-            return np.array([0], dtype='uint64'), 1
+        if len(sub_nodes) == 1:
+            return sub_nodes, np.array([0], dtype='uint64'), 1
 
         # extract the subgraph corresponding to this component
-        inner_edges, _, sub_uvs = graph.extractSubgraphFromNodes(nodes)
+        inner_edges, _, sub_uvs = graph.extractSubgraphFromNodes(sub_nodes)
         assert len(inner_edges) == len(sub_uvs), "%i, %i" % (len(inner_edges), len(sub_uvs))
-        # relabel local nodes and build the local graph
-        sub_uvs, max_local, _ = vigra.analysis.relabelConsecutive(sub_uvs, start_label=0,
-                                                                  keep_zeros=False)
+
+        # relabel sub-nodes and associated uv-ids
+        sub_nodes_relabeled, max_local, node_mapping = vigra.analysis.relabelConsecutive(sub_nodes,
+                                                                                         start_label=0,
+                                                                                         keep_zeros=False)
+        sub_uvs = nifty.tools.takeDict(node_mapping, sub_uvs)
+
+        # build the graph
         sub_graph = nifty.graph.undirectedGraph(max_local + 1)
         sub_graph.insertEdges(sub_uvs)
 
@@ -71,40 +77,35 @@ def multicut_decomposition(graph, costs, time_limit=None, n_threads=1):
         # relabel the solution
         sub_labels, max_seg_local, _ = vigra.analysis.relabelConsecutive(sub_labels, start_label=0,
                                                                          keep_zeros=False)
-        assert len(sub_labels) == len(nodes), "%i, %i" % (len(sub_labels), len(nodes))
-        return sub_labels, max_seg_local + 1
+        assert len(sub_labels) == len(sub_nodes), "%i, %i" % (len(sub_labels), len(sub_nodes))
+        return sub_nodes, sub_labels, max_seg_local + 1
 
     # solve all components in parallel
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(solve_component, component_id)
                  for component_id in range(max_id + 1)]
         results = [t.result() for t in tasks]
-    # component_list = [1]
-    # results = [solve_component(component_id) for component_id in component_list]
 
-    sub_results = [res[0] for res in results]
-    offsets = np.array([res[1] for res in results], dtype='uint64')
+    sub_nodes = [res[0] for res in results]
+    sub_results = [res[1] for res in results]
+    offsets = np.array([res[2] for res in results], dtype='uint64')
 
+    # make proper offsets for the component results
     offsets = np.roll(offsets, 1)
     offsets[0] = 0
     offsets = np.cumsum(offsets)
-    print(offsets[10:])
 
-    # insert subsolutions into the components
-    # node_labels = np.zeros_like(cc_labels, dtype='uint64')
-    node_labels = -1 * np.ones_like(cc_labels, dtype='int64')
+    # insert sub-results into the components
+    node_labels = np.zeros_like(cc_labels, dtype='uint64')
 
-    # TODO not sure if the sub result node labels are in correct oreder
     def insert_solution(component_id):
-        nodes = np.where(cc_labels == component_id)[0]
+        nodes = sub_nodes[component_id]
         node_labels[nodes] = (sub_results[component_id] + offsets[component_id])
 
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(insert_solution, component_id)
                  for component_id in range(max_id + 1)]
         [t.result() for t in tasks]
-
-    print(np.sum(node_labels == -1))
 
     return node_labels
 
