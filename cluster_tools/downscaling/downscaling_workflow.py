@@ -430,9 +430,9 @@ class PainteraToBdvWorkflow(WorkflowBase):
 
         metadata_dict = {**self.metadata_dict}
         if 'offsets' not in metadata_dict:
-            metadata_dict.update({'offsets': offsets})
+            metadata_dict.update({'offsets': offsets})[::-1]
         if 'resolution' not in metadata_dict:
-            metadata_dict.update({'resolution': resolution})
+            metadata_dict.update({'resolution': resolution})[::-1]
 
         # task to write the metadata
         t_meta = WriteDownscalingMetadata(tmp_folder=self.tmp_folder,

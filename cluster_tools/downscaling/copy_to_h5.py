@@ -108,9 +108,6 @@ class CopyToH5Base(luigi.Task):
 
         # require output dataset
         with vu.file_reader(self.output_path) as f:
-            #  FIXME dirty hack
-            if self.output_key in f:
-                del f[self.output_key]
             f.require_dataset(self.output_key, shape=shape, chunks=chunks,
                               compression=compression, dtype=dtype)
 

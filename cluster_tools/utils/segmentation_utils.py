@@ -1,4 +1,5 @@
 from concurrent import futures
+from functools import partial
 
 import numpy as np
 import vigra
@@ -31,7 +32,11 @@ def multicut_gaec(graph, costs, time_limit=None, n_threads=1):
         return solver.optimize(visitor=visitor)
 
 
-def multicut_decomposition(graph, costs, time_limit=None, n_threads=1):
+def multicut_decomposition(graph, costs, time_limit=None, n_threads=1,
+                           solver='kernighan-lin'):
+
+    # get the agglomerator
+    agglomerator = key_to_agglomerator(solver)
 
     # merge attractive edges with ufd to
     # obtain natural connected components
@@ -73,7 +78,7 @@ def multicut_decomposition(graph, costs, time_limit=None, n_threads=1):
         sub_costs = costs[inner_edges]
         assert len(sub_costs) == sub_graph.numberOfEdges, "%i, %i" % (len(sub_costs),
                                                                       sub_graph.numberOfEdges)
-        sub_labels = multicut_kernighan_lin(sub_graph, sub_costs)
+        sub_labels = agglomerator(sub_graph, sub_costs)
         # relabel the solution
         sub_labels, max_seg_local, _ = vigra.analysis.relabelConsecutive(sub_labels, start_label=0,
                                                                          keep_zeros=False)
@@ -127,6 +132,8 @@ def key_to_agglomerator(key):
     agglo_dict = {'kernighan-lin': multicut_kernighan_lin,
                   'greedy-additive': multicut_gaec,
                   'decomposition': multicut_decomposition,
+                  'decomposition-gaec': partial(multicut_decomposition,
+                                                solver='greediy-additive'),
                   'fusion-moves': multicut_fusion_moves}
     assert key in agglo_dict, key
     return agglo_dict[key]
