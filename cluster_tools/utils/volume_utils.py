@@ -120,8 +120,7 @@ def make_checkerboard_block_lists(blocking, roi_begin=None, roi_end=None):
 
 
 class InterpolatedVolume(object):
-    def __init__(self, volume, output_shape, interpolation='spline', spline_order=0):
-        assert interpolation in ('nearest', 'linear', 'spline')
+    def __init__(self, volume, output_shape, spline_order=0):
         assert isinstance(volume, np.ndarray)
         assert len(output_shape) == volume.ndim == 3, "Only 3d supported"
         assert all(osh > vsh for osh, vsh in zip(output_shape, volume.shape)),\
@@ -130,8 +129,7 @@ class InterpolatedVolume(object):
         self.shape = output_shape
         self.dtype = volume.dtype
 
-        self.scale = [sh / fsh for sh, fsh in zip(self.volume.shape, self.shape)]
-        self.method = interpolation
+        self.scale = [sh / float(fsh) for sh, fsh in zip(self.volume.shape, self.shape)]
         if np.dtype(self.dtype) == np.bool:
             self.min, self.max = 0, 1
         else:
@@ -142,15 +140,7 @@ class InterpolatedVolume(object):
                 self.min = np.finfo(np.dtype(self.dtype)).min
                 self.max = np.finfo(np.dtype(self.dtype)).max
 
-        # FIXME vigra nearest and linear are only implemented
-        # for images. For now, spline with order 0 seems to do the job
-        # (should be the same as nearest interpolation ?!)
-        if interpolation == 'nearest':
-            self.interpol_function = vigra.sampling.resizeImageNoInterpolation
-        elif interpolation == 'linear':
-            self.interpol_function = vigra.sampling.resizeImageLinearInterpolation
-        elif interpolation == 'spline':
-            self.interpol_function = partial(vigra.sampling.resize, order=spline_order)
+        self.interpol_function = partial(vigra.sampling.resize, order=spline_order)
 
     def _interpolate(self, data, shape):
         data = self.interpol_function(data.astype('float32'), shape=shape)
@@ -208,6 +198,5 @@ def load_mask(mask_path, mask_key, shape):
     else:
         with file_reader(mask_path, 'r') as f_mask:
             mask = f_mask[mask_key][:].astype('bool')
-        mask = InterpolatedVolume(mask, shape, interpolation='spline',
-                                  spline_order=0)
+        mask = InterpolatedVolume(mask, shape, spline_order=0)
     return mask
