@@ -27,6 +27,7 @@ class MergeSubGraphsBase(luigi.Task):
     # input volumes and graph
     graph_path = luigi.Parameter()
     scale = luigi.IntParameter()
+    output_key = luigi.Parameter(default='')
     merge_complete_graph = luigi.BoolParameter(default=False)
     # dependency
     dependency = luigi.TaskParameter()
@@ -92,7 +93,8 @@ class MergeSubGraphsBase(luigi.Task):
         # update the config with input and graph paths and keys
         # as well as block shape
         config.update({'graph_path': self.graph_path, 'block_shape': block_shape,
-                       'scale': self.scale, 'merge_complete_graph': self.merge_complete_graph})
+                       'scale': self.scale, 'merge_complete_graph': self.merge_complete_graph,
+                       'output_key': self.output_key})
 
         if self.merge_complete_graph:
             self._run_last_scale(config, block_shape, roi_begin, roi_end)
@@ -129,9 +131,9 @@ class MergeSubGraphsLSF(MergeSubGraphsBase, LSFTask):
 #
 
 
-def _merge_graph(graph_path, scale, block_list, blocking, shape, n_threads):
+def _merge_graph(graph_path, output_key, scale,
+                 block_list, blocking, shape, n_threads):
     block_prefix = 's%i/sub_graphs/block_' % scale
-    output_key = 'graph'
     ndist.mergeSubgraphs(graph_path,
                          blockPrefix=block_prefix,
                          blockIds=block_list,
@@ -182,7 +184,10 @@ def merge_sub_graphs(job_id, config_path):
     if merge_complete_graph:
         fu.log("merge complete graph at scale %i" % scale)
         n_threads = config['threads_per_job']
-        _merge_graph(graph_path, scale, block_list, blocking, shape, n_threads)
+        output_key = config.get('output_key', '')
+        assert output_key != ''
+        _merge_graph(graph_path, output_key, scale,
+                     block_list, blocking, shape, n_threads)
 
     else:
         fu.log("merging subgraphs at scale %i" % scale)

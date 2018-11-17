@@ -32,11 +32,7 @@ class ReduceProblemBase(luigi.Task):
     allow_retry = False
 
     # input volumes and graph
-    costs_path = luigi.Parameter()
-    costs_key = luigi.Parameter()
-    graph_path = luigi.Parameter()
-    graph_key = luigi.Parameter()
-    output_path = luigi.Parameter()
+    problem_path = luigi.Parameter()
     scale = luigi.IntParameter()
     #
     dependency = luigi.TaskParameter()
@@ -52,16 +48,15 @@ class ReduceProblemBase(luigi.Task):
         return config
 
     def _log_reduction(self):
-        with vu.file_reader(self.graph_path, 'r') as f:
-            n_nodes = f[self.graph_key].attrs['numberOfNodes']
-            n_edges = f[self.graph_key].attrs['numberOfEdges']
-        with vu.file_reader(self.output_path, 'r') as f:
-            key = 's%i' % (self.scale + 1,)
-            n_new_nodes = f[key].attrs['numberOfNodes']
-            n_new_edges = f[key].attrs['numberOfEdges']
+        key1 = 's%i/graph' % self.scale
+        key2 = 's%i/graph' % (self.scale + 1,)
+        with vu.file_reader(self.problem_path, 'r') as f:
+            n_nodes = f[key1].attrs['numberOfNodes']
+            n_edges = f[key1].attrs['numberOfEdges']
+            n_new_nodes = f[key2].attrs['numberOfNodes']
+            n_new_edges = f[key2].attrs['numberOfEdges']
         self._write_log("Reduced graph from %i to %i nodes; %i to %i edges." % (n_nodes, n_new_nodes,
                                                                                 n_edges, n_new_edges))
-
 
     def run(self):
         # get the global config and init configs
@@ -74,27 +69,22 @@ class ReduceProblemBase(luigi.Task):
 
         # update the config with input and graph paths and keys
         # as well as block shape
-        config.update({'costs_path': self.costs_path, 'costs_key': self.costs_key,
-                       'graph_path': self.graph_path, 'graph_key': self.graph_key,
-                       'output_path': self.output_path, 'tmp_folder': self.tmp_folder,
-                       'scale': self.scale, 'block_shape': block_shape})
+        config.update({'problem_path': self.problem_path, 'scale': self.scale,
+                       'block_shape': block_shape})
         if roi_begin is not None:
             assert roi_end is not None
             config.update({'roi_begin': roi_begin,
                            'roi_end': roi_end})
 
-        with vu.file_reader(self.graph_path, 'r') as f:
+        with vu.file_reader(self.problem_path, 'r') as f:
             shape = f.attrs['shape']
 
         factor = 2**self.scale
         block_shape = tuple(bs * factor for bs in block_shape)
 
-        block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
-        n_jobs = min(len(block_list), self.max_jobs)
-        config.update({'n_jobs': n_jobs})
-
         # prime and run the job
-        self.prepare_jobs(1, None, config)
+        block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+        self.prepare_jobs(1, block_list, config)
         self.submit_jobs(1)
 
         # wait till jobs finish and check for job success
@@ -132,18 +122,34 @@ class ReduceProblemLSF(ReduceProblemBase, LSFTask):
 # Implementation
 #
 
+def _load_cut_edges(problem_path, scale, blocking,
+                    block_list, n_threads):
+    key = 's%i/sub_results/cut_edge_ids' % scale
+    ds = z5py.File(problem_path)[key]
 
-def _merge_nodes(tmp_folder, scale, n_jobs, nodes, uv_ids, initial_node_labeling):
+    def load_block_res(block_id):
+        block = blocking.getBlock(block_id)
+        chunk_id = tuple(beg // sh for beg, sh
+                         in zip(block.begin, blocking.blockShape))
+        return ds.read_chunk(chunk_id)
+
+    with futures.ThreadPoolExecutor(n_threads) as tp:
+        tasks = [tp.submit(load_block_res, block_id)
+                 for block_id in block_list]
+        cut_edge_ids = [t.result() for t in tasks]
+        cut_edge_ids = np.concatenate([ids for ids in cut_edge_ids
+                                       if ids is not None])
+
+    return np.unique(cut_edge_ids)
+
+
+def _merge_nodes(problem_path, scale, blocking,
+                 block_list, nodes, uv_ids,
+                 initial_node_labeling, n_threads):
+    # load the cut edge ids
     n_edges = len(uv_ids)
-    # load the cut-edge ids from the prev. jobs and make merge edge ids
-    # TODO we could parallelize this
-    cut_edge_ids = np.concatenate([np.load(os.path.join(tmp_folder, 'subproblem_results',
-                                                        's%i_job%i.npy' % (scale, job_id)))
-                                   for job_id in range(n_jobs)]).astype('uint64')
-    # we only need to run unique if we have more than one job
-    if n_jobs > 1:
-        cut_edge_ids = np.unique(cut_edge_ids)
-
+    cut_edge_ids = _load_cut_edges(problem_path, scale, blocking,
+                                   block_list, n_threads)
     assert len(cut_edge_ids) < n_edges, "%i = %i, does not reduce problem" % (len(cut_edge_ids),
                                                                               n_edges)
 
@@ -201,21 +207,20 @@ def _get_new_edges(uv_ids, node_labeling, costs, accumulation_method, n_threads)
     return new_uv_ids, edge_labeling, new_costs
 
 
-def _serialize_new_problem(graph_path, graph_key,
+def _serialize_new_problem(problem_path,
                            n_new_nodes, new_uv_ids,
                            node_labeling, edge_labeling,
                            new_costs, new_initial_node_labeling,
                            shape, scale, initial_block_shape,
-                           output_path, n_threads,
-                           roi_begin, roi_end):
+                           n_threads, roi_begin, roi_end):
 
     next_scale = scale + 1
-    f_out= z5py.File(output_path)
+    f_out = z5py.File(problem_path)
     g_out = f_out.require_group('s%i' % next_scale)
     g_out.require_group('sub_graphs')
 
-    block_in_prefix = os.path.join(output_path, 's%i' % scale, 'sub_graphs', 'block_')
-    block_out_prefix = os.path.join(output_path, 's%i' % next_scale, 'sub_graphs', 'block_')
+    block_in_prefix = os.path.join(problem_path, 's%i' % scale, 'sub_graphs', 'block_')
+    block_out_prefix = os.path.join(problem_path, 's%i' % next_scale, 'sub_graphs', 'block_')
 
     factor = 2**scale
     block_shape = [factor * bs for bs in initial_block_shape]
@@ -226,6 +231,7 @@ def _serialize_new_problem(graph_path, graph_key,
     # NOTE we do not need to serialize the sub-edges in the current implementation
     # of the blockwise multicut workflow, because we always load the full graph
     # in 'solve_subproblems'
+
     # serialize the new sub-graphs
     block_ids = vu.blocks_in_volume(shape, new_block_shape, roi_begin, roi_end)
     ndist.serializeMergedGraph(graphBlockPrefix=block_in_prefix,
@@ -239,30 +245,34 @@ def _serialize_new_problem(graph_path, graph_key,
                                numberOfThreads=n_threads,
                                serializeEdges=False)
 
-    # serialize the full graph for the next scale level
-    n_new_edges = len(new_uv_ids)
-    g_out.attrs['numberOfNodes'] = n_new_nodes
-    g_out.attrs['numberOfEdges'] = n_new_edges
+    # serialize the multicut problem for the next scale level
 
-    with vu.file_reader(graph_path, 'r') as f:
+    graph_key = 's%i/graph' % scale
+    with vu.file_reader(problem_path, 'r') as f:
         ignore_label = f[graph_key].attrs['ignoreLabel']
-    g_out.attrs['ignoreLabel'] = ignore_label
 
-    def _serialize(name, data, dtype='uint64'):
+    n_new_edges = len(new_uv_ids)
+    graph_out = g_out.require_group('graph')
+    graph_out.attrs['ignoreLabel'] = ignore_label
+    graph_out.attrs['numberOfNodes'] = n_new_nodes
+    graph_out.attrs['numberOfEdges'] = n_new_edges
+
+    def _serialize(out_group, name, data, dtype='uint64'):
         ser_chunks = (min(data.shape[0], 262144), 2) if data.ndim == 2 else\
             (min(data.shape[0], 262144),)
-        ds_ser = g_out.require_dataset(name, dtype=dtype, shape=data.shape,
-                                       chunks=ser_chunks, compression='gzip')
+        ds_ser = out_group.require_dataset(name, dtype=dtype, shape=data.shape,
+                                           chunks=ser_chunks, compression='gzip')
         ds_ser.n_threads = n_threads
         ds_ser[:] = data
 
     # NOTE we don not need to serialize the nodes cause they are
     # consecutive anyways
     # _serialize('nodes', np.arange(n_new_nodes).astype('uint64'))
+
     # serialize the new graph, the node labeling and the new costs
-    _serialize('edges', new_uv_ids)
-    _serialize('node_labeling', new_initial_node_labeling)
-    _serialize('costs', new_costs, dtype='float32')
+    _serialize(graph_out, 'edges', new_uv_ids)
+    _serialize(g_out, 'node_labeling', new_initial_node_labeling)
+    _serialize(g_out, 'costs', new_costs, dtype='float32')
 
     return n_new_edges
 
@@ -275,15 +285,10 @@ def reduce_problem(job_id, config_path):
     # get the config
     with open(config_path) as f:
         config = json.load(f)
-    graph_path = config['graph_path']
-    graph_key = config['graph_key']
-    costs_path = config['costs_path']
-    costs_key = config['costs_key']
-    output_path = config['output_path']
-    tmp_folder= config['tmp_folder']
+    problem_path = config['problem_path']
     initial_block_shape = config['block_shape']
     scale = config['scale']
-    n_jobs = config['n_jobs']
+    block_list = config['block_list']
     accumulation_method = config.get('accumulation_method', 'sum')
     n_threads = config['threads_per_job']
     roi_begin = config.get('roi_begin', None)
@@ -291,8 +296,9 @@ def reduce_problem(job_id, config_path):
 
     # get the number of nodes and uv-ids at this scale level
     # as well as the initial node labeling
-    fu.log("read graph from %s, %s" % (graph_path, graph_key))
-    with vu.file_reader(graph_path, 'r') as f:
+    fu.log("read problem from %s" % problem_path)
+    graph_key = 's%i/graph' % scale
+    with vu.file_reader(problem_path, 'r') as f:
         shape = f.attrs['shape']
 
         # load graph nodes and edges
@@ -320,39 +326,38 @@ def reduce_problem(job_id, config_path):
         if scale == 0:
             initial_node_labeling = None
         else:
-            ds = group['node_labeling']
+            ds = f['s%i/node_labeling' % scale]
             ds.n_threads = n_threads
             initial_node_labeling = ds[:]
 
-    fu.log("read costs from %s, %s" % (costs_path, costs_key))
-    with vu.file_reader(costs_path) as f:
+    costs_key = 's%i/costs' % scale
+    with vu.file_reader(problem_path) as f:
         ds = f[costs_key]
         ds.n_threads = n_threads
         costs = ds[:]
     assert len(costs) == n_edges, "%i, %i" (len(costs), n_edges)
 
+    block_shape = [bsh * 2**scale for bsh in initial_block_shape]
+    blocking = nt.blocking([0, 0, 0], shape, block_shape)
+
     # get the new node assignment
     fu.log("merge nodes")
-    n_new_nodes, node_labeling, new_initial_node_labeling = _merge_nodes(tmp_folder,
-                                                                         scale,
-                                                                         n_jobs,
-                                                                         nodes,
-                                                                         uv_ids,
-                                                                         initial_node_labeling)
+    n_new_nodes, node_labeling, new_initial_node_labeling = _merge_nodes(problem_path, scale, blocking,
+                                                                         block_list, nodes, uv_ids,
+                                                                         initial_node_labeling, n_threads)
     # get the new edge assignment
     fu.log("get new edge ids")
     new_uv_ids, edge_labeling, new_costs = _get_new_edges(uv_ids, node_labeling,
                                                           costs, accumulation_method, n_threads)
 
     # serialize the input graph and costs for the next scale level
-    fu.log("serialize new problem to %s/s%i" % (output_path, scale))
-    n_new_edges = _serialize_new_problem(graph_path, graph_key,
+    fu.log("serialize new problem to %s/s%i" % (problem_path, scale + 1))
+    n_new_edges = _serialize_new_problem(problem_path,
                                          n_new_nodes, new_uv_ids,
                                          node_labeling, edge_labeling,
                                          new_costs, new_initial_node_labeling,
                                          shape, scale, initial_block_shape,
-                                         output_path, n_threads,
-                                         roi_begin, roi_end)
+                                         n_threads, roi_begin, roi_end)
 
     fu.log("Reduced graph from %i to %i nodes; %i to %i edges." % (n_nodes, n_new_nodes,
                                                                    n_edges, n_new_edges))

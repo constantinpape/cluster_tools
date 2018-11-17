@@ -12,6 +12,7 @@ class GraphWorkflow(WorkflowBase):
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
     graph_path = luigi.Parameter()
+    output_key = luigi.Parameter()
     n_scales = luigi.IntParameter()
 
     # for now we only support n5 / zarr input labels
@@ -49,6 +50,7 @@ class GraphWorkflow(WorkflowBase):
                         max_jobs=self.max_jobs,
                         config_dir=self.config_dir,
                         graph_path=self.graph_path,
+                        output_key=self.output_key,
                         scale=self.n_scales - 1,
                         merge_complete_graph=True,
                         dependency=t_prev)
@@ -62,6 +64,7 @@ class GraphWorkflow(WorkflowBase):
                           max_jobs=self.max_jobs,
                           config_dir=self.config_dir,
                           graph_path=self.graph_path,
+                          input_key=self.output_key,
                           scale=self.n_scales - 1,
                           dependency=t_prev)
             t_prev = t4

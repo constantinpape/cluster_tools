@@ -1,0 +1,1 @@
+from affogato.segmentation import compute_mws_segmentation

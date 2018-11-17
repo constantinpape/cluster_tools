@@ -27,6 +27,7 @@ class MapEdgeIdsBase(luigi.Task):
 
     # input volumes and graph
     graph_path = luigi.Parameter()
+    input_key = luigi.Parameter()
     scale = luigi.IntParameter()
     dependency = luigi.TaskParameter()
 
@@ -51,7 +52,8 @@ class MapEdgeIdsBase(luigi.Task):
 
         # update the config with input and graph paths and keys
         # as well as block shape
-        config.update({'graph_path': self.graph_path, 'scale': self.scale})
+        config.update({'graph_path': self.graph_path, 'scale': self.scale,
+                       'input_key': self.input_key})
 
         # prime and run the job
         self.prepare_jobs(1, block_list, config)
@@ -100,10 +102,10 @@ def map_edge_ids(job_id, config_path):
         config = json.load(f)
     scale = config['scale']
     graph_path = config['graph_path']
+    input_key = config['input_key']
     block_list = config['block_list']
     n_threads = config['threads_per_job']
 
-    input_key = 'graph'
     block_prefix = 's%i/sub_graphs/block_' % scale
     ndist.mapEdgeIds(graph_path, input_key,
                      blockPrefix=block_prefix,

@@ -27,7 +27,7 @@ class SolveGlobalBase(luigi.Task):
     allow_retry = False
 
     # input volumes and graph
-    input_path = luigi.Parameter()
+    problem_path = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     scale = luigi.IntParameter()
@@ -56,7 +56,7 @@ class SolveGlobalBase(luigi.Task):
         # update the config with input and graph paths and keys
         # as well as block shape
         config.update({'output_path': self.output_path, 'output_key': self.output_key,
-                       'scale': self.scale, 'input_path': self.input_path})
+                       'scale': self.scale, 'problem_path': self.problem_path})
 
         # prime and run the job
         self.prepare_jobs(1, None, config)
@@ -108,7 +108,7 @@ def solve_global(job_id, config_path):
     with open(config_path) as f:
         config = json.load(f)
     # path to the reduced problem
-    input_path = config['input_path']
+    problem_path = config['problem_path']
     # path where the node labeling shall be written
     output_path = config['output_path']
     output_key = config['output_key']
@@ -120,12 +120,13 @@ def solve_global(job_id, config_path):
     agglomerator = su.key_to_agglomerator(agglomerator_key)
 
     # TODO this should come from input variable
-    with vu.file_reader(input_path) as f:
+    with vu.file_reader(problem_path) as f:
         group = f['s%i' % scale]
-        n_nodes = group.attrs['numberOfNodes']
-        ignore_label = group.attrs['ignoreLabel']
+        graph_group = group['graph']
+        n_nodes = graph_group.attrs['numberOfNodes']
+        ignore_label = graph_group.attrs['ignoreLabel']
 
-        ds = group['edges']
+        ds = graph_group['edges']
         ds.n_threads = n_threads
         uv_ids = ds[:]
         n_edges = len(uv_ids)

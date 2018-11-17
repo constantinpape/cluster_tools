@@ -19,17 +19,11 @@ class MulticutSegmentationWorkflow(WorkflowBase):
     # where to save the watersheds
     ws_path = luigi.Parameter()
     ws_key = luigi.Parameter()
-    # where to save the graph
-    graph_path = luigi.Parameter()
-    # where to save the features
-    features_path = luigi.Parameter()
-    # where to save the costs
-    costs_path = luigi.Parameter()
+    # where to save the multicut problems
+    problem_path = luigi.Parameter()
     # where to save the node labels
     node_labels_path = luigi.Parameter()
     node_labels_key = luigi.Parameter()
-    # where to save the intermediate multicut problems
-    problem_path = luigi.Parameter()
     # where to save the resulting segmentation
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
@@ -51,44 +45,38 @@ class MulticutSegmentationWorkflow(WorkflowBase):
 
     def _get_mc_wf(self, dep):
         # hard-coded keys
-        graph_key = 'graph'
-        features_key = 'features'
-        costs_key = 'costs'
         if self.use_decomposition_multicut:
-            mc_wf = DecompositionWorkflow(tmp_folder=self.tmp_folder,
-                                          max_jobs=self.max_jobs_multicut,
-                                          config_dir=self.config_dir,
-                                          target=self.target,
-                                          dependency=dep,
-                                          graph_path=self.graph_path,
-                                          graph_key=graph_key,
-                                          costs_path=self.costs_path,
-                                          costs_key=costs_key,
-                                          output_path=self.node_labels_path,
-                                          output_key=self.node_labels_key,
-                                          decomposition_path=self.output_path)
+            raise NotImplementedError("Decomposition mutlicut not adjusted to new problem format yey")
+            # mc_wf = DecompositionWorkflow(tmp_folder=self.tmp_folder,
+            #                               max_jobs=self.max_jobs_multicut,
+            #                               config_dir=self.config_dir,
+            #                               target=self.target,
+            #                               dependency=dep,
+            #                               graph_path=self.graph_path,
+            #                               graph_key=graph_key,
+            #                               costs_path=self.costs_path,
+            #                               costs_key=costs_key,
+            #                               output_path=self.node_labels_path,
+            #                               output_key=self.node_labels_key,
+            #                               decomposition_path=self.output_path)
         else:
             mc_wf = MulticutWorkflow(tmp_folder=self.tmp_folder,
                                      max_jobs=self.max_jobs_multicut,
                                      config_dir=self.config_dir,
                                      target=self.target,
                                      dependency=dep,
-                                     graph_path=self.graph_path,
-                                     graph_key=graph_key,
-                                     costs_path=self.costs_path,
-                                     costs_key=costs_key,
+                                     problem_path=self.problem_path,
                                      n_scales=self.n_scales,
                                      output_path=self.node_labels_path,
-                                     output_key=self.node_labels_key,
-                                     merged_problem_path=self.problem_path)
+                                     output_key=self.node_labels_key)
         return mc_wf
 
     # TODO implement mechanism to skip existing dependencies
     def requires(self):
         # hard-coded keys
-        graph_key = 'graph'
+        graph_key = 's0/graph'
         features_key = 'features'
-        costs_key = 'costs'
+        costs_key = 's0/costs'
         if self.skip_ws:
             assert os.path.exists(os.path.join(self.ws_path, self.ws_key)), "%s:%s" % (self.ws_path,
                                                                                        self.ws_key)
@@ -114,10 +102,10 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                                  config_dir=self.config_dir,
                                  target=self.target,
                                  dependency=ws_wf,
-                                 # dependency=self.dependency,
                                  input_path=self.ws_path,
                                  input_key=self.ws_key,
-                                 graph_path=self.graph_path,
+                                 graph_path=self.problem_path,
+                                 output_key=graph_key,
                                  n_scales=1)
         # TODO add options to choose which features to use
         features_wf = EdgeFeaturesWorkflow(tmp_folder=self.tmp_folder,
@@ -129,9 +117,9 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                                            input_key=self.input_key,
                                            labels_path=self.ws_path,
                                            labels_key=self.ws_key,
-                                           graph_path=self.graph_path,
+                                           graph_path=self.problem_path,
                                            graph_key=graph_key,
-                                           output_path=self.features_path,
+                                           output_path=self.problem_path,
                                            output_key=features_key,
                                            max_jobs_merge=self.max_jobs_merge_features)
         costs_wf = EdgeCostsWorkflow(tmp_folder=self.tmp_folder,
@@ -139,9 +127,9 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                                      config_dir=self.config_dir,
                                      target=self.target,
                                      dependency=features_wf,
-                                     features_path=self.features_path,
+                                     features_path=self.problem_path,
                                      features_key=features_key,
-                                     output_path=self.costs_path,
+                                     output_path=self.problem_path,
                                      output_key=costs_key,
                                      rf_path=self.rf_path)
         mc_wf = self._get_mc_wf(costs_wf)

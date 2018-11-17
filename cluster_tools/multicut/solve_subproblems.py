@@ -8,6 +8,7 @@ from concurrent import futures
 import numpy as np
 import vigra
 import luigi
+import z5py
 import nifty
 import nifty.tools as nt
 import nifty.distributed as ndist
@@ -31,10 +32,7 @@ class SolveSubproblemsBase(luigi.Task):
     src_file = os.path.abspath(__file__)
 
     # input volumes and graph
-    costs_path = luigi.Parameter()
-    costs_key = luigi.Parameter()
-    graph_path = luigi.Parameter()
-    graph_key = luigi.Parameter()
+    problem_path = luigi.Parameter()
     scale = luigi.IntParameter()
     #
     dependency = luigi.TaskParameter()
@@ -59,26 +57,28 @@ class SolveSubproblemsBase(luigi.Task):
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 
-        # load the task config
-        config = self.get_task_config()
-
-        # update the config with input and graph paths and keys
-        # as well as block shape
-        config.update({'costs_path': self.costs_path, 'costs_key': self.costs_key,
-                       'graph_path': self.graph_path, 'graph_key': self.graph_key,
-                       'scale': self.scale, 'tmp_folder': self.tmp_folder})
-
-        # make folder for the subproblem results
-        try:
-            os.mkdir(os.path.join(self.tmp_folder, 'subproblem_results'))
-        except OSError:
-            pass
-
-        with vu.file_reader(self.graph_path, 'r') as f:
-            shape = f.attrs['shape']
+        with vu.file_reader(self.problem_path, 'r') as f:
+            shape = tuple(f.attrs['shape'])
 
         factor = 2**self.scale
         block_shape = tuple(bs * factor for bs in block_shape)
+
+        # update the config with input and graph paths and keys
+        # as well as block shape
+        config = self.get_task_config()
+        config.update({'problem_path': self.problem_path, 'scale': self.scale,
+                       'block_shape': block_shape})
+
+        # make output datasets
+        out_key = 's%i/sub_results' % self.scale
+        with vu.file_reader(self.problem_path) as f:
+            out = f.require_group(out_key)
+            # NOTE, gzip may fail for very small inputs, so we use raw compression for now
+            # might be a good idea to give blosc a shot ...
+            out.require_dataset('cut_edge_ids', shape=shape, chunks=block_shape,
+                                compression='raw', dtype='uint64')
+            out.require_dataset('node_result', shape=shape, chunks=block_shape,
+                                compression='raw', dtype='uint64')
 
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
@@ -124,7 +124,9 @@ class SolveSubproblemsLSF(SolveSubproblemsBase, LSFTask):
 #
 
 
-def _solve_block_problem(block_id, graph, block_prefix, costs, agglomerator, ignore_label):
+def _solve_block_problem(block_id, graph, block_prefix,
+                         costs, agglomerator, ignore_label,
+                         blocking, out):
     fu.log("start processing block %i" % block_id)
 
     # load the nodes in this sub-block and map them
@@ -138,38 +140,50 @@ def _solve_block_problem(block_id, graph, block_prefix, costs, agglomerator, ign
         nodes = nodes[1:]
         if len(nodes) == 0:
             fu.log_block_success(block_id)
-            return None
+            return
 
     # we allow for invalid nodes here, which can occur for un-connected graphs resulting from bad masks ...
     inner_edges, outer_edges, sub_uvs = graph.extractSubgraphFromNodes(nodes, allowInvalidNodes=True)
+    assert len(inner_edges) == len(sub_uvs)
 
-    # if we had only a single node (i.e. no edge, return the outer edges)
+    # if we only have a single node (= no edges), save the
+    # outer edges as cut edges
     if len(nodes) == 1:
         fu.log_block_success(block_id)
-        return outer_edges
+        cut_edge_ids = outer_edges
+        sub_result = None
+    # otherwise solve the multicut for this block
+    else:
+        # relabel the sub-uvs for more efficient processing
+        sub_uvs, max_id, _ = vigra.analysis.relabelConsecutive(sub_uvs, start_label=0,
+                                                               keep_zeros=False)
+        n_local_nodes = max_id + 1
+        sub_graph = nifty.graph.undirectedGraph(n_local_nodes)
+        sub_graph.insertEdges(sub_uvs)
 
-    assert len(sub_uvs) == len(inner_edges)
-    assert len(sub_uvs) > 0, str(block_id)
+        sub_costs = costs[inner_edges]
+        assert len(sub_costs) == sub_graph.numberOfEdges
 
-    # relabel the sub-uvs for more efficient processing
-    sub_uvs, max_id, _ = vigra.analysis.relabelConsecutive(sub_uvs, start_label=0,
-                                                           keep_zeros=False)
-    n_local_nodes = max_id + 1
-    sub_graph = nifty.graph.undirectedGraph(n_local_nodes)
-    sub_graph.insertEdges(sub_uvs)
+        sub_result = agglomerator(sub_graph, sub_costs)
+        sub_edgeresult = sub_result[sub_uvs[:, 0]] != sub_result[sub_uvs[:, 1]]
 
-    sub_costs = costs[inner_edges]
-    assert len(sub_costs) == sub_graph.numberOfEdges
+        assert len(sub_edgeresult) == len(inner_edges)
+        cut_edge_ids = inner_edges[sub_edgeresult]
+        cut_edge_ids = np.concatenate([cut_edge_ids, outer_edges])
 
-    sub_result = agglomerator(sub_graph, sub_costs)
-    sub_edgeresult = sub_result[sub_uvs[:, 0]] != sub_result[sub_uvs[:, 1]]
+    # get chunk id of this block
+    block = blocking.getBlock(block_id)
+    chunk_id = tuple(beg // sh for beg, sh in zip(block.begin, blocking.blockShape))
 
-    assert len(sub_edgeresult) == len(inner_edges)
-    cut_edge_ids = inner_edges[sub_edgeresult]
-    cut_edge_ids = np.concatenate([cut_edge_ids, outer_edges])
+    # serialize the cut-edge-ids and the (local) node labeling
+    ds_edge_res = out['cut_edge_ids']
+    ds_edge_res.write_chunk(chunk_id, cut_edge_ids, True)
+
+    if sub_result is not None:
+        ds_node_res = out['node_result']
+        ds_node_res.write_chunk(chunk_id, sub_result, True)
 
     fu.log_block_success(block_id)
-    return cut_edge_ids
 
 
 def solve_subproblems(job_id, config_path):
@@ -181,62 +195,59 @@ def solve_subproblems(job_id, config_path):
     with open(config_path) as f:
         config = json.load(f)
     # input configs
-    costs_path = config['costs_path']
-    costs_key = config['costs_key']
-    graph_path = config['graph_path']
-    graph_key = config['graph_key']
-    tmp_folder = config['tmp_folder']
+    problem_path = config['problem_path']
     scale = config['scale']
+    block_shape = config['block_shape']
     block_list = config['block_list']
     n_threads = config['threads_per_job']
     agglomerator_key = config['agglomerator']
 
-    block_prefix = os.path.join(graph_path, 's%i' % scale,
-                                'sub_graphs', 'block_')
+    fu.log("reading problem from %s" % problem_path)
+    problem = z5py.N5File(problem_path)
+    shape = problem.attrs['shape']
 
-    fu.log("reading costs from %s:%s" % (costs_path, costs_key))
-    with vu.file_reader(costs_path, 'r') as f:
-        ds = f[costs_key]
-        ds.n_threads = n_threads
-        costs = ds[:]
-
-    # check if the graph has ignore-label
-    with vu.file_reader(graph_path, 'r') as f:
-        ignore_label = f[graph_key].attrs['ignoreLabel']
-    fu.log("ignore label is %s" % ('true' if ignore_label else 'false'))
+    # load the costs
+    costs_key = 's%i/costs' % scale
+    fu.log("reading costs from path in problem: %s" % costs_key)
+    ds = problem[costs_key]
+    ds.n_threads = n_threads
+    costs = ds[:]
 
     # load the graph
-    # TODO parallelize ?!
-    fu.log("reading graph from %s:%s" % (graph_path, graph_key))
-    graph = ndist.Graph(os.path.join(graph_path, graph_key),
+    graph_key = 's%i/graph' % scale
+    fu.log("reading graph from path in problem: %s" % graph_key)
+    graph = ndist.Graph(os.path.join(problem_path, graph_key),
                         numberOfThreads=n_threads)
+    # check if the problem has an ignore-label
+    ignore_label = problem[graph_key].attrs['ignoreLabel']
+    fu.log("ignore label is %s" % ('true' if ignore_label else 'false'))
+
     fu.log("using agglomerator %s" % agglomerator_key)
     agglomerator = su.key_to_agglomerator(agglomerator_key)
+
+    # the output group
+    out = problem['s%i/sub_results' % scale]
+
+    # TODO this should be a n5 varlen dataset as well and
+    # then this is just another dataset in problem path
+    block_prefix = os.path.join(problem_path, 's%i' % scale,
+                                'sub_graphs', 'block_')
+    blocking = nt.blocking([0, 0, 0], shape, list(block_shape))
 
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(_solve_block_problem,
                            block_id, graph, block_prefix,
-                           costs, agglomerator, ignore_label)
+                           costs, agglomerator, ignore_label,
+                           blocking, out)
                  for block_id in block_list]
-        results = [t.result() for t in tasks]
+        [t.result() for t in tasks]
 
-    res_folder = os.path.join(tmp_folder, 'subproblem_results')
-    # save the individual block results for debugging
-    # TODO should be a parameter
-    # TODO could be parallelized
-    if False:
-        for block_id, res in zip(block_list, results):
-            if res is None:
-                continue
-            block_res_path = os.path.join(res_folder, 's%i_block%i.npy' % (scale, block_id))
-            np.save(block_res_path, res)
+    # cut_edge_ids = np.concatenate([res for res in results if res is not None])
+    # cut_edge_ids = np.unique(cut_edge_ids).astype('uint64')
 
-    cut_edge_ids = np.concatenate([res for res in results if res is not None])
-    cut_edge_ids = np.unique(cut_edge_ids).astype('uint64')
-
-    job_res_path = os.path.join(res_folder, 's%i_job%i.npy' % (scale, job_id))
-    fu.log("saving cut edge results to %s" % job_res_path)
-    np.save(job_res_path, cut_edge_ids)
+    # job_res_path = os.path.join(res_folder, 's%i_job%i.npy' % (scale, job_id))
+    # fu.log("saving cut edge results to %s" % job_res_path)
+    # np.save(job_res_path, cut_edge_ids)
     fu.log_job_success(job_id)
 
 
