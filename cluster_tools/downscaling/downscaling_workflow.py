@@ -110,7 +110,11 @@ class WriteDownscalingMetadata(luigi.Task):
         key = 't00000/s00/0/cells'
         with file_reader(self.output_path, 'r') as f:
             shape = f[key].shape
+            dtype = f[key].dtype
         nz, ny, nx = tuple(shape)
+
+        # format for tischis bdv extension
+        bdv_dtype = 'bdv.hdf5.ulong' if np.dtype(dtype) == np.dtype('uint64') else 'bdv.hdf5'
 
         # write top-level data
         root = ET.Element('SpimData')
@@ -128,7 +132,7 @@ class WriteDownscalingMetadata(luigi.Task):
 
         seqdesc = ET.SubElement(root, 'SequenceDescription')
         imgload = ET.SubElement(seqdesc, 'ImageLoader')
-        imgload.set('format', 'bdv.hdf5')
+        imgload.set('format', bdv_dtype)
         el = ET.SubElement(imgload, 'hdf5')
         el.set('type', 'relative')
         el.text = os.path.basename(self.output_path)
@@ -161,7 +165,9 @@ class WriteDownscalingMetadata(luigi.Task):
                 vreg.set('setup', str(c))
                 vt = ET.SubElement(vreg, 'ViewTransform')
                 vt.set('type', 'affine')
-                ET.SubElement(vt, 'affine').text = '{} 0.0 0.0 {} 0.0 {} 0.0 {} 0.0 0.0 {} {}'.format(dx, ox, dy, oy, dz, oz)
+                ET.SubElement(vt, 'affine').text = '{} 0.0 0.0 {} 0.0 {} 0.0 {} 0.0 0.0 {} {}'.format(dx, ox,
+                                                                                                      dy, oy,
+                                                                                                      dz, oz)
 
         indent_xml(root)
         tree = ET.ElementTree(root)
