@@ -245,12 +245,6 @@ def solve_subproblems(job_id, config_path):
                  for block_id in block_list]
         [t.result() for t in tasks]
 
-    # cut_edge_ids = np.concatenate([res for res in results if res is not None])
-    # cut_edge_ids = np.unique(cut_edge_ids).astype('uint64')
-
-    # job_res_path = os.path.join(res_folder, 's%i_job%i.npy' % (scale, job_id))
-    # fu.log("saving cut edge results to %s" % job_res_path)
-    # np.save(job_res_path, cut_edge_ids)
     fu.log_job_success(job_id)
 
 
