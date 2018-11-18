@@ -65,9 +65,7 @@ class BaseClusterTask(luigi.Task):
     # API
     #
 
-    # TODO use this as run
-    # def run(self):
-    def __run(self):
+    def run(self):
         self.make_dirs()
         self._write_log("Start task %s" % self.task_name)
         try:
@@ -80,7 +78,7 @@ class BaseClusterTask(luigi.Task):
             self._write_log("move log from %s to %s" % (out_path, fail_path))
             shutil.move(out_path, fail_path)
             raise e
-        self.write_log("Done task %s" % self.task_name)
+        self._write_log("Done task %s" % self.task_name)
 
     def init(self, shebang):
         """ Init tmp dir and python scripts.

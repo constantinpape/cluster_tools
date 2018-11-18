@@ -43,9 +43,8 @@ class MinfilterBase(luigi.Task):
         super().clean_up_for_retry(block_list)
         # TODO remove any output of failed blocks because it might be corrupted
 
-    def run(self):
+    def run_impl(self):
         # get the global config and init configs
-        self.make_dirs()
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 

@@ -44,9 +44,8 @@ class FillingSizeFilterBase(luigi.Task):
         else:
             raise RuntimeError("Could not parse log file.")
 
-    def run(self):
+    def run_impl(self):
         # get the global config and init configs
-        self.make_dirs()
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 

@@ -43,7 +43,7 @@ class WriteBase(luigi.Task):
 
     def _parse_log(self, log_path):
         log_path = self.input().path
-        lines = fu.tail(log_path, 3)
+        lines = fu.tail(log_path, 4)
         lines = [' '.join(ll.split()[2:]) for ll in lines]
         # check if this is a pickle file
         if lines[1].startswith("saving results to"):
@@ -62,9 +62,8 @@ class WriteBase(luigi.Task):
         super().clean_up_for_retry(block_list, prefix)
         # TODO remove any output of failed blocks because it might be corrupted
 
-    def run(self):
+    def run_impl(self):
         # get the global config and init configs
-        self.make_dirs()
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 

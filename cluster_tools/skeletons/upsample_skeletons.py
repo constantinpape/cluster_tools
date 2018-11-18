@@ -49,9 +49,8 @@ class UpsampleSkeletonsBase(luigi.Task):
         config.update({'halo': None, 'pixel_pitch': None})
         return config
 
-    def run(self):
+    def run_impl(self):
         # get the global config and init configs
-        self.make_dirs()
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 
