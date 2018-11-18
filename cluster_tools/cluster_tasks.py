@@ -20,21 +20,22 @@ class BaseClusterTask(luigi.Task):
     Base class for a task to run on the cluster.
 
     Subclasses need to implement
-    - `prepare_jobs`: write config files etc. for the cluster jobs
-    - `submit_jobs`: submit jobs to the cluster
-    - `wait_for_jobs`: wait for all running jobs
-    - `run`: custom run function
-    The `run` method executes the job and must use the pre-implemented API
+    a run function: `run_impl`.
+    The `run_impl` method executes the job and must use the pre-implemented API
     functions in the correct order, see example below.
 
     Example:
-        def run(self):
+        def run_impl(self):
             # initialize the tmp folder and log dirs
-            self.init()  # must-call
+            shebang, block_shape, roi_begin, roi_end = self.global_config_values()
+            self.init(shebang) # must-call
 
             # read config file and get number of n_jobs
-            config = read_config() # not pre-implemented
-            n_jobs, block_list = jobs_and_blocks() # not pre-implemented
+            config = self.get_task_config()
+
+            # need to get spatial shape corresponding to this block
+            block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+            n_jobs = min(self.max_jobs, len(block_list))
 
             # prepare the jobs
             self.prepare_jobs(n_jobs, block_list, **config)  # must-call
@@ -63,6 +64,23 @@ class BaseClusterTask(luigi.Task):
     #
     # API
     #
+
+    # TODO use this as run
+    # def run(self):
+    def __run(self):
+        self.make_dirs()
+        self._write_log("Start task %s" % self.task_name)
+        try:
+            self.run_impl()
+        except Exception as e:
+            out_path = self.output().path
+            fail_path = out_path[:-4] + '_failed.log'
+            msg = str(e.message) if hasattr(e, 'message') else str(e)
+            self._write_log("task failed in `run_impl` with %s" % msg)
+            self._write_log("move log from %s to %s" % (out_path, fail_path))
+            shutil.move(out_path, fail_path)
+            raise e
+        self.write_log("Done task %s" % self.task_name)
 
     def init(self, shebang):
         """ Init tmp dir and python scripts.
@@ -314,7 +332,8 @@ class BaseClusterTask(luigi.Task):
                 json.dump(job_config, f)
 
     # TODO allow config for individual blocks
-    def _write_job_config(self, n_jobs, block_list, config, job_prefix=None, consecutive_blocks=False):
+    def _write_job_config(self, n_jobs, block_list, config,
+                          job_prefix=None, consecutive_blocks=False):
         # check f we have a reduce style block, that is
         # not distributed over blocks
         if block_list is None:
@@ -325,7 +344,8 @@ class BaseClusterTask(luigi.Task):
             # we add the block list to this class to know all the blocks
             # that were scheduled if we need to rerun this task
             self.block_list = block_list
-            self._write_multiple_job_configs(n_jobs, block_list, config, job_prefix, consecutive_blocks)
+            self._write_multiple_job_configs(n_jobs, block_list, config,
+                                             job_prefix, consecutive_blocks)
         self._write_log('written config for %i jobs' % n_jobs)
 
     # copy the python script to the temp folder and replace the shebang
@@ -402,18 +422,21 @@ class SlurmTask(BaseClusterTask):
         with open(script_path, 'w') as f:
             f.write(slurm_template)
 
-    def prepare_jobs(self, n_jobs, block_list, config, job_prefix=None, consecutive_blocks=False):
+    def prepare_jobs(self, n_jobs, block_list, config,
+                     job_prefix=None, consecutive_blocks=False):
         # write the job configs
         self._write_job_config(n_jobs, block_list, config, job_prefix, consecutive_blocks)
         # write the slurm script file
         self._write_slurm_file(job_prefix)
 
     def submit_jobs(self, n_jobs, job_prefix=None):
-        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
+        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name,
+                                                                        job_prefix)
         script_path = os.path.join(self.tmp_folder, 'slurm_%s.sh' % job_name)
         for job_id in range(n_jobs):
             out_file = os.path.join(self.tmp_folder, 'logs', '%s_%i.log' % (job_name, job_id))
-            err_file = os.path.join(self.tmp_folder, 'error_logs', '%s_%i.err' % (job_name, job_id))
+            err_file = os.path.join(self.tmp_folder, 'error_logs', '%s_%i.err' % (job_name,
+                                                                                  job_id))
             call(['sbatch', '-o', out_file, '-e', err_file,
                   '-J', '%s_%i' % (job_name, job_id),
                   script_path, str(job_id)])
@@ -438,13 +461,15 @@ class LocalTask(BaseClusterTask):
     test purposes
     """
 
-    def prepare_jobs(self, n_jobs, block_list, config, job_prefix=None, consecutive_blocks=False):
+    def prepare_jobs(self, n_jobs, block_list, config,
+                     job_prefix=None, consecutive_blocks=False):
         # write the job configs
         self._write_job_config(n_jobs, block_list, config, job_prefix, consecutive_blocks)
 
     def _submit(self, job_id, job_prefix):
         script_path = os.path.join(self.tmp_folder, self.task_name + '.py')
-        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
+        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name,
+                                                                        job_prefix)
         log_file = os.path.join(self.tmp_folder, 'logs',
                                 '%s_%i.log' % (job_name, job_id))
         err_file = os.path.join(self.tmp_folder, 'error_logs',
@@ -469,7 +494,8 @@ class LSFTask(BaseClusterTask):
     (tested on Janelia cluster)
     """
 
-    def prepare_jobs(self, n_jobs, block_list, config, job_prefix=None, consecutive_blocks=False):
+    def prepare_jobs(self, n_jobs, block_list, config,
+                     job_prefix=None, consecutive_blocks=False):
         # write the job configs
         self._write_job_config(n_jobs, block_list, config, job_prefix, consecutive_blocks)
 
@@ -481,7 +507,8 @@ class LSFTask(BaseClusterTask):
         #
         script_path = os.path.join(self.tmp_folder, self.task_name + '.py')
         assert os.path.exists(script_path), script_path
-        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
+        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name,
+                                                                        job_prefix)
 
         for job_id in range(n_jobs):
             config_file = self._config_path(job_id, job_prefix)
@@ -490,7 +517,8 @@ class LSFTask(BaseClusterTask):
                                     '%s_%i.log' % (job_name, job_id))
             err_file = os.path.join(self.tmp_folder, 'error_logs',
                                     '%s_%i.err' % (job_name, job_id))
-            bsub_command = 'bsub -n %i -J %s_%i -We %i -o %s -e %s \'%s\'' % (n_threads, self.task_name,
+            bsub_command = 'bsub -n %i -J %s_%i -We %i -o %s -e %s \'%s\'' % (n_threads,
+                                                                              self.task_name,
                                                                               job_id, time_limit,
                                                                               log_file, err_file,
                                                                               command)
