@@ -2,11 +2,11 @@ from concurrent import futures
 from functools import partial
 
 import numpy as np
-import vigra
 import nifty
 import nifty.ufd as nufd
 import nifty.graph.opt.multicut as nmc
 # import nifty.graph.opt.lifted_multicut as nlmc
+from vigra.analysis import relabelConsecutive
 
 
 # TODO logging
@@ -47,8 +47,8 @@ def multicut_decomposition(graph, costs, time_limit=None, n_threads=1,
     cc_labels = ufd.elementLabeling()
 
     # relabel component ids consecutively
-    cc_labels, max_id, _ = vigra.analysis.relabelConsecutive(cc_labels, start_label=0,
-                                                             keep_zeros=False)
+    cc_labels, max_id, _ = relabelConsecutive(cc_labels, start_label=0,
+                                              keep_zeros=False)
 
     # TODO check that relabelConsecutive lifts gil ....
     # solve a component sub-problem
@@ -65,9 +65,9 @@ def multicut_decomposition(graph, costs, time_limit=None, n_threads=1,
         assert len(inner_edges) == len(sub_uvs), "%i, %i" % (len(inner_edges), len(sub_uvs))
 
         # relabel sub-nodes and associated uv-ids
-        sub_nodes_relabeled, max_local, node_mapping = vigra.analysis.relabelConsecutive(sub_nodes,
-                                                                                         start_label=0,
-                                                                                         keep_zeros=False)
+        sub_nodes_relabeled, max_local, node_mapping = relabelConsecutive(sub_nodes,
+                                                                          start_label=0,
+                                                                          keep_zeros=False)
         sub_uvs = nifty.tools.takeDict(node_mapping, sub_uvs)
 
         # build the graph
@@ -78,10 +78,10 @@ def multicut_decomposition(graph, costs, time_limit=None, n_threads=1,
         sub_costs = costs[inner_edges]
         assert len(sub_costs) == sub_graph.numberOfEdges, "%i, %i" % (len(sub_costs),
                                                                       sub_graph.numberOfEdges)
-        sub_labels = agglomerator(sub_graph, sub_costs)
+        sub_labels = agglomerator(sub_graph, sub_costs, time_limit=time_limit)
         # relabel the solution
-        sub_labels, max_seg_local, _ = vigra.analysis.relabelConsecutive(sub_labels, start_label=0,
-                                                                         keep_zeros=False)
+        sub_labels, max_seg_local, _ = relabelConsecutive(sub_labels, start_label=0,
+                                                          keep_zeros=False)
         assert len(sub_labels) == len(sub_nodes), "%i, %i" % (len(sub_labels), len(sub_nodes))
         return sub_nodes, sub_labels, max_seg_local + 1
 

@@ -48,7 +48,8 @@ class SolveSubproblemsBase(luigi.Task):
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'agglomerator': 'kernighan-lin'})
+        config.update({'agglomerator': 'kernighan-lin',
+                       'time_limit_solver': None})
         return config
 
     def run(self):
@@ -126,7 +127,7 @@ class SolveSubproblemsLSF(SolveSubproblemsBase, LSFTask):
 
 def _solve_block_problem(block_id, graph, block_prefix,
                          costs, agglomerator, ignore_label,
-                         blocking, out):
+                         blocking, out, time_limit):
     fu.log("start processing block %i" % block_id)
 
     # load the nodes in this sub-block and map them
@@ -142,8 +143,10 @@ def _solve_block_problem(block_id, graph, block_prefix,
             fu.log_block_success(block_id)
             return
 
-    # we allow for invalid nodes here, which can occur for un-connected graphs resulting from bad masks ...
-    inner_edges, outer_edges, sub_uvs = graph.extractSubgraphFromNodes(nodes, allowInvalidNodes=True)
+    # we allow for invalid nodes here,
+    # which can occur for un-connected graphs resulting from bad masks ...
+    inner_edges, outer_edges, sub_uvs = graph.extractSubgraphFromNodes(nodes,
+                                                                       allowInvalidNodes=True)
     assert len(inner_edges) == len(sub_uvs)
 
     # if we only have a single node (= no edges), save the
@@ -164,7 +167,7 @@ def _solve_block_problem(block_id, graph, block_prefix,
         sub_costs = costs[inner_edges]
         assert len(sub_costs) == sub_graph.numberOfEdges
 
-        sub_result = agglomerator(sub_graph, sub_costs)
+        sub_result = agglomerator(sub_graph, sub_costs, time_limit=time_limit)
         sub_edgeresult = sub_result[sub_uvs[:, 0]] != sub_result[sub_uvs[:, 1]]
 
         assert len(sub_edgeresult) == len(inner_edges)
@@ -201,6 +204,7 @@ def solve_subproblems(job_id, config_path):
     block_list = config['block_list']
     n_threads = config['threads_per_job']
     agglomerator_key = config['agglomerator']
+    time_limit = config.get('time_limit_solver', None)
 
     fu.log("reading problem from %s" % problem_path)
     problem = z5py.N5File(problem_path)
@@ -238,7 +242,7 @@ def solve_subproblems(job_id, config_path):
         tasks = [tp.submit(_solve_block_problem,
                            block_id, graph, block_prefix,
                            costs, agglomerator, ignore_label,
-                           blocking, out)
+                           blocking, out, time_limit)
                  for block_id in block_list]
         [t.result() for t in tasks]
 

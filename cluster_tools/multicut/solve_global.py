@@ -41,7 +41,8 @@ class SolveGlobalBase(luigi.Task):
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'agglomerator': 'kernighan-lin'})
+        config.update({'agglomerator': 'kernighan-lin',
+                       'time_limit_solver': None})
         return config
 
     def run(self):
@@ -113,8 +114,9 @@ def solve_global(job_id, config_path):
     output_path = config['output_path']
     output_key = config['output_key']
     scale = config['scale']
-    n_threads = config['threads_per_job']
     agglomerator_key = config['agglomerator']
+    n_threads = config['threads_per_job']
+    time_limit = config.get('time_limit_solver', None)
 
     fu.log("using agglomerator %s" % agglomerator_key)
     agglomerator = su.key_to_agglomerator(agglomerator_key)
@@ -143,7 +145,9 @@ def solve_global(job_id, config_path):
     graph = nifty.graph.undirectedGraph(n_nodes)
     graph.insertEdges(uv_ids)
     fu.log("start agglomeration")
-    node_labeling = agglomerator(graph, costs, n_threads=n_threads)
+    node_labeling = agglomerator(graph, costs,
+                                 n_threads=n_threads,
+                                 time_limit=time_limit)
     fu.log("finished agglomeration")
 
     # get the labeling of initial nodes
