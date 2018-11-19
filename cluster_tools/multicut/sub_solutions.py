@@ -90,14 +90,13 @@ class SubSolutionsBase(luigi.Task):
             block_list = self.block_list
             self.clean_up_for_retry(block_list)
 
-        n_jobs = min(len(block_list), self.max_jobs)
         # prime and run the jobs
-        self.prepare_jobs(n_jobs, block_list, config)
-        self.submit_jobs(n_jobs)
+        self.prepare_jobs(1, block_list, config)
+        self.submit_jobs(1)
 
         # wait till jobs finish and check for job success
         self.wait_for_jobs()
-        self.check_jobs(n_jobs)
+        self.check_jobs(1)
 
     # part of the luigi API
     def output(self):
@@ -169,9 +168,9 @@ def _read_subresults(ds_results, block_node_prefix, blocking,
         block_nodes = [initial_node_labeling[nodes] for nodes in block_nodes]
 
     # construct result dicts for each block
-    block_results = [{node_id: res_id for node_id, res_id in zip(block_nodes[block_id],
-                                                                 block_res[block_id])}
-                     for block_id in block_list]
+    block_results = [{node_id: res_id for node_id, res_id in zip(bnodes,
+                                                                 bres)}
+                     for bnodes, bres in zip(block_nodes, block_res)]
     return block_list, block_results
 
 
@@ -181,15 +180,6 @@ def _write_block_res(ds_in, ds_out,
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
     ws = ds_in[bb]
-    print()
-
-    ###
-    keys = np.array([val for val in block_res.values()])
-    vals = np.unique(ws)
-    print(len(keys), len(vals))
-    diff = set(vals) - set(keys)
-    print(len(diff))
-    ###
 
     seg = nt.takeDict(block_res, ws)
     ds_out[bb] = seg
