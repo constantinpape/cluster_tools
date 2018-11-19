@@ -42,7 +42,7 @@ class WatershedBase(luigi.Task):
                        'apply_dt_2d': True, 'pixel_pitch': None,
                        'apply_ws_2d': True, 'sigma_seeds': 2., 'size_filter': 25,
                        'sigma_weights': 2., 'halo': [0, 0, 0],
-                       'two_pass': False})
+                       'two_pass': False, 'channel_begin': 0, 'channel_end': None})
         return config
 
     def clean_up_for_retry(self, block_list):
@@ -343,11 +343,9 @@ def _get_bbs(blocking, block_id, config):
 def _read_data(ds_in, input_bb, config):
     # read the input data
     if ds_in.ndim == 4:
+        channel_begin = config.get('channel_begin', 0)
         channel_end = config.get('channel_end', None)
-        if channel_end is None:
-            input_bb = (slice(0, channel_end),) + input_bb
-        else:
-            input_bb = (slice(None),) + input_bb
+        input_bb = (slice(channel_begin, channel_end),) + input_bb
         input_ = vu.normalize(ds_in[input_bb])
         agglomerate = config.get('agglomerate_channels', 'mean')
         assert agglomerate in ('mean', 'max', 'min')
