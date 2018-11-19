@@ -124,7 +124,7 @@ class SolveSubproblemsLSF(SolveSubproblemsBase, LSFTask):
 #
 
 
-def _solve_block_problem(block_id, graph, block_prefix,
+def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
                          costs, agglomerator, ignore_label,
                          blocking, out, time_limit):
     fu.log("start processing block %i" % block_id)
@@ -144,21 +144,29 @@ def _solve_block_problem(block_id, graph, block_prefix,
 
     # we allow for invalid nodes here,
     # which can occur for un-connected graphs resulting from bad masks ...
-    inner_edges, outer_edges, sub_uvs = graph.extractSubgraphFromNodes(nodes,
-                                                                       allowInvalidNodes=True)
-    assert len(inner_edges) == len(sub_uvs)
+    inner_edges, outer_edges = graph.extractSubgraphFromNodes(nodes, allowInvalidNodes=True)
+    sub_uvs = uv_ids[inner_edges]
+    fu.log("Block: %i Solving sub-block with %i nodes and %i edges" % (block_id,
+                                                                       len(nodes),
+                                                                       len(inner_edges)))
 
     # if we only have a single node (= no edges), save the
     # outer edges as cut edges
     if len(nodes) == 1:
-        fu.log_block_success(block_id)
         cut_edge_ids = outer_edges
         sub_result = None
+        fu.log("Block: %i has no inner edges" % block_id)
     # otherwise solve the multicut for this block
     else:
-        # relabel the sub-uvs for more efficient processing
-        sub_uvs, max_id, _ = vigra.analysis.relabelConsecutive(sub_uvs, start_label=0,
-                                                               keep_zeros=False)
+        # relabel the sub-nodes and associated uv-ids for more efficient processing
+        nodes_relabeled, max_id, mapping = vigra.analysis.relabelConsecutive(nodes,
+                                                                             start_label=0,
+                                                                             keep_zeros=False)
+        print("Unique keys")
+        print(np.unique([k for k in mapping.keys()]))
+        print("Unique uv-ids")
+        print(np.unique(sub_uvs))
+        sub_uvs = nt.takeDict(mapping, sub_uvs)
         n_local_nodes = max_id + 1
         sub_graph = nifty.graph.undirectedGraph(n_local_nodes)
         sub_graph.insertEdges(sub_uvs)
@@ -166,7 +174,11 @@ def _solve_block_problem(block_id, graph, block_prefix,
         sub_costs = costs[inner_edges]
         assert len(sub_costs) == sub_graph.numberOfEdges
 
+        # solve multicut and relabel the result
         sub_result = agglomerator(sub_graph, sub_costs, time_limit=time_limit)
+        _, res_max_id, _ = vigra.analysis.relabelConsecutive(sub_result, start_label=1, keep_zeros=False,
+                                                             out=sub_result)
+        fu.log("Block: %i Subresult has %i unique ids" % (block_id, res_max_id))
         sub_edgeresult = sub_result[sub_uvs[:, 0]] != sub_result[sub_uvs[:, 1]]
 
         assert len(sub_edgeresult) == len(inner_edges)
@@ -221,6 +233,7 @@ def solve_subproblems(job_id, config_path):
     fu.log("reading graph from path in problem: %s" % graph_key)
     graph = ndist.Graph(os.path.join(problem_path, graph_key),
                         numberOfThreads=n_threads)
+    uv_ids = graph.uvIds()
     # check if the problem has an ignore-label
     ignore_label = problem[graph_key].attrs['ignoreLabel']
     fu.log("ignore label is %s" % ('true' if ignore_label else 'false'))
@@ -239,7 +252,7 @@ def solve_subproblems(job_id, config_path):
 
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(_solve_block_problem,
-                           block_id, graph, block_prefix,
+                           block_id, graph, uv_ids, block_prefix,
                            costs, agglomerator, ignore_label,
                            blocking, out, time_limit)
                  for block_id in block_list]

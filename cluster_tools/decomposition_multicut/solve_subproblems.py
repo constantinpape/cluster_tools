@@ -114,14 +114,15 @@ class SolveSubproblemsLSF(SolveSubproblemsBase, LSFTask):
 #
 
 
-def _solve_component(component_id, graph, graph_labels, costs, agglomerator):
+def _solve_component(component_id, graph, uv_ids, graph_labels, costs, agglomerator):
     fu.log("start processing block %i" % component_id)
 
     # get the nodes belonging to the current
     # component
     nodes = np.where(graph_labels == component_id)[0].astype('uint64')
 
-    inner_edges, _, sub_uvs = graph.extractSubgraphFromNodes(nodes)
+    inner_edges, _ = graph.extractSubgraphFromNodes(nodes)
+    sub_uvs = uv_ids[inner_edges]
     assert len(sub_uvs) == len(inner_edges)
 
     # if we had only a single node (i.e. no edge, return None)
@@ -129,9 +130,10 @@ def _solve_component(component_id, graph, graph_labels, costs, agglomerator):
         fu.log_block_success(component_id)
         return None
 
-    # relabel the sub-uvs for more efficient processing
-    sub_uvs, max_id, _ = vigra.analysis.relabelConsecutive(sub_uvs, start_label=0,
-                                                           keep_zeros=False)
+    # relabel the sub-nodes and associated uv-ids for more efficient processing
+    nodes_relabeled, max_id, mapping = vigra.analysis.relabelConsecutive(nodes, start_label=0,
+                                                                         keep_zeros=False)
+    sub_uvs = nt.takeDict(mapping, sub_uvs)
     n_local_nodes = max_id + 1
     sub_graph = nifty.graph.undirectedGraph(n_local_nodes)
     sub_graph.insertEdges(sub_uvs)
@@ -181,12 +183,13 @@ def solve_subproblems(job_id, config_path):
     # load the graph
     graph = ndist.Graph(os.path.join(graph_path, graph_key),
                         numberOfThreads=n_threads)
+    uv_ids = graph.uvIds()
     agglomerator = su.key_to_agglomerator(agglomerator_key)
 
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(_solve_component,
-                           component_id, graph, graph_labels,
-                           costs, agglomerator)
+                           component_id, graph, uv_ids,
+                           graph_labels, costs, agglomerator)
                  for component_id in component_list]
         results = [t.result() for t in tasks]
 

@@ -61,7 +61,8 @@ def multicut_decomposition(graph, costs, time_limit=None, n_threads=1,
             return sub_nodes, np.array([0], dtype='uint64'), 1
 
         # extract the subgraph corresponding to this component
-        inner_edges, _, sub_uvs = graph.extractSubgraphFromNodes(sub_nodes)
+        inner_edges, _ = graph.extractSubgraphFromNodes(sub_nodes)
+        sub_uvs = uv_ids[inner_edges]
         assert len(inner_edges) == len(sub_uvs), "%i, %i" % (len(inner_edges), len(sub_uvs))
 
         # relabel sub-nodes and associated uv-ids
