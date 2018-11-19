@@ -36,8 +36,7 @@ class FindLabelingBase(luigi.Task):
     def requires(self):
         return self.dependency
 
-    def run(self):
-        self.make_dirs()
+    def run_impl(self):
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 

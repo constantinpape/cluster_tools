@@ -1,1 +1,1 @@
-from .multicut_workflow import MulticutWorkflow
+from .multicut_workflow import MulticutWorkflow, SubSolutionsWorkflow

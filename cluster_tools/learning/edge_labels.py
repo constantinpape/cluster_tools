@@ -42,9 +42,8 @@ class EdgeLabelsBase(luigi.Task):
         config.update({'ignore_label_gt': False})
         return config
 
-    def run(self):
+    def run_impl(self):
         # get the global config and init configs
-        self.make_dirs()
         shebang, _, _, _ = self.global_config_values()
         self.init(shebang)
 

@@ -43,9 +43,8 @@ class LearnRFBase(luigi.Task):
         config.update({'n_trees': 100})
         return config
 
-    def run(self):
+    def run_impl(self):
         # get the global config and init configs
-        self.make_dirs()
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 
