@@ -133,7 +133,7 @@ def key_to_agglomerator(key):
                   'greedy-additive': multicut_gaec,
                   'decomposition': multicut_decomposition,
                   'decomposition-gaec': partial(multicut_decomposition,
-                                                solver='greediy-additive'),
+                                                solver='greedy-additive'),
                   'fusion-moves': multicut_fusion_moves}
     assert key in agglo_dict, key
     return agglo_dict[key]
