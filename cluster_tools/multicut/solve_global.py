@@ -28,8 +28,8 @@ class SolveGlobalBase(luigi.Task):
 
     # input volumes and graph
     problem_path = luigi.Parameter()
-    output_path = luigi.Parameter()
-    output_key = luigi.Parameter()
+    assignment_path = luigi.Parameter()
+    assignment_key = luigi.Parameter()
     scale = luigi.IntParameter()
     #
     dependency = luigi.TaskParameter()
@@ -55,7 +55,7 @@ class SolveGlobalBase(luigi.Task):
 
         # update the config with input and graph paths and keys
         # as well as block shape
-        config.update({'output_path': self.output_path, 'output_key': self.output_key,
+        config.update({'assignment_path': self.assignment_path, 'assignment_key': self.assignment_key,
                        'scale': self.scale, 'problem_path': self.problem_path})
 
         # prime and run the job
@@ -64,10 +64,6 @@ class SolveGlobalBase(luigi.Task):
 
         # wait till jobs finish and check for job success
         self.wait_for_jobs()
-
-        self._write_log('saving results to %s' % self.output_path)
-        self._write_log('and key %s' % self.output_key)
-
         self.check_jobs(1)
 
     # part of the luigi API
@@ -110,8 +106,8 @@ def solve_global(job_id, config_path):
     # path to the reduced problem
     problem_path = config['problem_path']
     # path where the node labeling shall be written
-    output_path = config['output_path']
-    output_key = config['output_key']
+    assignment_path = config['assignment_path']
+    assignment_key = config['assignment_key']
     scale = config['scale']
     agglomerator_key = config['agglomerator']
     n_threads = config['threads_per_job']
@@ -161,15 +157,15 @@ def solve_global(job_id, config_path):
 
     node_shape = (n_nodes,)
     chunks = (min(n_nodes, 524288),)
-    with vu.file_reader(output_path) as f:
-        ds = f.require_dataset(output_key, dtype='uint64',
+    with vu.file_reader(assignment_path) as f:
+        ds = f.require_dataset(assignment_key, dtype='uint64',
                                shape=node_shape,
                                chunks=chunks,
                                compression='gzip')
         ds.n_threads = n_threads
         ds[:] = initial_node_labeling
 
-    fu.log('saving results to %s:%s' % (output_path, output_key))
+    fu.log('saving results to %s:%s' % (assignment_path, assignment_key))
     fu.log_job_success(job_id)
 
 

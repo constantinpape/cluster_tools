@@ -67,8 +67,8 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                                      dependency=dep,
                                      problem_path=self.problem_path,
                                      n_scales=self.n_scales,
-                                     output_path=self.node_labels_path,
-                                     output_key=self.node_labels_key)
+                                     assignment_path=self.node_labels_path,
+                                     assignment_key=self.node_labels_key)
         return mc_wf
 
     # TODO implement mechanism to skip existing dependencies
