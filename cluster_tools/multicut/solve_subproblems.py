@@ -162,10 +162,6 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
         nodes_relabeled, max_id, mapping = vigra.analysis.relabelConsecutive(nodes,
                                                                              start_label=0,
                                                                              keep_zeros=False)
-        print("Unique keys")
-        print(np.unique([k for k in mapping.keys()]))
-        print("Unique uv-ids")
-        print(np.unique(sub_uvs))
         sub_uvs = nt.takeDict(mapping, sub_uvs)
         n_local_nodes = max_id + 1
         sub_graph = nifty.graph.undirectedGraph(n_local_nodes)

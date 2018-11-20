@@ -58,11 +58,22 @@ class SubSolutionsBase(luigi.Task):
         shebang, block_shape, global_roi_begin, global_roi_end = self.global_config_values()
         self.init(shebang)
 
-        # check that rois agree
-        if self.roi_begin is not None and global_roi_begin is not None:
-            assert all(rb >= grb for rb, grb in zip(self.roi_begin, global_roi_begin))
-        if self.roi_end is not None and global_roi_end is not None:
-            assert all(re <= geb for eb, geb in zip(self.roi_end, global_roi_end))
+        assert (self.roi_begin is None) == (self.roi_end is None),\
+            "Either both or neither of `roi_begin` and `roi_end` must be specified"
+        # if we have don't jave a task-sppecific roi, set roi to global roi
+        if self.roi_begin is None:
+            roi_begin = global_roi_begin
+            roi_end = global_roi_end
+        else:
+            # otherwise set to task-specific roi
+            roi_begin = self.roi_begin
+            roi_end = self.roi_end
+            # if we also have a global roi, check that the task-specific roi
+            # is in the global roi
+            if global_roi_begin is not None:
+                assert all(rb >= grb for rb, grb in zip(roi_begin, global_roi_begin))
+            if global_roi_end is not None:
+                assert all(re <= geb for eb, geb in zip(roi_end, global_roi_end))
 
         # read shape
         with vu.file_reader(self.problem_path, 'r') as f:
@@ -85,7 +96,7 @@ class SubSolutionsBase(luigi.Task):
                        'output_path': self.output_path, 'output_key': self.output_key})
 
         if self.n_retries == 0:
-            block_list = vu.blocks_in_volume(shape, block_shape, self.roi_begin, self.roi_end)
+            block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
         else:
             block_list = self.block_list
             self.clean_up_for_retry(block_list)
@@ -162,6 +173,7 @@ def _read_subresults(ds_results, block_node_prefix, blocking,
     block_offsets = np.roll(block_offsets, 1)
     block_offsets[0] = 0
     block_offsets = np.cumsum(block_offsets)
+    block_res = [bres + boff for bres, boff in zip(block_res, block_offsets)]
 
     # apply the node labeling
     if initial_node_labeling is not None:
@@ -214,17 +226,23 @@ def sub_solutions(job_id, config_path):
     # we need to project the ws labels back to the original labeling
     # for this, we first need to load the initial node labeling
     if scale > 1:
-        initial_node_labeling = problem['s%i/node_labeling' % scale]
+        node_label_key = 's%i/node_labeling' % scale
+        fu.log("scale %i > 1; reading node labeling from %s" % (scale, node_label_key))
+        ds_node_labeling = problem[node_label_key]
+        ds_node_labeling.n_threads = n_threasd
+        initial_node_labeling = ds_node_labeling[:]
     else:
         initial_node_labeling = None
 
     # read the sub results
     ds_results = problem['s%i/sub_results/node_result' % scale]
     # TODO should be varlen dataset
+    fu.log("reading subresults")
     block_node_prefix = os.path.join(problem_path, 's%i' % scale, 'sub_graphs', 'block_')
     block_list, block_results = _read_subresults(ds_results, block_node_prefix, blocking,
                                                  block_list, n_threads, initial_node_labeling)
 
+    fu.log("writing subresults")
     # write the resulting segmentation
     with vu.file_reader(output_path) as f_out, vu.file_reader(ws_path, 'r') as f_in:
         ds_in = f_in[ws_key]
