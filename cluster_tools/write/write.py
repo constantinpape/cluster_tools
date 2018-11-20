@@ -26,11 +26,17 @@ class WriteBase(luigi.Task):
     task_name = 'write'
     src_file = os.path.abspath(__file__)
 
-    # input and output configs
+    # path adn key to input and output datasets
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
+    # path to the node assignments
+    # the key is optional, because the assignment can either be a
+    # dense assignment table stored as n5 dataset
+    # or a sparse table stored as pickled python map
+    assignment_path = luigi.Parameter()
+    assignment_key = luigi.Parameter(default=None)
     # the task we depend on
     dependency = luigi.TaskParameter()
     # we may have different write tasks,
@@ -40,22 +46,6 @@ class WriteBase(luigi.Task):
 
     def requires(self):
         return self.dependency
-
-    def _parse_log(self, log_path):
-        log_path = self.input().path
-        lines = fu.tail(log_path, 4)
-        lines = [' '.join(ll.split()[2:]) for ll in lines]
-        # check if this is a pickle file
-        if lines[1].startswith("saving results to"):
-            path = lines[1].split()[-1]
-            assert os.path.exists(path)
-            return path, None
-        elif lines[0].startswith("saving results to"):
-            path = lines[0].split()[-1]
-            key = lines[1].split()[-1]
-            return path, key
-        else:
-            raise RuntimeError("Could not parse log file.")
 
     def clean_up_for_retry(self, block_list, prefix):
         # TODO does this work with the mixin pattern?
@@ -78,16 +68,19 @@ class WriteBase(luigi.Task):
                               compression='gzip', dtype='uint64')
 
         n_threads = self.get_task_config().get('threads_per_core', 1)
-        assignment_path, assignment_key = self._parse_log(self.input().path)
 
         # check if input and output datasets are identical
         in_place = (self.input_path == self.output_path) and (self.input_key == self.output_key)
+
+        if self.assignment_key is None:
+            assert os.path.splitext(self.assignment_path)[-1] == '.pkl',\
+                "Assignments need to be pickled map if no key is given"
 
         # update the config with input and output paths and keys
         # as well as block shape
         config = {'input_path': self.input_path, 'input_key': self.input_key,
                   'block_shape': block_shape, 'n_threads': n_threads,
-                  'assignment_path': assignment_path, 'assignment_key': assignment_key}
+                  'assignment_path': self.assignment_path, 'assignment_key': self.assignment_key}
         if self.offset_path != '':
             config.update({'offset_path': self.offset_path})
         # we only add output path and key if we do not write in place

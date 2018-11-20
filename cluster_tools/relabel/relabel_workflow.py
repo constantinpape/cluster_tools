@@ -22,6 +22,11 @@ class RelabelWorkflow(WorkflowBase):
                          input_key=self.input_key,
                          dependency=self.dependency)
 
+        # for now, we hard-code the assignment path here,
+        # because it is only used internally for this task
+        # but it could also be exposed if this is useful
+        # at some point
+        assignment_path = os.path.join(self.tmp_folder, 'relabeling.pkl')
         labeling_task = getattr(labeling_tasks,
                                 self._get_task_name('FindLabeling'))
         t2 = labeling_task(tmp_folder=self.tmp_folder,
@@ -29,6 +34,7 @@ class RelabelWorkflow(WorkflowBase):
                            config_dir=self.config_dir,
                            input_path=self.input_path,
                            input_key=self.input_key,
+                           assignment_path=assignment_path,
                            dependency=t1)
 
         write_task = getattr(write_tasks,
@@ -40,6 +46,7 @@ class RelabelWorkflow(WorkflowBase):
                         input_key=self.input_key,
                         output_path=self.input_path,
                         output_key=self.input_key,
+                        assignment_path=assignment_path,
                         identifier='relabel',
                         dependency=t2)
         return t3

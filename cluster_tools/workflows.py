@@ -143,6 +143,8 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                        input_key=self.ws_key,
                        output_path=self.output_path,
                        output_key=self.output_key,
+                       assignment_path=self.node_labels_path,
+                       assignment_key=self.node_labels_key,
                        identifier='multicut')
         return t
 

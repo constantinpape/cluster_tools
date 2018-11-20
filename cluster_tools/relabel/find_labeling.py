@@ -30,6 +30,7 @@ class FindLabelingBase(luigi.Task):
 
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
+    assignment_path = luigi.Parameter() # where to save the assignments
     # task that is required before running this task
     dependency = luigi.TaskParameter()
 
@@ -48,6 +49,7 @@ class FindLabelingBase(luigi.Task):
 
         config = self.get_task_config()
         config.update({'input_path': self.input_path, 'input_key': self.input_key,
+                       'assignment_path': self.assignment_path,
                        'tmp_folder': self.tmp_folder, 'n_jobs': n_jobs})
 
         # we only have a single job to find the labeling
@@ -57,8 +59,6 @@ class FindLabelingBase(luigi.Task):
         # wait till jobs finish and check for job success
         self.wait_for_jobs()
         # log the save-path again
-        save_path = os.path.join(self.tmp_folder, 'relabeling.pkl')
-        self._write_log("saving results to %s" % save_path)
         self.check_jobs(1)
 
 
@@ -96,6 +96,7 @@ def find_labeling(job_id, config_path):
     input_path = config['input_path']
     input_key = config['input_key']
     n_threads = config['threads_per_job']
+    assignment_path = config['assignment_path']
 
     def _read_input(job_id):
         return np.load(os.path.join(tmp_folder, 'find_uniques_job_%i.npy' % job_id))
@@ -113,9 +114,8 @@ def find_labeling(job_id, config_path):
                                                            keep_zeros=True,
                                                            start_label=1)
 
-    save_path = os.path.join(tmp_folder, 'relabeling.pkl')
-    fu.log("saving results to %s" % save_path)
-    with open(save_path, 'wb') as f:
+    fu.log("saving results to %s" % assignment_path)
+    with open(assignment_path, 'wb') as f:
         pickle.dump(mapping, f)
     # log success
     fu.log_job_success(job_id)

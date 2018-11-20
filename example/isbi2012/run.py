@@ -96,6 +96,7 @@ def subsolutions(shebang):
                                             tmp_folder='./tmp',
                                             target='local',
                                             max_jobs=max_jobs)], local_scheduler=True)
+    ret = False
     if ret:
         from cremi_tools.viewer.volumina import view
         with h5py.File(input_path) as f:
