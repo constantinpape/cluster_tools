@@ -102,12 +102,13 @@ class SubSolutionsBase(luigi.Task):
             self.clean_up_for_retry(block_list)
 
         # prime and run the jobs
-        self.prepare_jobs(1, block_list, config)
-        self.submit_jobs(1)
+        prefix = 's%i' % self.scale
+        self.prepare_jobs(1, block_list, config, prefix)
+        self.submit_jobs(1, prefix)
 
         # wait till jobs finish and check for job success
         self.wait_for_jobs()
-        self.check_jobs(1)
+        self.check_jobs(1, prefix)
 
     # part of the luigi API
     def output(self):
@@ -193,8 +194,18 @@ def _write_block_res(ds_in, ds_out,
     bb = vu.block_to_bb(block)
     ws = ds_in[bb]
 
-    assert np.array_equal(np.unique(ws),
-                          np.array([k for k in block_res.keys()], dtype='uint64'))
+    # FIXME this should never happen !!!
+    uniques_ws = np.unique(ws)
+    keys = np.array([k for k in block_res.keys()], dtype='uint64')
+    if len(uniques_ws) != len(keys):
+        fu.log("watershed nodes and mapping keys do not match for block %i" % block_id)
+        fu.log("watershed has %i unique elements" % len(uniques_ws))
+        fu.log("keys has      %i elements" % len(keys))
+        diff1 = np.setdiff1d(ws, keys)
+        diff2 = np.setdiff1d(keys, ws)
+        fu.log("diff ws - keys %s" % str(diff1))
+        fu.log("diff keys - ws %s" % str(diff2))
+        block_res.update({dd: 0 for dd in diff1})
 
     seg = nt.takeDict(block_res, ws)
     ds_out[bb] = seg

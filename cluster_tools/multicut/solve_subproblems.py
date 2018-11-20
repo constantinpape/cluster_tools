@@ -88,12 +88,13 @@ class SolveSubproblemsBase(luigi.Task):
 
         n_jobs = min(len(block_list), self.max_jobs)
         # prime and run the jobs
-        self.prepare_jobs(n_jobs, block_list, config)
-        self.submit_jobs(n_jobs)
+        prefix = 's%i' % self.scale
+        self.prepare_jobs(n_jobs, block_list, config, prefix)
+        self.submit_jobs(n_jobs, prefix)
 
         # wait till jobs finish and check for job success
         self.wait_for_jobs()
-        self.check_jobs(n_jobs)
+        self.check_jobs(n_jobs, prefix)
 
     # part of the luigi API
     def output(self):

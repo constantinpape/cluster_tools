@@ -59,12 +59,13 @@ class SolveGlobalBase(luigi.Task):
                        'scale': self.scale, 'problem_path': self.problem_path})
 
         # prime and run the job
-        self.prepare_jobs(1, None, config)
-        self.submit_jobs(1)
+        prefix = 's%i' % self.scale
+        self.prepare_jobs(1, None, config, prefix)
+        self.submit_jobs(1, prefix)
 
         # wait till jobs finish and check for job success
         self.wait_for_jobs()
-        self.check_jobs(1)
+        self.check_jobs(1, prefix)
 
     # part of the luigi API
     def output(self):

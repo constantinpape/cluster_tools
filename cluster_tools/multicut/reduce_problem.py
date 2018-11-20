@@ -82,13 +82,14 @@ class ReduceProblemBase(luigi.Task):
         block_shape = tuple(bs * factor for bs in block_shape)
 
         # prime and run the job
+        prefix = 's%i' % self.scale
         block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
-        self.prepare_jobs(1, block_list, config)
-        self.submit_jobs(1)
+        self.prepare_jobs(1, block_list, config, prefix)
+        self.submit_jobs(1, prefix)
 
         # wait till jobs finish and check for job success
         self.wait_for_jobs()
-        self.check_jobs(1)
+        self.check_jobs(1, prefix)
 
         # log the problem reduction
         self._log_reduction()
@@ -154,6 +155,7 @@ def _merge_nodes(problem_path, scale, blocking,
 
     merge_edges = np.ones(n_edges, dtype='bool')
     merge_edges[cut_edge_ids] = False
+    fu.log('merging %i / %i edges' % (np.sum(merge_edges), n_edges))
 
     # merge node pairs with ufd
     ufd = nufd.boost_ufd(nodes)
@@ -162,20 +164,24 @@ def _merge_nodes(problem_path, scale, blocking,
     # get the node results and label them consecutively
     node_labeling = ufd.find(nodes)
     node_labeling, max_new_id, _ = relabelConsecutive(node_labeling, start_label=0, keep_zeros=False)
-    # make sure that zero is still mapped to zero
-    if node_labeling[0] != 0:
-        # if it isn't, swap labels accordingly
-        zero_label = node_labeling[0]
-        to_relabel = node_labeling == 0
-        node_labeling[node_labeling == zero_label] = 0
-        node_labeling[to_relabel] = zero_laebl
+    assert node_labeling[0] == 0
+    # FIXME this looks fishy, redo !!!
+    # # make sure that zero is still mapped to zero
+    # if node_labeling[0] != 0:
+    #     # if it isn't, swap labels accordingly
+    #     zero_label = node_labeling[0]
+    #     to_relabel = node_labeling == 0
+    #     node_labeling[node_labeling == zero_label] = 0
+    #     node_labeling[to_relabel] = zero_laebl
     n_new_nodes = max_new_id + 1
+    fu.log("have %i nodes in new node labeling" % n_new_nodes)
 
     # get the labeling of initial nodes
     if initial_node_labeling is None:
         # if we don't have an initial node labeling, we are in the first scale.
         # here, the graph nodes might not be consecutive / not start at zero.
         # to keep the node labeling valid, we must make the labeling consecutive by inserting zeros
+        fu.log("don't have an initial node labeling")
 
         # check if `nodes` are consecutive and start at zero
         node_max_id = int(nodes.max())
@@ -186,8 +192,10 @@ def _merge_nodes(problem_path, scale, blocking,
 
         new_initial_node_labeling = node_labeling
     else:
+        fu.log("mapping new node labeling to labeling of inital (= scale 0) nodes")
         # NOTE access like this is ok because all node labelings will be consecutive
         new_initial_node_labeling = node_labeling[initial_node_labeling]
+        assert len(new_initial_node_labeling) == len(initial_node_labeling)
 
     return n_new_nodes, node_labeling, new_initial_node_labeling
 
@@ -265,7 +273,7 @@ def _serialize_new_problem(problem_path,
         ds_ser[:] = data
 
     # NOTE we don not need to serialize the nodes cause they are
-    # consecutive anyways
+    # consecutive anyway
     # _serialize('nodes', np.arange(n_new_nodes).astype('uint64'))
 
     # serialize the new graph, the node labeling and the new costs
