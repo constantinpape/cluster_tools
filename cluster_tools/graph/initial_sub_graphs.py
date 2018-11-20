@@ -106,19 +106,16 @@ class InitialSubGraphsLSF(InitialSubGraphsBase, LSFTask):
 def _graph_block(block_id, blocking, input_path, input_key, graph_path,
                  ignore_label):
     fu.log("start processing block %i" % block_id)
-    halo = [1, 1, 1]
-    block = blocking.getBlockWithHalo(block_id, halo)
-    outer_block, inner_block = block.outerBlock, block.innerBlock
+    block = blocking.getBlock(block_id)
     # we only need the halo into one direction,
     # hence we use the outer-block only for the end coordinate
-    begin = inner_block.begin
-    end = outer_block.end
 
     block_key = 's0/sub_graphs/block_%i' % block_id
     ndist.computeMergeableRegionGraph(input_path, input_key,
-                                      begin, end,
+                                      block.begin, block.end,
                                       graph_path, block_key,
-                                      ignore_label)
+                                      ignore_label,
+                                      increaseRoi=True)
     # log block success
     fu.log_block_success(block_id)
 

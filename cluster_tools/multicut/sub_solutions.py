@@ -193,6 +193,9 @@ def _write_block_res(ds_in, ds_out,
     bb = vu.block_to_bb(block)
     ws = ds_in[bb]
 
+    assert np.array_equal(np.unique(ws),
+                          np.array([k for k in block_res.keys()], dtype='uint64'))
+
     seg = nt.takeDict(block_res, ws)
     ds_out[bb] = seg
     fu.log_block_success(block_id)
