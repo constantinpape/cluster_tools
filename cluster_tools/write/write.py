@@ -174,6 +174,7 @@ def _write_block(ds_in, ds_out, blocking, block_id, node_labels):
     seg = ds_in[bb]
     # check if this block is empty and don't write if it is
     if np.sum(seg != 0) == 0:
+        fu.log_block_success(block_id)
         return
 
     # choose the appropriate function for array or dictionary

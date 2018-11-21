@@ -156,6 +156,7 @@ def _read_subresults(ds_results, block_node_prefix, blocking,
             assert len(nodes) == 1
             return None
 
+        assert len(nodes) == len(subres), "block %i: %i, %i" % (block_id, len(nodes), len(subres))
         return nodes, subres, int(subres.max()) + 1
 
     with futures.ThreadPoolExecutor(n_threads) as tp:
@@ -178,11 +179,13 @@ def _read_subresults(ds_results, block_node_prefix, blocking,
 
     # apply the node labeling
     if initial_node_labeling is not None:
+        fu.log("Apply initial node labeling to block nodes")
         block_nodes = [initial_node_labeling[nodes] for nodes in block_nodes]
 
     # construct result dicts for each block
-    block_results = [{node_id: res_id for node_id, res_id in zip(bnodes,
-                                                                 bres)}
+    # keep zero mapped to zero
+    block_results = [{node_id: res_id if node_id != 0 else 0
+                      for node_id, res_id in zip(bnodes, bres)}
                      for bnodes, bres in zip(block_nodes, block_res)]
     return block_list, block_results
 
@@ -193,19 +196,6 @@ def _write_block_res(ds_in, ds_out,
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
     ws = ds_in[bb]
-
-    # FIXME this should never happen !!!
-    uniques_ws = np.unique(ws)
-    keys = np.array([k for k in block_res.keys()], dtype='uint64')
-    if len(uniques_ws) != len(keys):
-        fu.log("watershed nodes and mapping keys do not match for block %i" % block_id)
-        fu.log("watershed has %i unique elements" % len(uniques_ws))
-        fu.log("keys has      %i elements" % len(keys))
-        diff1 = np.setdiff1d(ws, keys)
-        diff2 = np.setdiff1d(keys, ws)
-        fu.log("diff ws - keys %s" % str(diff1))
-        fu.log("diff keys - ws %s" % str(diff2))
-        block_res.update({dd: 0 for dd in diff1})
 
     seg = nt.takeDict(block_res, ws)
     ds_out[bb] = seg

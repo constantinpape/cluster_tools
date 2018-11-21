@@ -128,7 +128,7 @@ class SolveSubproblemsLSF(SolveSubproblemsBase, LSFTask):
 def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
                          costs, agglomerator, ignore_label,
                          blocking, out, time_limit):
-    fu.log("start processing block %i" % block_id)
+    fu.log("Start processing block %i" % block_id)
 
     # load the nodes in this sub-block and map them
     # to our current node-labeling
@@ -139,15 +139,18 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
     # (nodes are sorted, so it will always be at pos 0)
     if ignore_label and nodes[0] == 0:
         nodes = nodes[1:]
+        removed_ignore_label = True
         if len(nodes) == 0:
             fu.log_block_success(block_id)
             return
+    else:
+        removed_ignore_label = False
 
     # we allow for invalid nodes here,
     # which can occur for un-connected graphs resulting from bad masks ...
     inner_edges, outer_edges = graph.extractSubgraphFromNodes(nodes, allowInvalidNodes=True)
     sub_uvs = uv_ids[inner_edges]
-    fu.log("Block: %i Solving sub-block with %i nodes and %i edges" % (block_id,
+    fu.log("Block %i: Solving sub-block with %i nodes and %i edges" % (block_id,
                                                                        len(nodes),
                                                                        len(inner_edges)))
 
@@ -156,7 +159,7 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
     if len(nodes) == 1:
         cut_edge_ids = outer_edges
         sub_result = None
-        fu.log("Block: %i has no inner edges" % block_id)
+        fu.log("Block %i: has no inner edges" % block_id)
     # otherwise solve the multicut for this block
     else:
         # relabel the sub-nodes and associated uv-ids for more efficient processing
@@ -173,14 +176,23 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
 
         # solve multicut and relabel the result
         sub_result = agglomerator(sub_graph, sub_costs, time_limit=time_limit)
-        _, res_max_id, _ = vigra.analysis.relabelConsecutive(sub_result, start_label=1, keep_zeros=False,
-                                                             out=sub_result)
-        fu.log("Block: %i Subresult has %i unique ids" % (block_id, res_max_id))
-        sub_edgeresult = sub_result[sub_uvs[:, 0]] != sub_result[sub_uvs[:, 1]]
+        assert len(sub_result) == len(nodes), "%i, %i" % (len(sub_result), len(nodes))
 
+        # fu.log("Block %i: Subresult has %i unique ids" % (block_id, res_max_id))
+        sub_edgeresult = sub_result[sub_uvs[:, 0]] != sub_result[sub_uvs[:, 1]]
         assert len(sub_edgeresult) == len(inner_edges)
         cut_edge_ids = inner_edges[sub_edgeresult]
         cut_edge_ids = np.concatenate([cut_edge_ids, outer_edges])
+
+        _, res_max_id, _ = vigra.analysis.relabelConsecutive(sub_result, start_label=1, keep_zeros=False,
+                                                             out=sub_result)
+        # IMPORTANT !!!
+        # we can only add back the ignore label after getting the edge-result !!!
+        if removed_ignore_label:
+            sub_result = np.concatenate((np.zeros(1, dtype='uint64'),
+                                         sub_result))
+
+
 
     # get chunk id of this block
     block = blocking.getBlock(block_id)
@@ -188,10 +200,12 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
 
     # serialize the cut-edge-ids and the (local) node labeling
     ds_edge_res = out['cut_edge_ids']
+    fu.log("Block %i: Serializing %i cut edges" % (block_id, len(cut_edge_ids)))
     ds_edge_res.write_chunk(chunk_id, cut_edge_ids, True)
 
     if sub_result is not None:
         ds_node_res = out['node_result']
+        fu.log("Block %i: Serializing %i node results" % (block_id, len(sub_result)))
         ds_node_res.write_chunk(chunk_id, sub_result, True)
 
     fu.log_block_success(block_id)
