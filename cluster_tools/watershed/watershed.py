@@ -184,10 +184,7 @@ def _apply_watershed(input_, dt, offset, config, mask=None):
                                                allowAtBorder=True, allowPlateaus=True)
             seeds = vigra.analysis.labelImageWithBackground(np.isnan(seeds).view('uint8'))
             # run watershed for this slize
-            wsz, max_id = vigra.analysis.watershedsNew(input_[z], seeds=seeds)
-            # apply size_filter if specified
-            if size_filter > 0:
-                wsz, max_id = vu.apply_size_filter(wsz, input_[z], size_filter)
+            wsz, max_id = vu.watershed(input_[z], seeds=seeds, size_filter=size_filter)
             # mask seeds if we have a mask
             if mask is None:
                 wsz += offset
@@ -207,17 +204,11 @@ def _apply_watershed(input_, dt, offset, config, mask=None):
         seeds = vigra.analysis.localMaxima3D(dt, marker=np.nan,
                                              allowAtBorder=True, allowPlateaus=True)
         seeds = vigra.analysis.labelVolumeWithBackground(np.isnan(seeds).view('uint8'))
-        ws, max_id = vigra.analysis.watershedsNew(input_, seeds=seeds)
-        # apply size_filter if specified
-        if size_filter > 0:
-            ws, max_id = vu.apply_size_filter(ws, input_, size_filter)
-
-        # check if we have a mask
-        ws = ws.astype('uint64')
+        ws, max_id = vu.watershed(input_, seeds, suze_filter=size_filter)
         ws += offset
+        # check if we have a mask
         if mask is not None:
             ws[mask] = 0
-    #
     return ws
 
 
@@ -263,26 +254,21 @@ def _apply_watershed_with_seeds(input_, dt, offset,
             new_to_old = {new: old for old, new in old_to_new.items()}
 
             # run watershed
-            _, max_id = vigra.analysis.watershedsNew(input_[z], seeds=seeds, out=seeds)
-
-            # apply size_filter if specified
-            if size_filter > 0:
-                # we do not filter ids from the initial seed mask
-                seeds, max_id = vu.apply_size_filter(seeds, input_[z], size_filter,
-                                                     exclude=initial_seeds_z)
+            wsz, max_id = vu.watershed(input_[z], seeds=seeds, size_filter=size_filter,
+                                       exclude=initial_seeds_z)
             # mask the result if we have a mask
             if mask is not None:
-                seeds[mask[z]] = 0
+                wsz[mask[z]] = 0
                 inv_mask = np.logical_not(mask[z])
                 # NOTE we might not have any pixels in mask for 2d slice
-                max_id = int(seeds[inv_mask].max()) if inv_mask.sum() > 0 else 0
+                max_id = int(wsz[inv_mask].max()) if inv_mask.sum() > 0 else 0
 
             # increase the offset
             offset += max_id
-
             # map back to original ids
-            seeds = nt.takeDict(new_to_old, seeds.astype('uint64'))
-            ws[z] = seeds
+            wsz = nt.takeDict(new_to_old, wsz)
+            ws[z] = wsz
+        #
         return ws
 
     # apply the watersheds in 3d
@@ -311,18 +297,13 @@ def _apply_watershed_with_seeds(input_, dt, offset,
         new_to_old = {new: old for old, new in old_to_new.items()}
 
         # run watershed
-        _, max_id = vigra.analysis.watershedsNew(input_, seeds=seeds, out=seeds)
-
-        # apply size_filter if specified
-        if size_filter > 0:
-            # we do not filter ids from the initial seed mask
-            initial_seed_ids = np.unique(initial_seeds[initial_seed_mask])
-            seeds, max_id = vu.apply_size_filter(seeds, input_, size_filter,
-                                                 exclude=initial_seed_ids)
-        seeds = nt.takeDict(new_to_old, seeds.astype('uint64'))
+        initial_seed_ids = np.unique(initial_seeds[initial_seed_mask])
+        ws, max_id = vu.watershed(input_, seeds=seeds, size_filter=size_filter,
+                                  exclude=initial_seed_ids)
+        ws = nt.takeDict(new_to_old, ws)
         if mask is not None:
-            seeds[mask] = 0
-        return seeds
+            ws[mask] = 0
+        return ws
 
 
 def _get_bbs(blocking, block_id, config):

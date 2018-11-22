@@ -178,7 +178,6 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
         sub_result = agglomerator(sub_graph, sub_costs, time_limit=time_limit)
         assert len(sub_result) == len(nodes), "%i, %i" % (len(sub_result), len(nodes))
 
-        # fu.log("Block %i: Subresult has %i unique ids" % (block_id, res_max_id))
         sub_edgeresult = sub_result[sub_uvs[:, 0]] != sub_result[sub_uvs[:, 1]]
         assert len(sub_edgeresult) == len(inner_edges)
         cut_edge_ids = inner_edges[sub_edgeresult]
@@ -186,6 +185,7 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
 
         _, res_max_id, _ = vigra.analysis.relabelConsecutive(sub_result, start_label=1, keep_zeros=False,
                                                              out=sub_result)
+        fu.log("Block %i: Subresult has %i unique ids" % (block_id, res_max_id))
         # IMPORTANT !!!
         # we can only add back the ignore label after getting the edge-result !!!
         if removed_ignore_label:

@@ -79,6 +79,14 @@ def normalize(input_):
     return input_
 
 
+def watershed(input_, seeds, size_filter=0, exclude=None):
+    ws, max_id = vigra.analysis.watershedsNew(input_, seeds=seeds)
+    if size_filter > 0:
+        ws, max_id = apply_size_filter(ws, input_, size_filter,
+                                       exclude=exclude)
+    return ws.astype('uint64'), max_id
+
+
 def apply_size_filter(segmentation, input_, size_filter, exclude=None):
     ids, sizes = np.unique(segmentation, return_counts=True)
     filter_ids = ids[sizes < size_filter]
