@@ -25,6 +25,8 @@ class UniqueBlockLabelsBase(luigi.Task):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     dependency = luigi.TaskParameter()
+    effective_scale_factor = luigi.ListParameter(default=[])
+    prefix = luigi.Parameter(default='')
 
     def requires(self):
         return self.dependency
@@ -48,6 +50,17 @@ class UniqueBlockLabelsBase(luigi.Task):
         # we use the chunks as block-shape
         block_shape = chunks
 
+        # if we have a roi, and an effectivbr scale factor, we need to re-sample it
+        if roi_begin is not None:
+            assert roi_end is not None
+            if self.effective_scale_factor:
+                effective_scale = self.effective_scale_factor
+                self._write_log("downscaling roi with effective scale %s" % str(effective_scale))
+                self._write_log("ROI before scaling: %s to %s" % (str(roi_begin), str(roi_end)))
+                roi_begin = [int(rb / sf) for rb, sf in zip(roi_begin, effective_scale)]
+                roi_end = [int(re / sf) for re, sf in zip(roi_end, effective_scale)]
+                self._write_log("ROI after scaling: %s to %s" % (str(roi_begin), str(roi_end)))
+
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
         else:
@@ -69,12 +82,16 @@ class UniqueBlockLabelsBase(luigi.Task):
         self._write_log('scheduling %i blocks to be processed' % len(block_list))
 
         # prime and run the jobs
-        self.prepare_jobs(n_jobs, block_list, config)
-        self.submit_jobs(n_jobs)
+        self.prepare_jobs(n_jobs, block_list, config, self.prefix)
+        self.submit_jobs(n_jobs, self.prefix)
 
         # wait till jobs finish and check for job success
-        self.wait_for_jobs()
-        self.check_jobs(n_jobs)
+        self.wait_for_jobs(self.prefix)
+        self.check_jobs(n_jobs, self.prefix)
+
+    def output(self):
+        return luigi.LocalTarget(os.path.join(self.tmp_folder,
+                                              self.task_name + '_%s.log' % self.prefix))
 
 
 class UniqueBlockLabelsLocal(UniqueBlockLabelsBase, LocalTask):
@@ -109,10 +126,13 @@ def _uniques_default(ds, ds_out, blocking, block_list):
         chunk_id = tuple(bl // ch for bl, ch in zip(block_coord, ds.chunks))
 
         labels = ds.read_chunk(chunk_id)
-        uniques = np.unique(labels)
-        # TODO can we skip blocks with only 0 as  label in paintera format ??
-        if len(uniques) == 1 and uniques[0] == 0:
-            return
+        if labels is None:
+            # TODO can we skip blocks with only 0 as  label in paintera format ??
+            # fu.log_block_success(block_id)
+            # return
+            uniques = np.zeros(1, dtype='uint64')
+        else:
+            uniques = np.unique(labels)
         ds_out.write_chunk(chunk_id, uniques, True)
         fu.log_block_success(block_id)
 

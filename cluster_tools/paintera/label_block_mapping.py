@@ -36,8 +36,8 @@ class LabelBlockMappingBase(luigi.Task):
         shebang, _, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 
-        # TODO support roi
-        assert roi_begin is None and roi_end is None
+        # TODO adapt blocks that are searched to roi
+        # assert roi_begin is None and roi_end is None
 
         # shape and chunks for the id space
         ds_shape = (int(2**63 - 1),) # open-ended shape
@@ -48,7 +48,7 @@ class LabelBlockMappingBase(luigi.Task):
         block_shape = chunks
 
         if self.n_retries == 0:
-            block_list = vu.blocks_in_volume(actual_shape, block_shape, roi_begin, roi_end)
+            block_list = vu.blocks_in_volume(actual_shape, block_shape)
         else:
             block_list = self.block_list
             self.clean_up_for_retry(block_list)

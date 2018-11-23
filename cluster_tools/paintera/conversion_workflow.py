@@ -10,7 +10,6 @@ import z5py
 
 from ..import downscaling as sampling_tasks
 from ..cluster_tasks import WorkflowBase
-from ..downscaling import DownscalingWorkflow
 # TODO
 # from ..label_multisets import
 
@@ -56,12 +55,14 @@ class WritePainteraMetadata(luigi.Task):
             data_group = f[os.path.join(self.label_group, 'data')]
             data_group.attrs['maxId'] = self.max_id
             data_group.attrs['multiScale'] = True
-            data_group.attrs['offset'] = self.offset
-            data_group.attrs['resolution'] = self.resolution
+            # we revese resolution and offset because java n5 uses axis
+            # convention XYZ and we use ZYx
+            data_group.attrs['offset'] = self.offset[::-1]
+            data_group.attrs['resolution'] = self.resolution[::-1]
             data_group.attrs['isLabelMultiset'] = self.is_label_multiset
             self._write_downsampling_factors(data_group)
             # write metadata for block to label mapping
-            scale_ds_pattern = os.path.join(self.labels_out_path, 'label-to-block-mapping', 's%%d')
+            scale_ds_pattern = os.path.join(self.label_group, 'label-to-block-mapping', 's%%d')
             data_group.attrs["labelBlockLookup"] = {"type": "n5-filesystem",
                                                     "root": self.path,
                                                     "scaleDatasetPattern": scale_ds_pattern}
@@ -95,6 +96,7 @@ class ConversionWorkflow(WorkflowBase):
         norm_path = os.path.abspath(os.path.realpath(self.path))
         src = os.path.join(norm_path, self.label_in_key)
         dst = os.path.join(data_path, 's%i' % self.label_scale)
+        # self._write_log("linking label dataset from %s to %s" % (src, dst))
         os.symlink(src, dst)
         return dependency
 
@@ -107,6 +109,7 @@ class ConversionWorkflow(WorkflowBase):
         # check if we have output labels already
         dst_key = os.path.join(self.label_out_key, 'data', 's%i' % self.label_scale)
         with z5py.File(self.path) as f:
+            assert self.label_in_key in f, "key %s not in input file" % self.label_in_key
             if dst_key in f:
                 return dependency
 
@@ -137,17 +140,21 @@ class ConversionWorkflow(WorkflowBase):
         in_scale = self.label_scale
         in_key = os.path.join(self.label_out_key, 'data', 's%i' % in_scale)
         dep = dependency
+        effective_scale = [1, 1, 1]
+
         for out_scale in target_scales:
             out_key = os.path.join(self.label_out_key, 'data', 's%i' % out_scale)
 
             # find the relative scale factor
-            scale_factor = [sf_out // sf_in for sf_out, sf_in
+            scale_factor = [sf_in // sf_out for sf_out, sf_in
                             in zip(scale_factors[out_scale], scale_factors[in_scale])]
+            effective_scale = [eff * scf for eff, scf in zip(effective_scale, scale_factor)]
             dep = task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                        config_dir=self.config_dir,
                        input_path=self.path, input_key=in_key,
                        output_path=self.path, output_key=out_key,
                        scale_factor=scale_factor, scale_prefix='s%i' % out_scale,
+                       effective_scale_factor=effective_scale,
                        dependency=dep)
 
             in_scale = out_scale
@@ -162,17 +169,21 @@ class ConversionWorkflow(WorkflowBase):
         in_scale = self.label_scale
         in_key = os.path.join(self.label_out_key, 'data', 's%i' % in_scale)
         dep = dependency
+
+        effective_scale = [1, 1, 1]
         for out_scale in downsample_scales:
             out_key = os.path.join(self.label_out_key, 'data', 's%i' % out_scale)
 
             # find the relative scale factor
             scale_factor = [int(sf_out // sf_in) for sf_out, sf_in
                             in zip(scale_factors[out_scale], scale_factors[in_scale])]
+            effective_scale = [eff * scf for eff, scf in zip(effective_scale, scale_factor)]
             dep = task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                        config_dir=self.config_dir,
                        input_path=self.path, input_key=in_key,
                        output_path=self.path, output_key=out_key,
                        scale_factor=scale_factor, scale_prefix='s%i' % out_scale,
+                       effective_scale_factor=effective_scale,
                        dependency=dep)
 
             in_scale = out_scale
@@ -220,11 +231,45 @@ class ConversionWorkflow(WorkflowBase):
         t_down = self._downsample_labels(downsample_scales, scale_factors, t_up)
         return t_down, scale_factors
 
+    def _compute_effective_scales(self, scale_factors):
+        # compte the relative scales
+        relative_scales = [scale_factors[0]] + [[sc1 / sc2 for sc1, sc2 in zip(scale1, scale2)]
+                                                for scale1, scale2 in zip(scale_factors[1:], scale_factors[:-1])]
+        print()
+        print("Relative scales:")
+        print(relative_scales)
+        print()
+        # compute the effective scales w.r.t to the label scale
+        n_scales = len(scale_factors)
+        effective_scales = n_scales * [[]]
+        effective_scales[self.label_scale] = [1, 1, 1]
+
+        # compute the effective scales for upsampling levels
+        # the scales are fractional; e.g. for sampling of factor 2
+        # the effective scale is .5
+        for scale in reversed(range(0, self.label_scale)):
+            effective_scales[scale] = [eff / rel
+                                       for eff, rel in zip(effective_scales[scale + 1],
+                                                           relative_scales[scale + 1])]
+
+        # compute the effective scales for downsampling levels
+        # the scales are integer
+        for scale in range(self.label_scale + 1, n_scales):
+            effective_scales[scale] = [eff * rel
+                                       for eff, rel in zip(effective_scales[scale - 1],
+                                                           relative_scales[scale])]
+
+        print()
+        print("Effective scales:")
+        print(effective_scales)
+        print()
+        return effective_scales
+
     ############################################
     # Step 3 Implementations: make block uniques
     ############################################
 
-    def _uniques_in_blocks(self, dependency, n_scales):
+    def _uniques_in_blocks(self, dependency, n_scales, effective_scales):
         task = getattr(unique_tasks, self._get_task_name('UniqueBlockLabels'))
         # require the unique-labels group
         with z5py.File(self.path) as f:
@@ -237,7 +282,8 @@ class ConversionWorkflow(WorkflowBase):
                        config_dir=self.config_dir,
                        input_path=self.path, output_path=self.path,
                        input_key=in_key, output_key=out_key,
-                       dependency=dep)
+                       effective_scale_factor=effective_scales[scale],
+                       dependency=dep, prefix='s%i' % scale)
         return dep
 
     ##############################################
@@ -305,8 +351,11 @@ class ConversionWorkflow(WorkflowBase):
         t1 = self._make_labels(self.dependency)
         # next, align the scales of labels and raw data
         t2, scale_factors = self._align_scales(t1)
+        # compute the effective scales w.r.t, to the label scale
+        # from the scale factors
+        effective_scales = self._compute_effective_scales(scale_factors)
         # # next, compute the mapping of unique labels to blocks
-        t3 = self._uniques_in_blocks(t2, len(scale_factors))
+        t3 = self._uniques_in_blocks(t2, len(scale_factors), effective_scales)
         # # next, compute the inverse mapping
         t4 = self._label_block_mapping(t3, len(scale_factors))
         # # next, compute the fragment-segment-assignment
