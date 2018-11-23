@@ -60,13 +60,11 @@ class UpscalingBase(luigi.Task):
         super().clean_up_for_retry(block_list)
         # TODO remove any output of failed blocks because it might be corrupted
 
-    def upsample_shape(self, shape):
-        if isinstance(self.scale_factor, (list, tuple)):
-            new_shape = tuple(sh * sf for sh, sf in zip(shape, self.scale_factor))
+    def upsample_shape(self, shape, scale_factor):
+        if isinstance(scale_factor, (list, tuple)):
+            new_shape = tuple(int(sh * sf) for sh, sf in zip(shape, scale_factor))
         else:
-            sf = self.scale_factor
-            new_shape = tuple(sh * sf for sh in shape)
-
+            new_shape = tuple(int(sh * scale_factor) for sh in shape)
         return new_shape
 
     def run_impl(self):
@@ -79,24 +77,6 @@ class UpscalingBase(luigi.Task):
             prev_shape = f[self.input_key].shape
             dtype = f[self.input_key].dtype
         assert len(prev_shape) == 3, "Only support 3d inputs"
-
-
-        shape = self.upsample_shape(prev_shape)
-        self._write_log('upsamping with factor %s from shape %s to %s' % (str(self.scale_factor),
-                                                                          str(prev_shape), str(shape)))
-
-        # load the downscaling config
-        task_config = self.get_task_config()
-
-        # make sure that we have order 0 downscaling if our datatype is not interpolatable
-        library = task_config.get('library', 'vigra')
-        assert library == 'vigra'
-        if dtype not in self.interpolatable_types:
-            opts = task_config.get('library_kwargs', {})
-            opts = {} if opts is None else opts
-            order = opts.get('order', None)
-            assert order == 0,\
-                "datatype %s is not interpolatable, set 'library_kwargs' = {'order': 0} to downscale it" % dtype
 
         # get the scale factor and check if we
         # do isotropic scaling
@@ -113,6 +93,23 @@ class UpscalingBase(luigi.Task):
             assert scale_factor[0] == 1
             assert scale_factor[1] == scale_factor[2]
 
+        shape = self.upsample_shape(prev_shape, scale_factor)
+        self._write_log('upsampling with factor %s from shape %s to %s' % (str(scale_factor),
+                                                                           str(prev_shape), str(shape)))
+
+        # load the downscaling config
+        task_config = self.get_task_config()
+
+        # make sure that we have order 0 downscaling if our datatype is not interpolatable
+        library = task_config.get('library', 'vigra')
+        assert library == 'vigra'
+        if dtype not in self.interpolatable_types:
+            opts = task_config.get('library_kwargs', {})
+            opts = {} if opts is None else opts
+            order = opts.get('order', None)
+            assert order == 0,\
+                "datatype %s is not interpolatable, set 'library_kwargs' = {'order': 0} to downscale it" % dtype
+
         # read the output chunks
         chunks = task_config.pop('chunks', None)
         if chunks is None:
@@ -125,6 +122,7 @@ class UpscalingBase(luigi.Task):
 
         compression = task_config.pop('compression', 'gzip')
         # require output dataset
+        self._write_log("requiring output dataset @ %s:%s" % (self.output_path, self.output_key))
         with vu.file_reader(self.output_path) as f:
             f.require_dataset(self.output_key, shape=shape, chunks=chunks,
                               compression=compression, dtype=dtype)
@@ -139,6 +137,8 @@ class UpscalingBase(luigi.Task):
         if roi_begin is not None:
             assert roi_end is not None
             effective_scale = self.effective_scale_factor if self.effective_scale_factor else scale_factor
+            self._write_log("upscaling roi with effective scale %s" % str(effective_scale))
+            self._write_log("ROI before scaling: %s to %s" % (str(roi_begin), str(roi_end)))
             if isinstance(effective_scale, int):
                 roi_begin = [rb * effective_scale for rb in roi_begin]
                 roi_end= [re * effective_scale if re is not None else sh
@@ -147,13 +147,16 @@ class UpscalingBase(luigi.Task):
                 roi_begin = [rb * sf for rb, sf in zip(roi_begin, effective_scale)]
                 roi_end= [re * sf if re is not None else sh
                           for re, sf, sh in zip(roi_end, effective_scale, shape)]
+            roi_begin = map(int, roi_begin)
+            roi_end = map(int, roi_end)
+            self._write_log("ROI after scaling: %s to %s" % (str(roi_begin), str(roi_end)))
 
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
-            self._write_log("scheduled %i blocks to run" % len(block_list))
         else:
             block_list = self.block_list
             self.clean_up_for_retry(block_list)
+        self._write_log("scheduled %i blocks to run" % len(block_list))
 
         # prime and run the jobs
         n_jobs = min(len(block_list), self.max_jobs)
@@ -207,11 +210,11 @@ def _upsample_block(blocking, block_id, ds_in, ds_out, scale_factor, sampler):
 
     # upsample the input bounding box
     if isinstance(scale_factor, int):
-        in_bb = tuple(slice(ib.start // scale_factor,
+        in_bb = tuple(slice(int(ib.start // scale_factor),
                             min(int(ceil(ib.stop / scale_factor)), sh))
                       for ib, sh in zip(in_bb, ds_in.shape))
     else:
-        in_bb = tuple(slice(ib.start // sf,
+        in_bb = tuple(slice(int(ib.start // sf),
                             min(int(ceil(ib.stop // sf)), sh))
                       for ib, sf, sh in zip(in_bb, scale_factor, ds_in.shape))
 

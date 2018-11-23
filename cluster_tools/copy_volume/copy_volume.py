@@ -15,14 +15,16 @@ from cluster_tools.utils.task_utils import DummyTask
 
 
 #
-# copy_to_h5 tasks
+# copy tasks
 #
 
-class CopyToH5Base(luigi.Task):
-    """ copy_to_h5 base class
+# TODO enable shrink to roi and scale factors
+# to also replace `downscaling/copy_to_h5`
+class CopyVolumeBase(luigi.Task):
+    """ copy_volume base class
     """
 
-    task_name = 'copy_to_h5'
+    task_name = 'copy_volume'
     src_file = os.path.abspath(__file__)
 
     # input and output volumes
@@ -30,8 +32,9 @@ class CopyToH5Base(luigi.Task):
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
-    effective_scale_factor = luigi.Parameter()
     prefix = luigi.Parameter()
+    fit_to_roi = luigi.Parameter(default=False)
+    effective_scale_factor = luigi.ListParameter(default=[])
     dependency = luigi.TaskParameter(default=DummyTask())
 
     @staticmethod
@@ -58,65 +61,63 @@ class CopyToH5Base(luigi.Task):
             shape = f[self.input_key].shape
             ds_dtype = f[self.input_key].dtype
             ds_chunks = f[self.input_key].chunks
+        # TODO generalize to ND
         assert len(shape) == 3, "Only support 3d inputs"
 
-        # load the copy_to_h5 config
+        # load the config
         task_config = self.get_task_config()
+
+        # if we have a roi, we need to:
+        # - scale the roi to the effective scale, if effective scale is given
+        # - shrink the shape to the roi, if fit_to_roi is True
+        if roi_begin is not None:
+            assert roi_end is not None
+            if self.effective_scale_factor:
+                roi_begin = [int(rb // sf)
+                             for rb, sf in zip(roi_begin, self.effective_scale_factor)]
+                roi_end = [int(re // sf)
+                           for re, sf in zip(roi_end, effective_scale)]
+
+            if self.fit_to_roi:
+                out_shape = tuple(roie - roib for roib, roie in zip(roi_begin, roi_end))
+                # if we fit to roi, the task config needs to be updated with the roi begin,
+                # because the output bounding boxes need to be offseted by roi_begin
+                task_config.update({'roi_begin': roi_begin})
+            else:
+                out_shape = shape
+        else:
+            out_shape = shape
+
         compression = task_config.pop('compression', 'gzip')
 
         dtype = task_config.pop('dtype', None)
         if dtype is None:
             dtype = ds_dtype
-
-        if isinstance(dtype, np.dtype):
+        if not isinstance(dtype, str):
             dtype = dtype.name
 
         chunks = task_config.pop('chunks', None)
         if chunks is None:
             chunks = ds_chunks
-        chunks = tuple(chunks)
+        chunks = tuple(min(chnk, osh) for chnk, osh in zip(chunks, out_shape))
+
+        # require output dataset
+        with vu.file_reader(self.output_path) as f:
+            f.require_dataset(self.output_key, shape=out_shape, chunks=chunks,
+                              compression=compression, dtype=dtype)
 
         # update the config with input and output paths and keys
         # as well as block shape
         task_config.update({'input_path': self.input_path, 'input_key': self.input_key,
                             'output_path': self.output_path, 'output_key': self.output_key,
-                            'block_shape': block_shape, 'dtype': dtype})
-
-        if roi_begin is not None:
-
-            # if we have a roi, we need to re-sample it
-            assert roi_end is not None
-            effective_scale = self.effective_scale_factor if self.effective_scale_factor else scale_factor
-            if isinstance(effective_scale, int):
-                roi_begin = [rb // effective_scale for rb in roi_begin]
-                roi_end= [re // effective_scale if re is not None else sh
-                          for re, sh in zip(roi_end, shape)]
-            else:
-                roi_begin = [rb // sf for rb, sf in zip(roi_begin, effective_scale)]
-                roi_end = [re // sf if re is not None else sh
-                           for re, sf, sh in zip(roi_end, effective_scale, shape)]
-
-            shape = tuple(roie - roib for roib, roie in zip(roi_begin, roi_end))
-            task_config.update({'roi_begin': roi_begin, 'roi_end': roi_end})
-
-        # check that the chunks are smaller than the shape, otherwise
-        # skip this job
-        if any(ch > sh for ch, sh in zip(chunks, shape)):
-            self._write_log("chunks %s are bigger than shape %s, not scheduling any jobs" % (str(chunks), str(shape)))
-            return
-
-        # require output dataset
-        with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, shape=shape, chunks=chunks,
-                              compression=compression, dtype=dtype)
-
+                            'block_shape': block_shape})
 
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
-            self._write_log("scheduled %i blocks to run" % len(block_list))
         else:
             block_list = self.block_list
             self.clean_up_for_retry(block_list)
+        self._write_log("scheduled %i blocks to run" % len(block_list))
 
         # prime and run the jobs
         n_jobs = min(len(block_list), self.max_jobs)
@@ -132,23 +133,23 @@ class CopyToH5Base(luigi.Task):
                                               self.task_name + '_%s.log' % self.prefix))
 
 
-class CopyToH5Local(CopyToH5Base, LocalTask):
+class CopyVolumeLocal(CopyVolumeBase, LocalTask):
     """
-    copy to h5 on local machine
-    """
-    pass
-
-
-class CopyToH5Slurm(CopyToH5Base, SlurmTask):
-    """
-    copy to h5 on slurm cluster
+    copy_volume local machine
     """
     pass
 
 
-class CopyToH5LSF(CopyToH5Base, LSFTask):
+class CopyVolumeSlurm(CopyVolumeBase, SlurmTask):
     """
-    copy to h5 on lsf cluster
+    copy on slurm cluster
+    """
+    pass
+
+
+class CopyVolumeLSF(CopyVolumeBase, LSFTask):
+    """
+    copy_volume on lsf cluster
     """
     pass
 
@@ -158,33 +159,46 @@ class CopyToH5LSF(CopyToH5Base, LSFTask):
 #
 
 
-def _copy_blocks(ds_in, ds_out, block_shape, block_list,
-                 dtype, roi_begin=None, roi_end=None):
-
-    if roi_begin is None:
-        blocking = nt.blocking([0, 0, 0], list(ds_in.shape), list(block_shape))
+# TODO this will fail if casting to float !
+# TODO wiill yield incorrect results for signed types ...
+def cast_type(data, dtype):
+    if np.dtype(data.dtype) == np.dtype(dtype):
+        return data
     else:
-        blocking = nt.blocking(roi_begin, roi_end, list(block_shape))
+        type_info1 = np.iinfo(np.dtype(dtype))
+        dmin1, dmax1 = type_info1.min, type_info1.max
+        type_info2 = np.iinfo(np.dtype(data.dtype))
+        dmin2, dmax2 = type_info2.min, type_info2.max
+        data = data.astype('float64')
+        data *= (dmax1 / dmax2)
+        data = np.clip(data, dmin1, dmax1)
+        return data.astype(dtype)
 
-    for block_id in range(blocking.numberOfBlocks):
+
+def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin):
+    dtype = ds_out.dtype
+    for block_id in block_list:
         fu.log("start processing block %i" % block_id)
         block = blocking.getBlock(block_id)
-        bb_in = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
-        if roi_begin is not None:
-            bb_out = tuple(slice(beg - off, end - off)
-                           for beg, end, off in zip(block.begin, block.end, roi_begin))
-        else:
-            bb_out = bb_in
-        data = ds_in[bb_in]
+        bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
+        data = ds_in[bb]
+
         # don't write empty blocks
-        if np.sum(data) == 0:
+        if sum(data).sum() == 0:
             fu.log_block_success(block_id)
             continue
-        ds_out[bb_out] = data.astype(dtype)
+
+        # if we have a roi begin, we need to substract it
+        # from the output bounding box, because in this case
+        # the output shape has been fit to the roi
+        if roi_begin is not None:
+            bb = tuple(slice(b.start - off, b.stop - off)
+                       for b, off in zip(bb, roi_begin))
+        ds_out[bb] = cast_type(data, dtype)
         fu.log_block_success(block_id)
 
 
-def copy_to_h5(job_id, config_path):
+def copy_volume(job_id, config_path):
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
     with open(config_path, 'r') as f:
@@ -200,11 +214,10 @@ def copy_to_h5(job_id, config_path):
     # read the output config
     output_path = config['output_path']
     output_key = config['output_key']
-    dtype = config['dtype']
 
+    # check if we offset by roi
     roi_begin = config.get('roi_begin', None)
-    roi_end = config.get('roi_end', None)
-    assert (roi_begin is None) == (roi_end is None)
+
     n_threads = config.get('threads_per_job', 1)
 
     # submit blocks
@@ -212,8 +225,12 @@ def copy_to_h5(job_id, config_path):
         ds_in  = f_in[input_key]
         ds_in.n_threads = n_threads
         ds_out = f_out[output_key]
-        _copy_blocks(ds_in, ds_out, block_shape, block_list,
-                     dtype, roi_begin, roi_end)
+        ds_out.n_threads = n_threads
+
+        shape = list(ds_in.shape)
+        blocking = nt.blocking([0, 0, 0], shape, block_shape)
+
+        _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin)
 
     # log success
     fu.log_job_success(job_id)
@@ -223,4 +240,4 @@ if __name__ == '__main__':
     path = sys.argv[1]
     assert os.path.exists(path), path
     job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
-    copy_to_h5(job_id, path)
+    copy_volume(job_id, path)

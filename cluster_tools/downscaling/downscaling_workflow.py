@@ -9,8 +9,8 @@ import luigi
 
 from ..utils.volume_utils import file_reader
 from ..cluster_tasks import WorkflowBase
+from .. import copy_volume as copy_tasks
 from . import downscaling as downscale_tasks
-from . import copy_to_h5 as copy_tasks
 
 
 # pretty print xml, from:
@@ -31,7 +31,6 @@ def indent_xml(elem, level=0):
             elem.tail = i
 
 
-# TODO support imaris format
 class WriteDownscalingMetadata(luigi.Task):
     tmp_folder = luigi.Parameter()
     output_path = luigi.Parameter()
@@ -246,8 +245,6 @@ class DownscalingWorkflow(WorkflowBase):
         assert all(len(halo) == 3 for halo in halos if halo)
         return halos
 
-    # TODO support more downsampling formats:
-    # imaris
     def validate_format(self):
         assert self.metadata_format in ('paintera', 'bdv'),\
             "Invalid format %s" % self.metadata_format
@@ -390,7 +387,7 @@ class PainteraToBdvWorkflow(WorkflowBase):
     def requires(self):
 
         copy_task = getattr(copy_tasks,
-                            self._get_task_name('CopyToH5'))
+                            self._get_task_name('CopyVolume'))
 
         # get scales that need to be copied
         scales = self.get_scales()
@@ -428,17 +425,24 @@ class PainteraToBdvWorkflow(WorkflowBase):
 
             t_prev = t
 
-        # load the metadata
+        # get the metadata for this dataset
+        # if we have the `resolution` or `offset` attribute
+        # in the dataset, we load them and add them to
+        # the metadata dict. However if these keys
+        # are already in the metadata dict, the existing values
+        # have priority
+        metadata_dict = {**self.metadata_dict}
         with file_reader(self.input_path) as f:
             attrs = f[self.input_key_prefix].attrs
-            offsets = attrs['offset']
-            resolution = attrs['resolution']
+            offsets = attrs.get('offset', None)
+            resolution = attrs.get('resolution', None)
 
-        metadata_dict = {**self.metadata_dict}
-        if 'offsets' not in metadata_dict:
-            metadata_dict.update({'offsets': offsets})[::-1]
-        if 'resolution' not in metadata_dict:
-            metadata_dict.update({'resolution': resolution})[::-1]
+        # we need to invert here, because java stores as XYZ,
+        # but we expect ZYX input
+        if 'offsets' not in metadata_dict and offsets is not None:
+            metadata_dict.update({'offsets': offsets[::-1]})
+        if 'resolution' not in metadata_dict and resolution is not None:
+            metadata_dict.update({'resolution': resolution[::-1]})
 
         # task to write the metadata
         t_meta = WriteDownscalingMetadata(tmp_folder=self.tmp_folder,
@@ -452,5 +456,5 @@ class PainteraToBdvWorkflow(WorkflowBase):
     @staticmethod
     def get_config():
         configs = super(PainteraToBdvWorkflow, PainteraToBdvWorkflow).get_config()
-        configs.update({'copy_to_h5': copy_tasks.CopyToH5Local.default_task_config()})
+        configs.update({'copy_volume': copy_tasks.CopyVolumeLocal.default_task_config()})
         return configs

@@ -458,6 +458,11 @@ class LocalTask(BaseClusterTask):
     Task for running tasks locally for debugging /
     test purposes
     """
+    # don't want to start to many local jobs, because
+    # this is usually a sign that forgot to set the target
+    # to slurm or lsf
+    # TODO could also set this from cpu count
+    max_local_jobs = 12
 
     def prepare_jobs(self, n_jobs, block_list, config,
                      job_prefix=None, consecutive_blocks=False):
@@ -477,6 +482,8 @@ class LocalTask(BaseClusterTask):
             call([script_path, config_file], stdout=f_out, stderr=f_err)
 
     def submit_jobs(self, n_jobs, job_prefix=None):
+        assert n_jobs < self.max_local_jobs,\
+            "Trying to submit %i local jobs, did you forget to set the target to slurm or lsf?" % n_jobs
         with futures.ProcessPoolExecutor(n_jobs) as pp:
             tasks = [pp.submit(self._submit, job_id, job_prefix) for job_id in range(n_jobs)]
             [t.result() for t in tasks]

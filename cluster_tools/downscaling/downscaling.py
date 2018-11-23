@@ -143,14 +143,17 @@ class DownscalingBase(luigi.Task):
             assert roi_end is not None
             effective_scale = self.effective_scale_factor if\
                 self.effective_scale_factor else scale_factor
+            self._write_log("downscaling roi with effective scale %s" % str(effective_scale))
+            self._write_log("ROI before scaling: %s to %s" % (str(roi_begin), str(roi_end)))
             if isinstance(effective_scale, int):
                 roi_begin = [rb // effective_scale for rb in roi_begin]
                 roi_end= [re // effective_scale if re is not None else sh
                           for re, sh in zip(roi_end, shape)]
             else:
                 roi_begin = [rb // sf for rb, sf in zip(roi_begin, effective_scale)]
-                roi_end= [re // sf if re is not None else sh
-                          for re, sf, sh in zip(roi_end, effective_scale, shape)]
+                roi_end = [re // sf if re is not None else sh
+                           for re, sf, sh in zip(roi_end, effective_scale, shape)]
+            self._write_log("ROI after scaling: %s to %s" % (str(roi_begin), str(roi_end)))
 
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
