@@ -49,27 +49,31 @@ class WritePainteraMetadata(luigi.Task):
         with z5py.File(self.path) as f:
             # write metadata for the top-level label group
             label_group = f[self.label_group]
-            label_group.attrs['paintera_data'] = {'type': 'label'}
+            label_group.attrs['painteraData'] = {'type': 'label'}
             label_group.attrs['maxId'] = self.max_id
+            # add the metadata referencing the label to block lookup
+            scale_ds_pattern = os.path.join(self.label_group, 'label-to-block-mapping', 's%d')
+            label_group.attrs["labelBlockLookup"] = {"type": "n5-filesystem",
+                                                     "root": os.path.abspath(os.path.realpath(self.path)),
+                                                     "scaleDatasetPattern": scale_ds_pattern}
             # write metadata for the label-data group
             data_group = f[os.path.join(self.label_group, 'data')]
             data_group.attrs['maxId'] = self.max_id
             data_group.attrs['multiScale'] = True
             # we revese resolution and offset because java n5 uses axis
-            # convention XYZ and we use ZYx
+            # convention XYZ and we use ZYX
             data_group.attrs['offset'] = self.offset[::-1]
             data_group.attrs['resolution'] = self.resolution[::-1]
             data_group.attrs['isLabelMultiset'] = self.is_label_multiset
             self._write_downsampling_factors(data_group)
-            # write metadata for block to label mapping
-            scale_ds_pattern = os.path.join(self.label_group, 'label-to-block-mapping', 's%%d')
-            data_group.attrs["labelBlockLookup"] = {"type": "n5-filesystem",
-                                                    "root": self.path,
-                                                    "scaleDatasetPattern": scale_ds_pattern}
             # add metadata for unique labels group
             unique_group = f[os.path.join(self.label_group, 'unique-labels')]
             unique_group.attrs['multiScale'] = True
             self._write_downsampling_factors(unique_group)
+            # add metadata for label to block mapping
+            mapping_group = f[os.path.join(self.label_group, 'label-to-block-mapping')]
+            mapping_group.attrs['multiScale'] = True
+            self._write_downsampling_factors(mapping_group)
         self._write_log('write metadata successfull')
 
     def output(self):
@@ -235,10 +239,8 @@ class ConversionWorkflow(WorkflowBase):
         # compte the relative scales
         relative_scales = [scale_factors[0]] + [[sc1 / sc2 for sc1, sc2 in zip(scale1, scale2)]
                                                 for scale1, scale2 in zip(scale_factors[1:], scale_factors[:-1])]
-        print()
-        print("Relative scales:")
-        print(relative_scales)
-        print()
+        # print("Relative scales:")
+        # print(relative_scales)
         # compute the effective scales w.r.t to the label scale
         n_scales = len(scale_factors)
         effective_scales = n_scales * [[]]
@@ -259,10 +261,8 @@ class ConversionWorkflow(WorkflowBase):
                                        for eff, rel in zip(effective_scales[scale - 1],
                                                            relative_scales[scale])]
 
-        print()
-        print("Effective scales:")
-        print(effective_scales)
-        print()
+        # print("Effective scales:")
+        # print(effective_scales)
         return effective_scales
 
     ############################################
@@ -307,7 +307,8 @@ class ConversionWorkflow(WorkflowBase):
                        config_dir=self.config_dir,
                        input_path=self.path, output_path=self.path,
                        input_key=in_key, output_key=out_key,
-                       number_of_labels=max_id + 1, dependency=dep)
+                       number_of_labels=max_id + 1, dependency=dep,
+                       prefix='s%i' % scale)
         return dep
 
     #####################################################

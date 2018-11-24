@@ -27,6 +27,7 @@ class LabelBlockMappingBase(luigi.Task):
     output_key = luigi.Parameter()
     number_of_labels = luigi.IntParameter()
     dependency = luigi.TaskParameter()
+    prefix = luigi.Parameter()
 
     def requires(self):
         return self.dependency
@@ -67,12 +68,16 @@ class LabelBlockMappingBase(luigi.Task):
         self._write_log('scheduling %i blocks to be processed' % len(block_list))
 
         # prime and run the jobs
-        self.prepare_jobs(n_jobs, block_list, config)
-        self.submit_jobs(n_jobs)
+        self.prepare_jobs(n_jobs, block_list, config, self.prefix)
+        self.submit_jobs(n_jobs, self.prefix)
 
         # wait till jobs finish and check for job success
-        self.wait_for_jobs()
-        self.check_jobs(n_jobs)
+        self.wait_for_jobs(self.prefix)
+        self.check_jobs(n_jobs, self.prefix)
+
+    def output(self):
+        return luigi.LocalTarget(os.path.join(self.tmp_folder,
+                                              self.task_name + '_%s.log' % self.prefix))
 
 
 class LabelBlockMappingLocal(LabelBlockMappingBase, LocalTask):
@@ -107,6 +112,9 @@ def _label_to_block_mapping(input_path, input_key,
     for block_id in block_list:
         id_space_block = blocking.getBlock(block_id)
         id_start, id_stop = id_space_block.begin[0], id_space_block.end[0]
+        fu.log("serializing ids in block %i with labels from %i to %i" % (block_id,
+                                                                          id_start,
+                                                                          id_stop))
         ndist.serializeBlockMapping(os.path.join(input_path, input_key),
                                     os.path.join(output_path, output_key),
                                     id_start, id_stop)
@@ -116,6 +124,8 @@ def _label_to_block_mapping(input_path, input_key,
 def label_block_mapping(job_id, config_path):
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
+
+    fu.log("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!11111elf")
 
     # read the config
     with open(config_path) as f:
@@ -129,7 +139,7 @@ def label_block_mapping(job_id, config_path):
     block_list = config['block_list']
     block_shape = config['block_shape']
 
-    # read id spacei chunks from output; make id space blocking
+    # read id space chunks from output; make id space blocking
     with vu.file_reader(output_path) as f:
         chunks = list(f[output_key].chunks)
     # shape for max ids
