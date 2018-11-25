@@ -7,8 +7,6 @@ from . import predict as predict_tasks
 from . import probs_to_costs as transform_tasks
 
 
-# TODO add option to skip ignore label in graph
-# and implement in nifty
 class EdgeCostsWorkflow(WorkflowBase):
 
     features_path = luigi.Parameter()

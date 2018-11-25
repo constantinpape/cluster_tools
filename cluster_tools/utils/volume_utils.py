@@ -1,3 +1,4 @@
+import os
 import json
 from functools import partial
 from math import floor, ceil
@@ -34,20 +35,42 @@ def get_shape(path, key):
 
 
 def blocks_in_volume(shape, block_shape,
-                     roi_begin=None, roi_end=None):
+                     roi_begin=None, roi_end=None,
+                     block_list_path=None):
     assert len(shape) == len(block_shape), '%i; %i' % (len(shape), len(block_shape))
     assert (roi_begin is None) == (roi_end is None)
+    have_roi = roi_begin is not None
+    have_path = block_list_path is not None
+    if have_path:
+        assert os.path.exists(block_list_path),\
+            "Was given block_list_path %s that doesn't exist" % block_list_path
+
     blocking_ = blocking([0] * len(shape), list(shape), list(block_shape))
-    if roi_begin is None:
+
+    # we don't have a roi and don't have a block_list_path
+    # -> return all block_ids
+    if not have_roi and not block_list_path:
         return list(range(blocking_.numberOfBlocks))
-    else:
-        assert roi_end is not None
+
+    # if we have a roi load the blocks in roi
+    if have_roi:
         roi_end = [sh if re is None else re for re, sh in zip(roi_end, shape)]
         block_list = blocking_.getBlockIdsOverlappingBoundingBox(list(roi_begin),
                                                                  list(roi_end))
         block_list = block_list.tolist()
         assert len(block_list) == len(set(block_list)), "%i, %i" % (len(block_list), len(set(block_list)))
-        return block_list
+
+    # if we have a block list path, load it
+    if have_path:
+        with open(block_list_path) as f:
+            list_from_path = json.load(f)
+        # if we have a roi, need to intersect
+        if have_roi:
+            block_list = np.intersect1d(list_from_path, block_list).tolist()
+        else:
+            block_list = list_from_path
+
+    return block_list
 
 
 def block_to_bb(block):

@@ -73,7 +73,7 @@ class DownscalingBase(luigi.Task):
 
     def run_impl(self):
         # get the global config and init configs
-        shebang, block_shape, roi_begin, roi_end = self.global_config_values()
+        shebang, block_shape, roi_begin, roi_end, block_list_path = self.global_config_values(with_block_list_path=True)
         self.init(shebang)
 
         # get shape, dtype and make block config
@@ -81,7 +81,6 @@ class DownscalingBase(luigi.Task):
             prev_shape = f[self.input_key].shape
             dtype = f[self.input_key].dtype
         assert len(prev_shape) == 3, "Only support 3d inputs"
-
 
         shape = self.downsample_shape(prev_shape)
         self._write_log('downscaling with factor %s from shape %s to %s' % (str(self.scale_factor),
@@ -156,7 +155,8 @@ class DownscalingBase(luigi.Task):
             self._write_log("ROI after scaling: %s to %s" % (str(roi_begin), str(roi_end)))
 
         if self.n_retries == 0:
-            block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+            block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end,
+                                             block_list_path)
             self._write_log("scheduled %i blocks to run" % len(block_list))
         else:
             block_list = self.block_list

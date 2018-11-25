@@ -93,7 +93,6 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                                       output_key=self.ws_key,
                                       mask_path=self.mask_path,
                                       mask_key=self.mask_key)
-        # return ws_wf
         # TODO in the current implementation, we can only compute the
         # graph with n_scales=1, otherwise we will clash with the
         # multicut merged graphs
@@ -133,6 +132,7 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                                      output_key=costs_key,
                                      rf_path=self.rf_path)
         mc_wf = self._get_mc_wf(costs_wf)
+        # return mc_wf
         write_task = getattr(write_tasks,
                              self._get_task_name('Write'))
         t = write_task(tmp_folder=self.tmp_folder,

@@ -11,8 +11,14 @@ from datetime import datetime, timedelta
 import numpy as np
 import luigi
 
-from .utils.function_utils import tail
+from .utils.parse_utils import parse_blocks_task, parse_jobs_task
 from .utils.task_utils import DummyTask
+
+
+class FailedJobsError(Exception):
+    """ Custom exception for failed jobs
+    """
+    pass
 
 
 class BaseClusterTask(luigi.Task):
@@ -70,6 +76,12 @@ class BaseClusterTask(luigi.Task):
         self._write_log("Start task %s" % self.task_name)
         try:
             self.run_impl()
+        # if a failed jobs error was raised, one or more jobs failed
+        # and the log file was moved already
+        except FailedJobsError as e:
+            raise e
+        # otherwise the exception happened before submitting jobs and
+        # we need to move the log file
         except Exception as e:
             out_path = self.output().path
             fail_path = out_path[:-4] + '_failed.log'
@@ -90,22 +102,10 @@ class BaseClusterTask(luigi.Task):
     def check_jobs(self, n_jobs, job_prefix=None):
         """ Check for jobs that ran successfully
         """
-        success_list = []
         job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name,
                                                                         job_prefix)
-        for job_id in range(n_jobs):
-            log_file = os.path.join(self.tmp_folder, 'logs', '%s_%i.log' % (job_name, job_id))
-            try:
-                last_line = tail(log_file, 1)[0]
-            # if the file does not exist, this throws a `CalledProcessError`
-            # if it does exist, but is empty, it throws a `IndexError`
-            # in bout cases, the job was unsuccessfull and we continue
-            except (IndexError, CalledProcessError):
-                continue
-            # get rid of the datetime prefix
-            msg = " ".join(last_line.split()[2:])
-            if msg == "processed job %i" % job_id:
-                success_list.append(job_id)
+        log_prefix = os.path.join(self.tmp_folder, 'logs', '%s_' % job_name)
+        success_list = parse_jobs_task(log_prefix, n_jobs)
 
         if len(success_list) == n_jobs:
             self._write_log("%s finished successfully" % self.task_name)
@@ -136,38 +136,25 @@ class BaseClusterTask(luigi.Task):
                 fail_path = out_path[:-4] + '_failed.log'
                 self._write_log("move log from %s to %s" % (out_path, fail_path))
                 shutil.move(out_path, fail_path)
-                raise RuntimeError("Task: %s failed for %i / %i jobs" % (self.task_name,
-                                                                         len(failed_jobs),
-                                                                         n_jobs))
+                raise FailedJobsError("Task: %s failed for %i / %i jobs" % (self.task_name,
+                                                                            len(failed_jobs),
+                                                                            n_jobs))
 
     def get_failed_blocks(self, n_jobs, passed_jobs=[], job_prefix=None):
         """ Parse the log of failed jobs to find the ids of all blocks that have failed.
         """
-        passed_blocks = []
         job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name,
                                                                         job_prefix)
-        for job_id in range(n_jobs):
+        # for the jobs that have completely passed, we can add the block list from the config
+        passed_blocks = []
+        for job_id in passed_blokcs:
+            config_path = self._config_path(job_id, job_prefix)
+            with open(config_path, 'r') as f:
+                passed_blocks.extend(json.load(f)['block_list'])
 
-            # if this job has passed, we don't need to parse the log file, but can
-            # copy the block list from the job's config
-            if job_id in passed_jobs:
-                config_path = self._config_path(job_id, job_prefix)
-                with open(config_path, 'r') as f:
-                    passed_blocks.extend(json.load(f)['block_list'])
-                continue
-
-            # otherwise, we parse the log file (if it exists)
-            log_file = os.path.join(self.tmp_folder, 'logs', '%s_%i.log' % (job_name, job_id))
-            if not os.path.exists(log_file):
-                continue
-
-            with open(log_file, 'r') as f:
-                for line in log_file:
-                    # get rid of date-time prefix
-                    line = ' '.join(line.split()[2:])
-                    # check if the line marks a block that has passed
-                    if line.startswith('processed block'):
-                        block_list.append(int(line.split()[-1]))
+        # for the failed jobs, we parse the output logs
+        log_prefix = os.path.join(self.tmp_folder, 'logs', '%s_' % job_name)
+        passed_blocks.extend(parse_blocks_task(log_prefix, n_jobs, passed_jobs))
 
         # return the list of failed blocks
         return list(set(self.block_list) - set(passed_blocks))
@@ -222,18 +209,22 @@ class BaseClusterTask(luigi.Task):
                 "roi_begin": None,
                 "roi_end": None,
                 "groupname": "kreshuk",
-                "max_num_retries": 0}
+                "max_num_retries": 0,
+                "block_list_path": None}
 
-    def global_config_values(self):
+    def global_config_values(self, with_block_list_path=False):
         """ Load the global config values that are needed
             in most of the tasks
         """
         config = self.get_global_config()
         # first two return values (shebang, block_shape) must exist
-        # second two have defaults
-        return (config["shebang"], config["block_shape"],
+        # the rest default to None
+        conf = (config["shebang"], config["block_shape"],
                 config.get("roi_begin", None),
                 config.get("roi_end", None))
+        if with_block_list_path:
+            conf = conf + (config.get("block_list_path", None),)
+        return conf
 
     def clean_up_for_retry(self, block_list, prefix=None):
         """ Clean up before starting a retry.
