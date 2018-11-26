@@ -151,9 +151,13 @@ def _read_subresults(ds_results, block_node_prefix, blocking,
         chunk = tuple(beg // bs for beg, bs in zip(block.begin, blocking.blockShape))
         subres = ds_results.read_chunk(chunk)
 
-        # subres is None -> this node only holds ignore label
+        # subres is None -> this block has ignore label
+        # and has no edgees. Note that this does not imply that the
+        # block ONLY has ignore label (or only one ordinary node)
+        # because multiple ordinary nodes could be seperated by the ignore label
+        # and thus not share an edge.
         if subres is None:
-            assert len(nodes) == 1
+            assert 0 in nodes
             return None
 
         assert len(nodes) == len(subres), "block %i: %i, %i" % (block_id, len(nodes), len(subres))
