@@ -20,9 +20,10 @@ from . import label_block_mapping as labels_to_block_tasks
 class WritePainteraMetadata(luigi.Task):
     tmp_folder = luigi.Parameter()
     path = luigi.Parameter()
+    raw_key = luigi.Parameter()
     label_group = luigi.Parameter()
-    scale_factors = luigi.Parameter()
-    original_scale = luigi.IntParameter()
+    scale_factors = luigi.ListParameter()
+    label_scale = luigi.IntParameter()
     is_label_multiset = luigi.BoolParameter()
     resolution = luigi.ListParameter()
     offset = luigi.ListParameter()
@@ -38,14 +39,24 @@ class WritePainteraMetadata(luigi.Task):
         return self.dependency
 
     def _write_downsampling_factors(self, group):
+        # get the actual scales we have in the segmentation
+        scale_factors = [[1, 1, 1]] + list(self.scale_factors[self.label_scale+1:])
+        effective_scale = [1, 1, 1]
         # write the scale factors
-        for scale, scale_factor in enumerate(self.scale_factors):
+        for scale, scale_factor in enumerate(scale_factors):
             ds = group['s%i' % scale]
+            effective_scale = [sf * eff for sf, eff in zip(scale_factor, effective_scale)]
             # we need to reverse the scale factors because paintera has axis order
             # XYZ and we have axis order ZYX
-            ds.attrs['downsamplingFactors'] = scale_factor[::-1]
+            ds.attrs['downsamplingFactors'] = effective_scale[::-1]
 
     def run(self):
+
+        # compute the correct resolutions for raw data and labels
+        label_resolution = [res * sf for res, sf in zip(self.resolution,
+                                                        self.scale_factors[self.label_scale])]
+        raw_resolution = self.resolution
+
         with z5py.File(self.path) as f:
             # write metadata for the top-level label group
             label_group = f[self.label_group]
@@ -63,7 +74,7 @@ class WritePainteraMetadata(luigi.Task):
             # we revese resolution and offset because java n5 uses axis
             # convention XYZ and we use ZYX
             data_group.attrs['offset'] = self.offset[::-1]
-            data_group.attrs['resolution'] = self.resolution[::-1]
+            data_group.attrs['resolution'] = label_resolution[::-1]
             data_group.attrs['isLabelMultiset'] = self.is_label_multiset
             self._write_downsampling_factors(data_group)
             # add metadata for unique labels group
@@ -74,6 +85,9 @@ class WritePainteraMetadata(luigi.Task):
             mapping_group = f[os.path.join(self.label_group, 'label-to-block-mapping')]
             mapping_group.attrs['multiScale'] = True
             self._write_downsampling_factors(mapping_group)
+            # add metadata for the raw data
+            raw_group = f[self.raw_key]
+            raw_group.attrs['resolution'] = raw_resolution[::-1]
         self._write_log('write metadata successfull')
 
     def output(self):
@@ -99,7 +113,7 @@ class ConversionWorkflow(WorkflowBase):
     def _link_labels(self, data_path, dependency):
         norm_path = os.path.abspath(os.path.realpath(self.path))
         src = os.path.join(norm_path, self.label_in_key)
-        dst = os.path.join(data_path, 's%i' % self.label_scale)
+        dst = os.path.join(data_path, 's0')
         # self._write_log("linking label dataset from %s to %s" % (src, dst))
         os.symlink(src, dst)
         return dependency
@@ -111,7 +125,7 @@ class ConversionWorkflow(WorkflowBase):
     def _make_labels(self, dependency):
 
         # check if we have output labels already
-        dst_key = os.path.join(self.label_out_key, 'data', 's%i' % self.label_scale)
+        dst_key = os.path.join(self.label_out_key, 'data', 's0')
         with z5py.File(self.path) as f:
             assert self.label_in_key in f, "key %s not in input file" % self.label_in_key
             if dst_key in f:
@@ -135,58 +149,25 @@ class ConversionWorkflow(WorkflowBase):
     ######################################
 
     # TODO implement for label-multi-set
-    def _upsample_labels(self, upsample_scales, scale_factors, dependency):
-        task = getattr(sampling_tasks, self._get_task_name('Upscaling'))
-        # reverse the scales for upsampling
-        target_scales = upsample_scales[::-1]
-
-        # run upsampling
-        in_scale = self.label_scale
-        in_key = os.path.join(self.label_out_key, 'data', 's%i' % in_scale)
-        dep = dependency
-        effective_scale = [1, 1, 1]
-
-        for out_scale in target_scales:
-            out_key = os.path.join(self.label_out_key, 'data', 's%i' % out_scale)
-
-            # find the relative scale factor
-            scale_factor = [sf_in // sf_out for sf_out, sf_in
-                            in zip(scale_factors[out_scale], scale_factors[in_scale])]
-            effective_scale = [eff * scf for eff, scf in zip(effective_scale, scale_factor)]
-            dep = task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
-                       config_dir=self.config_dir,
-                       input_path=self.path, input_key=in_key,
-                       output_path=self.path, output_key=out_key,
-                       scale_factor=scale_factor, scale_prefix='s%i' % out_scale,
-                       effective_scale_factor=effective_scale,
-                       dependency=dep)
-
-            in_scale = out_scale
-            in_key = out_key
-        return dep
-
-    # TODO implement for label-multi-set
     def _downsample_labels(self, downsample_scales, scale_factors, dependency):
         task = getattr(sampling_tasks, self._get_task_name('Downscaling'))
 
-        # run upsampling
+        # run downsampling
         in_scale = self.label_scale
-        in_key = os.path.join(self.label_out_key, 'data', 's%i' % in_scale)
+        in_key = os.path.join(self.label_out_key, 'data', 's0')
         dep = dependency
 
         effective_scale = [1, 1, 1]
-        for out_scale in downsample_scales:
-            out_key = os.path.join(self.label_out_key, 'data', 's%i' % out_scale)
-
-            # find the relative scale factor
-            scale_factor = [int(sf_out // sf_in) for sf_out, sf_in
-                            in zip(scale_factors[out_scale], scale_factors[in_scale])]
+        label_scales = range(1, len(downsample_scales) + 1)
+        for scale, out_scale in zip(label_scales, downsample_scales):
+            out_key = os.path.join(self.label_out_key, 'data', 's%i' % scale)
+            scale_factor = scale_factors[out_scale]
             effective_scale = [eff * scf for eff, scf in zip(effective_scale, scale_factor)]
             dep = task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                        config_dir=self.config_dir,
                        input_path=self.path, input_key=in_key,
                        output_path=self.path, output_key=out_key,
-                       scale_factor=scale_factor, scale_prefix='s%i' % out_scale,
+                       scale_factor=scale_factor, scale_prefix='s%i' % scale,
                        effective_scale_factor=effective_scale,
                        dependency=dep)
 
@@ -212,77 +193,55 @@ class ConversionWorkflow(WorkflowBase):
         raw_scales = np.sort(raw_scales)
 
         # match the label scale and determine which scales we have to compute
-        # via up - and downsampling
-        scale_idx = np.argwhere(raw_scales == self.label_scale)[0][0]
-        upsample_scales = raw_scales[:scale_idx]
-        downsample_scales = raw_scales[scale_idx+1:]
+        # via downsampling
+        downsample_scales = raw_scales[self.label_scale+1:]
 
         # load the scale factors from the raw dataset
         scale_factors = []
+        relative_scale_factors = []
         with z5py.File(self.path) as f:
             for scale in raw_scales:
                 scale_key = os.path.join(self.raw_key, 's%i' % scale)
                 # we need to reverse the scale factors because paintera has axis order
                 # XYZ and we have axis order ZYX
                 if scale == 0:
-                    scale_factors.append([1., 1., 1.])
+                    scale_factors.append([1, 1, 1])
+                    relative_scale_factors.append([1, 1, 1])
                 else:
-                    scale_factors.append(f[scale_key].attrs['downsamplingFactors'][::-1])
+                    scale_factor = f[scale_key].attrs['downsamplingFactors'][::-1]
+                    # find the relative scale factor
+                    rel_scale = [int(sf_out // sf_in) for sf_out, sf_in
+                                 in zip(scale_factor, scale_factors[-1])]
 
-        # upsample segmentations
-        t_up = self._upsample_labels(upsample_scales, scale_factors, dependency)
+                    scale_factors.append(scale_factor)
+                    relative_scale_factors.append(rel_scale)
+
         # downsample segmentations
-        t_down = self._downsample_labels(downsample_scales, scale_factors, t_up)
-        return t_down, scale_factors
-
-    def _compute_effective_scales(self, scale_factors):
-        # compte the relative scales
-        relative_scales = [scale_factors[0]] + [[sc1 / sc2 for sc1, sc2 in zip(scale1, scale2)]
-                                                for scale1, scale2 in zip(scale_factors[1:], scale_factors[:-1])]
-        # print("Relative scales:")
-        # print(relative_scales)
-        # compute the effective scales w.r.t to the label scale
-        n_scales = len(scale_factors)
-        effective_scales = n_scales * [[]]
-        effective_scales[self.label_scale] = [1, 1, 1]
-
-        # compute the effective scales for upsampling levels
-        # the scales are fractional; e.g. for sampling of factor 2
-        # the effective scale is .5
-        for scale in reversed(range(0, self.label_scale)):
-            effective_scales[scale] = [eff / rel
-                                       for eff, rel in zip(effective_scales[scale + 1],
-                                                           relative_scales[scale + 1])]
-
-        # compute the effective scales for downsampling levels
-        # the scales are integer
-        for scale in range(self.label_scale + 1, n_scales):
-            effective_scales[scale] = [eff * rel
-                                       for eff, rel in zip(effective_scales[scale - 1],
-                                                           relative_scales[scale])]
-
-        # print("Effective scales:")
-        # print(effective_scales)
-        return effective_scales
+        t_down = self._downsample_labels(downsample_scales,
+                                         relative_scale_factors, dependency)
+        return t_down, relative_scale_factors
 
     ############################################
     # Step 3 Implementations: make block uniques
     ############################################
 
-    def _uniques_in_blocks(self, dependency, n_scales, effective_scales):
+    def _uniques_in_blocks(self, dependency, scale_factors):
         task = getattr(unique_tasks, self._get_task_name('UniqueBlockLabels'))
         # require the unique-labels group
         with z5py.File(self.path) as f:
             f.require_group(os.path.join(self.label_out_key, 'unique-labels'))
         dep = dependency
-        for scale in range(n_scales):
+
+        effective_scale = [1, 1, 1]
+        for scale, factor in enumerate(scale_factors):
             in_key = os.path.join(self.label_out_key, 'data', 's%i' % scale)
             out_key = os.path.join(self.label_out_key, 'unique-labels', 's%i' % scale)
+            effective_scale = [eff * sf for eff, sf in zip(effective_scale, factor)]
             dep = task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                        config_dir=self.config_dir,
                        input_path=self.path, output_path=self.path,
                        input_key=in_key, output_key=out_key,
-                       effective_scale_factor=effective_scales[scale],
+                       effective_scale_factor=effective_scale,
                        dependency=dep, prefix='s%i' % scale)
         return dep
 
@@ -290,7 +249,7 @@ class ConversionWorkflow(WorkflowBase):
     # Step 4 Implementations: invert block uniques
     ##############################################
 
-    def _label_block_mapping(self, dependency, n_scales):
+    def _label_block_mapping(self, dependency, scale_factors):
         task = getattr(labels_to_block_tasks, self._get_task_name('LabelBlockMapping'))
         # require the labels-to-blocks group
         with z5py.File(self.path) as f:
@@ -298,7 +257,9 @@ class ConversionWorkflow(WorkflowBase):
         # get the framgent max id
         with z5py.File(self.path) as f:
             max_id = f[self.label_in_key].attrs['maxId']
+
         # compte the label to block mapping for all scales
+        n_scales = len(scale_factors)
         dep = dependency
         for scale in range(n_scales):
             in_key = os.path.join(self.label_out_key, 'unique-labels', 's%i' % scale)
@@ -352,19 +313,20 @@ class ConversionWorkflow(WorkflowBase):
         t1 = self._make_labels(self.dependency)
         # next, align the scales of labels and raw data
         t2, scale_factors = self._align_scales(t1)
-        # compute the effective scales w.r.t, to the label scale
-        # from the scale factors
-        effective_scales = self._compute_effective_scales(scale_factors)
+        downsampling_factors = [[1, 1, 1]] + scale_factors[self.label_scale+1:]
+
         # # next, compute the mapping of unique labels to blocks
-        t3 = self._uniques_in_blocks(t2, len(scale_factors), effective_scales)
+        t3 = self._uniques_in_blocks(t2, downsampling_factors)
         # # next, compute the inverse mapping
-        t4 = self._label_block_mapping(t3, len(scale_factors))
+        t4 = self._label_block_mapping(t3, downsampling_factors)
         # # next, compute the fragment-segment-assignment
         t5, max_id = self._fragment_segment_assignment(t4)
+
         # finally, write metadata
         t6 = WritePainteraMetadata(tmp_folder=self.tmp_folder, path=self.path,
+                                   raw_key=self.raw_key,
                                    label_group=self.label_out_key, scale_factors=scale_factors,
-                                   original_scale=self.label_scale,
+                                   label_scale=self.label_scale,
                                    is_label_multiset=self.use_label_multiset,
                                    resolution=self.resolution, offset=self.offset,
                                    max_id=max_id, dependency=t5)
@@ -374,6 +336,5 @@ class ConversionWorkflow(WorkflowBase):
     def get_config():
         configs = super(ConversionWorkflow, ConversionWorkflow).get_config()
         configs.update({'unique_block_labels': unique_tasks.UniqueBlockLabelsLocal.default_task_config(),
-                        'downscaling': sampling_tasks.DownscalingLocal.default_task_config(),
-                        'upscaling': sampling_tasks.UpscalingLocal.default_task_config()})
+                        'downscaling': sampling_tasks.DownscalingLocal.default_task_config()})
         return configs
