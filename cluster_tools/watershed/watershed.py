@@ -204,7 +204,7 @@ def _apply_watershed(input_, dt, offset, config, mask=None):
         seeds = vigra.analysis.localMaxima3D(dt, marker=np.nan,
                                              allowAtBorder=True, allowPlateaus=True)
         seeds = vigra.analysis.labelVolumeWithBackground(np.isnan(seeds).view('uint8'))
-        ws, max_id = vu.watershed(input_, seeds, suze_filter=size_filter)
+        ws, max_id = vu.watershed(input_, seeds, size_filter=size_filter)
         ws += offset
         # check if we have a mask
         if mask is not None:
@@ -347,7 +347,8 @@ def _ws_block(blocking, block_id, ds_in, ds_out, config, pass_):
     if sigma_weights != 0:
         # check if we apply pre-smoothing in 2d
         presmooth_2d = config.get('apply_presmooth_2d', True)
-        input_ = vu.apply_filter(input_, 'gaussianSmoothing', sigma_weights, presmooth_2d)
+        input_ = vu.apply_filter(input_, 'gaussianSmoothing',
+                                 sigma_weights, presmooth_2d)
 
     # apply distance transform
     dt = _apply_dt(input_, config)
@@ -368,14 +369,16 @@ def _ws_block(blocking, block_id, ds_in, ds_out, config, pass_):
         if len(input_bb) == 4:
             input_bb = input_bb[1:]
         initial_seeds = ds_out[input_bb]
-        ws = _apply_watershed_with_seeds(input_, dt, offset, initial_seeds, config)
+        ws = _apply_watershed_with_seeds(input_, dt,
+                                         offset, initial_seeds, config)
         ds_out[output_bb] = ws[inner_bb]
 
     # log block success
     fu.log_block_success(block_id)
 
 
-def _ws_block_masked(blocking, block_id, ds_in, ds_out, mask, config, pass_):
+def _ws_block_masked(blocking, block_id,
+                     ds_in, ds_out, mask, config, pass_):
     fu.log("start processing block %i" % block_id)
     input_bb, inner_bb, output_bb = _get_bbs(blocking, block_id,
                                              config)
@@ -473,7 +476,8 @@ def watershed(job_id, config_path):
         if with_mask:
             mask = vu.load_mask(mask_path, mask_key, shape)
             for block_id in block_list:
-                _ws_block_masked(blocking, block_id, ds_in, ds_out, mask, config, pass_)
+                _ws_block_masked(blocking, block_id,
+                                 ds_in, ds_out, mask, config, pass_)
 
         else:
             for block_id in block_list:
