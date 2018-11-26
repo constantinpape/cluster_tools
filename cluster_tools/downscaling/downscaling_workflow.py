@@ -85,20 +85,11 @@ class WriteDownscalingMetadata(luigi.Task):
             self._copy_max_id(f)
 
     def _write_metadata_bdv(self, scales, chunks):
-        # we need to reorder scales and resoultions,
-        # because bdv uses 'xyz' axis convention and we use 'zyx'
-        assert scales.shape == chunks.shape
-        scales_ = np.zeros_like(scales, dtype='float32')
-        for sc in range(len(scales)):
-            scales_[sc] = scales[sc][::-1]
-        chunks_ = np.zeros_like(chunks, dtype='int')
-        for ch in range(len(chunks)):
-            chunks_[ch] = chunks[ch][::-1]
         with file_reader(self.output_path) as f:
-            dsr = f.require_dataset('s00/resolutions', shape=scales_.shape, dtype=scales_.dtype)
-            dsr[:] = scales_
-            dsc = f.require_dataset('s00/subdivisions', shape=chunks_.shape, dtype=chunks_.dtype)
-            dsc[:] = chunks_
+            dsr = f.require_dataset('s00/resolutions', shape=scales.shape, dtype=scales.dtype)
+            dsr[:] = scales
+            dsc = f.require_dataset('s00/subdivisions', shape=chunks.shape, dtype=chunks.dtype)
+            dsc[:] = chunks
 
     # write bdv xml, from:
     # https://github.com/tlambert03/imarispy/blob/master/imarispy/bdv.py#L136
@@ -198,12 +189,14 @@ class WriteDownscalingMetadata(luigi.Task):
                 # check if this dataset exists
                 if out_key not in f:
                     continue
+                # for some reason I don't understand we do not need to invert here
                 chunk = f[out_key].chunks[::-1]
 
             scales.append(effective_scale[::-1])
             chunks.append(chunk)
 
-        self._write_metadata_bdv(np.array(scales), np.array(chunks))
+        self._write_metadata_bdv(np.array(scales).astype('float32'),
+                                 np.array(chunks).astype('int'))
         self._write_bdv_xml()
 
     def run(self):
@@ -443,6 +436,9 @@ class PainteraToBdvWorkflow(WorkflowBase):
             metadata_dict.update({'offsets': offsets[::-1]})
         if 'resolution' not in metadata_dict and resolution is not None:
             metadata_dict.update({'resolution': resolution[::-1]})
+
+        # we also need to invert the scale factors for the same reason
+        scale_factors = [sf[::-1] for sf in scale_factors]
 
         # task to write the metadata
         t_meta = WriteDownscalingMetadata(tmp_folder=self.tmp_folder,
