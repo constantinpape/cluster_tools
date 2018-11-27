@@ -16,3 +16,7 @@ except ImportError:
 
 def get_predictor(framework):
     pass
+
+
+def get_preprocessor(framework):
+    pass

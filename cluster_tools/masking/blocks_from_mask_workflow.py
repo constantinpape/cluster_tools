@@ -1,6 +1,7 @@
 import os
 import json
 import luigi
+from math import ceil
 
 from ..cluster_tasks import WorkflowBase
 from . import blocks_from_mask as mask_tasks
@@ -10,8 +11,7 @@ class BlocksFromMaskWorkflow(WorkflowBase):
     mask_path = luigi.Parameter()
     mask_key = luigi.Parameter()
 
-    output_path = luigi.Parameter()
-    output_key_prefix = luigi.Parameter()
+    output_path_prefix = luigi.Parameter()
 
     shape = luigi.ListParameter()
     effective_scales = luigi.ListParameter()
@@ -21,11 +21,12 @@ class BlocksFromMaskWorkflow(WorkflowBase):
                        self._get_task_name('BlocksFromMask'))
         dep = self.dependency
         for scale, scale_factor in enumerate(self.effecive_scales):
-            output_key = self.output_key_prefix + 's%i' % scale
+            shape = [int(ceil(float(sh) / sf)) for sh, sf in zip(self.shape, scale_factor)]
+            output_path = self.output_path_prefix + 's%i.json' % scale
             dep = task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                        config_dir=self.config_dir,
                        mask_path=self.mask_path, mask_key=self.mask_key,
-                       output_path=self.output_path, output_key=output_key)
+                       output_path=output_path, shape=shape)
         return dep
 
     @staticmethod

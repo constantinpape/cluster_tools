@@ -34,8 +34,9 @@ class InferenceBase(luigi.Task):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     checkpoint_path = luigi.Parameter()
-    mask_path = luigi.Parameter(default='')
-    mask_key = luigi.Parameter(default='')
+    halo = luigi.ListParameter()
+    chunks = luigi.ListParameter(default=[])
+    n_channels = luigi.IntParameter(default=1)
     framework = luigi.Parameter(default='pytorch')
     #
     dependency = luigi.TaskParameter()
@@ -47,8 +48,7 @@ class InferenceBase(luigi.Task):
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'n_channels': 1, 'dtype': 'uint8', 'compression': 'compression',
-                       'chunks': (25, 256, 256), 'halo': None})
+        config.update({'dtype': 'uint8', 'compression': 'gzip'})
         return config
 
     def clean_up_for_retry(self, block_list):
@@ -56,45 +56,46 @@ class InferenceBase(luigi.Task):
         # TODO remove any output of failed blocks because it might be corrupted
 
     def run(self):
-        assert self.framework in ('pytorch', 'tensorflow', 'caffe', 'inferno')
+        # TODO support more frameworks
+        # assert self.framework in ('pytorch', 'tensorflow', 'caffe', 'inferno')
+        assert self.framework in ('pytorch', 'inferno')
 
         # get the global config and init configs
         self.make_dirs()
-        shebang, block_shape, roi_begin, roi_end = self.global_config_values()
+        shebang, block_shape, roi_begin, roi_end, block_list_path = self.global_config_values(with_block_list_path=True)
         self.init(shebang)
 
         # load the task config
         config = self.get_task_config()
-        n_channels = confg.get('n_channels', 1)
         dtype = config.pop('dtype', 'uint8')
         compression = config.pop('compression', 'gzip')
-        chunks = tuple(config.pop('chunks', (25, 256, 256)))
         assert dtype in ('uint8', 'float32')
 
-        # get shapes
+        # get shapes and chunks
         shape = vu.get_shape(self.input_path, self.input_key)
-        if n_channels > 1:
-            out_shape = (n_channels,) + shape
-            chunks = (min(3, n_channels),) + chunks
+        chunks = tuple(self.chunks) if self.chunks else tuple(bs // 2 for bs in block_shape)
+        # make sure block shape can be divided by chunks
+        assert all(ch % bs == 0 for ch, bs in zip(chunks, block_shape))
+
+        if self.n_channels > 1:
+            out_shape = (self.n_channels,) + shape
+            chunks = (1,) + chunks
         else:
             out_shape = shape
 
         # make output volume
         with vu.file_reader(self.output_path) as f:
             f.require_dataset(self.output_key, shape=out_shape,
-                              chunks=out_chunks, dtype=dtype, compression=compression)
+                              chunks=chunks, dtype=dtype, compression=compression)
 
         # update the config
         config.update({'input_path': self.input_path, 'input_key': self.input_key,
                        'output_path': self.output_path, 'output_key': self.output_key,
-                       'block_shape': block_shape})
-
-        if self.mask_path != '':
-            assert self.mask_key != ''
-            config.update({'mask_path': self.mask_path, 'mask_key': self.mask_key})
+                       'block_shape': block_shape, 'halo': halo})
 
         if self.n_retries == 0:
-            block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+            block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end,
+                                             block_list_path=block_list_path)
         else:
             block_list = self.block_list
             self.clean_up_for_retry(block_list)
@@ -192,10 +193,6 @@ def _load_input(ds, bb, block_shape, padding_mode='reflect'):
 
 # TODO
 def _to_uint8(data):
-    pass
-
-
-def _run_inference_with_mask(blocking, block_list):
     pass
 
 
