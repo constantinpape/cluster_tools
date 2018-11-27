@@ -336,5 +336,6 @@ class ConversionWorkflow(WorkflowBase):
     def get_config():
         configs = super(ConversionWorkflow, ConversionWorkflow).get_config()
         configs.update({'unique_block_labels': unique_tasks.UniqueBlockLabelsLocal.default_task_config(),
+                        'label_block_mapping': labels_to_block_tasks.LabelBlockMappingLocal.default_task_config(),
                         'downscaling': sampling_tasks.DownscalingLocal.default_task_config()})
         return configs
