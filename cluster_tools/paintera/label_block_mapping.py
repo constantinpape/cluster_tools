@@ -20,6 +20,7 @@ class LabelBlockMappingBase(luigi.Task):
 
     task_name = 'label_block_mapping'
     src_file = os.path.abspath(__file__)
+    allow_retry = False
 
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
@@ -42,38 +43,31 @@ class LabelBlockMappingBase(luigi.Task):
 
         # shape and chunks for the id space
         ds_shape = (int(2**63 - 1),) # open-ended shape
-        actual_shape = (self.number_of_labels,) # actual shape needed for blocking
         # we use a chunk-size of 10k, but this could also be a parameter
         chunks = (10000,)
-        # we use the chunks as block-shape
-        block_shape = chunks
-
-        if self.n_retries == 0:
-            block_list = vu.blocks_in_volume(actual_shape, block_shape)
-        else:
-            block_list = self.block_list
-            self.clean_up_for_retry(block_list)
 
         # create the output dataset
         with vu.file_reader(self.output_path) as f:
             compression = 'gzip'
             f.require_dataset(self.output_key, shape=ds_shape, compression=compression,
                               chunks=chunks, dtype='int8')
-        n_jobs = min(len(block_list), self.max_jobs)
 
-        # we don't need any additional config besides the paths
-        config = {"input_path": self.input_path, "input_key": self.input_key,
-                  "output_path": self.output_path, "output_key": self.output_key,
-                  "block_shape": block_shape, "number_of_labels": self.number_of_labels}
-        self._write_log('scheduling %i blocks to be processed' % len(block_list))
+        config = self.get_task_config()
+        config.update({"input_path": self.input_path, "input_key": self.input_key,
+                       "output_path": self.output_path, "output_key": self.output_key,
+                       "number_of_labels": self.number_of_labels})
+        if roi_begin is not None:
+            assert roi_end is not None
+            config.update({'roi_begin': roi_begin,
+                           'roi_end': roi_end})
 
         # prime and run the jobs
-        self.prepare_jobs(n_jobs, block_list, config, self.prefix)
-        self.submit_jobs(n_jobs, self.prefix)
+        self.prepare_jobs(1, None, config, self.prefix)
+        self.submit_jobs(1, self.prefix)
 
         # wait till jobs finish and check for job success
         self.wait_for_jobs(self.prefix)
-        self.check_jobs(n_jobs, self.prefix)
+        self.check_jobs(1, self.prefix)
 
     def output(self):
         return luigi.LocalTarget(os.path.join(self.tmp_folder,
@@ -125,8 +119,6 @@ def label_block_mapping(job_id, config_path):
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
 
-    fu.log("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!11111elf")
-
     # read the config
     with open(config_path) as f:
         config = json.load(f)
@@ -136,18 +128,22 @@ def label_block_mapping(job_id, config_path):
     output_key = config['output_key']
     number_of_labels = config['number_of_labels']
 
-    block_list = config['block_list']
-    block_shape = config['block_shape']
+    roi_begin = config.get('roi_begin', None)
+    roi_end = config.get('roi_end', None)
+    assert (roi_begin is None) == (roi_end is None)
 
-    # read id space chunks from output; make id space blocking
-    with vu.file_reader(output_path) as f:
-        chunks = list(f[output_key].chunks)
-    # shape for max ids
-    shape = [number_of_labels]
-    blocking = nt.blocking([0], shape, chunks)
-    _label_to_block_mapping(input_path, input_key,
-                            output_path, output_key,
-                            blocking, block_list)
+    # we need to turn `None` rois to empty lists,
+    # because I don't really understand how pybind11 handles None yet
+    if roi_begin is None:
+        roi_begin = []
+        roi_end = []
+
+    n_threads = config.get('threads_per_job', 1)
+
+    ndist.serializeBlockMapping(os.path.join(input_path, input_key),
+                                os.path.join(output_path, output_key),
+                                number_of_labels, n_threads,
+                                roi_begin, roi_end)
 
     # log success
     fu.log_job_success(job_id)
