@@ -462,13 +462,16 @@ class LocalTask(BaseClusterTask):
 
     def _submit(self, job_id, job_prefix):
         script_path = os.path.join(self.tmp_folder, self.task_name + '.py')
+        assert os.path.exists(script_path), script_path
+        config_file = self._config_path(job_id, job_prefix)
+        assert os.path.exists(config_file), config_file
+
         job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name,
                                                                         job_prefix)
         log_file = os.path.join(self.tmp_folder, 'logs',
                                 '%s_%i.log' % (job_name, job_id))
         err_file = os.path.join(self.tmp_folder, 'error_logs',
                                 '%s_%i.err' % (job_name, job_id))
-        config_file = self._config_path(job_id, job_prefix)
         with open(log_file, 'w') as f_out, open(err_file, 'w') as f_err:
             call([script_path, config_file], stdout=f_out, stderr=f_err)
 
