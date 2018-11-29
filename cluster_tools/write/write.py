@@ -48,7 +48,6 @@ class WriteBase(luigi.Task):
         return self.dependency
 
     def clean_up_for_retry(self, block_list, prefix):
-        # TODO does this work with the mixin pattern?
         super().clean_up_for_retry(block_list, prefix)
         # TODO remove any output of failed blocks because it might be corrupted
 
@@ -167,7 +166,6 @@ def _write_with_offsets(ds_in, ds_out, blocking, block_list,
 
 
 def _write_block(ds_in, ds_out, blocking, block_id, node_labels):
-    # TODO should we lock the log ?
     fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
@@ -190,7 +188,6 @@ def _write_block(ds_in, ds_out, blocking, block_id, node_labels):
         seg = nt.takeDict(this_assignment, seg)
 
     ds_out[bb] = seg
-    # TODO should we lock the log ?
     fu.log_block_success(block_id)
 
 

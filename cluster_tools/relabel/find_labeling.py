@@ -83,7 +83,6 @@ class FindLabelingLSF(FindLabelingBase, LSFTask):
     pass
 
 
-
 def find_labeling(job_id, config_path):
 
     fu.log("start processing job %i" % job_id)
