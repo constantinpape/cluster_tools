@@ -43,14 +43,9 @@ class MergeOffsetsBase(luigi.Task):
                                          roi_begin, roi_end)
         n_jobs = min(len(block_list), self.max_jobs)
 
-        block_list = vu.blocks_in_volume(shape, block_shape,
-                                         roi_begin, roi_end)
-
-        n_jobs = min(len(block_list), self.max_jobs)
-
         config = self.get_task_config()
         config.update({'tmp_folder': self.tmp_folder, 'n_jobs': n_jobs,
-                       'save_path': self.save_path})
+                       'save_path': self.save_path, 'n_blocks': len(block_list)})
 
         # we only have a single job to find the labeling
         self.prepare_jobs(1, None, config)
@@ -91,13 +86,14 @@ def merge_offsets(job_id, config_path):
     with open(config_path, 'r') as f:
         config = json.load(f)
     tmp_folder = config['tmp_folder']
-    n_jobs = config['tmp_folder']
+    n_jobs = config['n_jobs']
     save_path = config['save_path']
+    n_blocks = config['n_blocks']
 
     offsets = {}
-    for job_id in range(n_jobs):
+    for block_job_id in range(n_jobs):
         path = os.path.join(tmp_folder,
-                            'connected_components_offsets_%i.json' % job_id)
+                            'connected_components_offsets_%i.json' % block_job_id)
         with open(path, 'r') as f:
             offsets.update(json.load(f))
         os.remove(path)
@@ -109,8 +105,9 @@ def merge_offsets(job_id, config_path):
     offset_list = np.roll(offset_list, 1)
     offset_list[0] = 0
     offset_list = np.cumsum(offset_list).tolist()
+    assert len(offset_list) == n_blocks, "%i, %i" % (len(offset_list), n_blocks)
 
-    save_path = os.path.join(tmp_folder, 'block_offsets_%i.json' % job_id)
+    fu.log("dumping offsets to %s" % save_path)
     with open(save_path, 'w') as f:
         json.dump({'offsets': offset_list,
                    'empty_blocks': empty_blocks}, f)

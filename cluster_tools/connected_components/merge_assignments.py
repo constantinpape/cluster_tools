@@ -7,6 +7,7 @@ import pickle
 
 import luigi
 import numpy as np
+import vigra
 import nifty.ufd as nufd
 
 import cluster_tools.utils.volume_utils as vu
@@ -18,7 +19,6 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 # Find Labeling Tasks
 #
 
-# TODO implement with thresholding
 class MergeAssignmentsBase(luigi.Task):
     """ MergeAssignments base class
     """
@@ -45,16 +45,12 @@ class MergeAssignmentsBase(luigi.Task):
                                          roi_begin, roi_end)
         n_jobs = min(len(block_list), self.max_jobs)
 
-        block_list = vu.blocks_in_volume(shape, block_shape,
-                                         roi_begin, roi_end)
-        n_jobs = min(len(block_list), self.max_jobs)
-
         config = self.get_task_config()
         config.update({'output_path': self.output_path,
                        'output_key': self.output_key,
                        'tmp_folder': self.tmp_folder,
                        'n_jobs': n_jobs,
-                       'number_of_labels': self.number_of_labels})
+                       'number_of_labels': int(self.number_of_labels)})
 
 
         # we only have a single job to find the labeling
@@ -103,26 +99,27 @@ def merge_assignments(job_id, config_path):
     number_of_labels = config['number_of_labels']
 
     assignments = [np.load(os.path.join(tmp_folder,
-                                        'assignments_%i.npy' % job_id))
-                   for job_id in range(n_jobs)]
-    # TODO correct axis ?
-    assignments = np.unique(assignments, axis=1)
-    for job_id in range(n_jobs):
-        os.remove(os.path.join(tmp_folder,
-                               'assignments_%i.npy' % job_id))
-
-    ufd = nufd.boost_ufd(number_of_labels)
-    ufd.merge(assignments)
+                                        'assignments_%i.npy' % block_job_id))
+                   for block_job_id in range(n_jobs)]
+    assignments = np.concatenate(assignments, axis=0)
+    assignments = np.unique(assignments, axis=0)
+    # for block_job_id in range(n_jobs):
+    #     os.remove(os.path.join(tmp_folder,
+    #                            'assignments_%i.npy' % block_job_id))
 
     labels = np.arange(number_of_labels, dtype='uint64')
+    ufd = nufd.boost_ufd(labels)
+    ufd.merge(assignments)
+
     label_assignments = ufd.find(labels)
     vigra.analysis.relabelConsecutive(label_assignments, keep_zeros=True,
                                       start_label=1)
+    assert len(label_assignments) == number_of_labels
 
-    chunks = (min(65334, number_of_labels), 2)
+    chunks = (min(65334, number_of_labels),)
     with vu.file_reader(output_path) as f:
-        f.require_dataset(output_key, data=assignments,
-                          compression='gzip', chunks=chunks)
+        f.create_dataset(output_key, data=label_assignments,
+                         compression='gzip', chunks=chunks)
 
     fu.log_job_success(job_id)
 

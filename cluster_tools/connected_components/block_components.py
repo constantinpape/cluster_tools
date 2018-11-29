@@ -63,8 +63,8 @@ class BlockComponentsBase(luigi.Task):
             chunks = tuple(bs // 2 for bs in block_shape)
         compression = config.pop('compression', 'gzip')
         with vu.file_reader(self.output_path) as f:
-            f.requre_dataset(output_key,  shape=shape, dtype='uint64',
-                             compression=compression, chunks=chunks)
+            f.require_dataset(self.output_key,  shape=shape, dtype='uint64',
+                              compression=compression, chunks=chunks)
 
         block_list = vu.blocks_in_volume(shape, block_shape,
                                          roi_begin, roi_end)
@@ -155,6 +155,7 @@ def block_components(job_id, config_path):
     output_key = config['output_key']
     block_list = config['block_list']
     tmp_folder = config['tmp_folder']
+    block_shape = config['block_shape']
 
     threshold = config.get('threshold', None)
 

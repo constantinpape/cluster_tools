@@ -103,14 +103,15 @@ def _process_face(blocking, block_id,
         return None
 
     block_a = blocking.getBlock(block_id)
-    block_b = blocking.getBlock(ngb_id)
-
     # we now that the overlap is along 'axis'
     # get the overlap with halo 1 in block coordinates
     halo = 3 * [0]
     halo[axis] = 1
-    have_ovlp, begin_a, end_a, begin_b, end_b = blocking.getLocalOverlaps(block_a, block_b, halo)
+    have_ovlp, begin_a, end_a, begin_b, end_b = blocking.getLocalOverlaps(block_id, ngb_id, halo)
+    # sanity checks
     assert have_ovlp
+    assert all(beg_a == beg_b if dim != axis else beg_a != beg_b
+               for dim, beg_a, beg_b in zip(range(3), begin_a, begin_b))
 
     # shape of the overlap
     oshape = tuple(end - beg for beg, end in zip(begin_a, end_a))
@@ -120,10 +121,18 @@ def _process_face(blocking, block_id,
                  for off, beg, end in zip(block_a.begin, begin_a, end_a))
     seg = ds[face]
 
+    # find block with the lower coordinate in the overlap axis
+    if begin_a[axis] < begin_b[axis]:
+        slice_a = slice(0, 1)
+        slice_b = slice(1, 2)
+    else:
+        slice_a = slice(1, 2)
+        slice_b = slice(0, 1)
+
     # get the local coordinates of faces in a and b
-    face_a = tuple(slice(None) if dim != axis else slice(0, 1)
+    face_a = tuple(slice(None) if dim != axis else slice_a
                    for dim in range(3))
-    face_b = tuple(slice(None) if dim != axis else slice(1, 2)
+    face_b = tuple(slice(None) if dim != axis else slice_b
                    for dim in range(3))
 
     # load the local faces
@@ -137,6 +146,10 @@ def _process_face(blocking, block_id,
     labels_b = labels_b[have_labels]
     assert labels_a.shape == labels_b.shape
 
+    # add the offsets that make the block ids unique
+    labels_a += off_a
+    labels_b += off_b
+
     assignments = np.concatenate((labels_a[:, None], labels_b[:, None]), axis=1)
     assignments = np.unique(assignments, axis=0)
     return assignments
@@ -147,10 +160,17 @@ def _process_faces(block_id, blocking, ds, offsets):
     assignments = [_process_face(blocking, block_id,
                                  axis, direction, ds, offsets)
                    for axis in range(3) for direction in (False, True)]
-    assignments = np.concatenate([ass for ass in assignments
-                                  if ass is not None], axis=0)
+    assignments = [ass for ass in assignments
+                   if ass is not None]
+
+    # all assignments might be None, so we need to check for taht
+    if assignments:
+        assignments = np.unique(np.concatenate(assignments, axis=0),
+                                axis=0)
+    else:
+        assignments = None
     fu.log_block_success(block_id)
-    return np.unique(assignments, axis=0)
+    return assignments
 
 
 def block_faces(job_id, config_path):
@@ -165,15 +185,21 @@ def block_faces(job_id, config_path):
     block_list = config['block_list']
     tmp_folder = config['tmp_folder']
     offsets_path = config['offsets_path']
+    block_shape = config['block_shape']
 
     with open(offsets_path) as f:
         offsets = json.load(f)['offsets']
 
-    with vu.file_reader(input_path) as f:
+    with vu.file_reader(input_path, 'r') as f:
         ds = f[input_key]
+        shape = list(ds.shape)
+
+        blocking = nt.blocking([0, 0, 0], shape, block_shape)
         assignments = [_process_faces(block_id, blocking, ds,
                                       offsets)
                        for block_id in block_list]
+    # filter out empty assignments
+    assignments = [ass for ass in assignments if ass is not None]
     assignments = np.concatenate(assignments, axis=0)
     assignments = np.unique(assignments, axis=0)
 

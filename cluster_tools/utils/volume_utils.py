@@ -22,7 +22,7 @@ def file_reader(path, mode='a'):
     ending = path.split('.')[-1].lower()
     if ending in ('n5', 'zr', 'zarr'):
         return z5py.File(path, mode=mode)
-    elif ending in ('h5', 'hdf5'):
+    elif ending in ('h5', 'hdf5', 'hdf'):
         return h5py.File(path, mode=mode)
     else:
         raise RuntimeError("Invalid file format %s" % ending)

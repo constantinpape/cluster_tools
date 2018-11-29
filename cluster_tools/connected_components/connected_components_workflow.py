@@ -25,21 +25,21 @@ class ConnectedComponentsWorkflow(WorkflowBase):
                               self._get_task_name('MergeOffsets'))
         face_task = getattr(face_tasks,
                             self._get_task_name('BlockFaces'))
-        assignment_task = getattr(face_tasks,
+        assignment_task = getattr(assignment_tasks,
                                   self._get_task_name('MergeAssignments'))
         write_task = getattr(write_tasks,
                              self._get_task_name('Write'))
 
         with vu.file_reader(self.input_path, 'r') as f:
-            ds = f[input_key]
+            ds = f[self.input_key]
             shape = list(ds.shape)
-            n_labels = ds.attrs['maxId' + 1]
+            n_labels = ds.attrs['maxId'] + 1
 
         # temporary path for offsets
-        offsets_path = os.path.join(tmp_folder, 'cc_offsets.json')
+        offset_path = os.path.join(self.tmp_folder, 'cc_offsets.json')
         # path and key for assignments
-        assignments_path = self.output_path
-        assignments_key = 'cc_assignments'
+        assignment_path = self.output_path
+        assignment_key = 'cc_assignments'
 
         dep = block_task(tmp_folder=self.tmp_folder,
                          config_dir=self.config_dir,
@@ -50,25 +50,25 @@ class ConnectedComponentsWorkflow(WorkflowBase):
         dep = offset_task(tmp_folder=self.tmp_folder,
                           config_dir=self.config_dir,
                           max_jobs=self.max_jobs,
-                          shape=shape, save_path=offsets_path,
+                          shape=shape, save_path=offset_path,
                           dependency=dep)
         dep = face_task(tmp_folder=self.tmp_folder,
                         config_dir=self.config_dir,
                         max_jobs=self.max_jobs,
-                        input_path=self.input_path, input_key=self.input_key,
-                        offsets_path=offsets_path, dependency=dep)
-        dep = assignment_task_task(tmp_folder=self.tmp_folder,
-                                   config_dir=self.config_dir,
-                                   max_jobs=self.max_jobs,
-                                   output_path=assignment_path,
-                                   output_key=assignments_key,
-                                   shape=shape, number_of_labels=n_labels,
-                                   dependency=dep)
+                        input_path=self.output_path, input_key=self.output_key,
+                        offsets_path=offset_path, dependency=dep)
+        dep = assignment_task(tmp_folder=self.tmp_folder,
+                              config_dir=self.config_dir,
+                              max_jobs=self.max_jobs,
+                              output_path=assignment_path,
+                              output_key=assignment_key,
+                              shape=shape, number_of_labels=n_labels,
+                              dependency=dep)
         # we write in-place to the output dataset
         dep = write_task(tmp_folder=self.tmp_folder,
                          config_dir=self.config_dir,
                          max_jobs=self.max_jobs,
-                         input_path=self.output_path, input_key=self.input_key,
+                         input_path=self.output_path, input_key=self.output_key,
                          output_path=self.output_path, output_key=self.output_key,
                          assignment_path=assignment_path, assignment_key=assignment_key,
                          identifier='connected_components', offset_path=offset_path,
