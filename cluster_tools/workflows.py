@@ -10,6 +10,7 @@ from .features import EdgeFeaturesWorkflow
 from .costs import EdgeCostsWorkflow
 from .multicut import MulticutWorkflow
 from .decomposition_multicut import DecompositionWorkflow
+from .debugging import CheckSubGraphsWorkflow
 from . import write as write_tasks
 
 
@@ -37,38 +38,24 @@ class MulticutSegmentationWorkflow(WorkflowBase):
     # number of jobs used for sub multicuts
     max_jobs_multicut = luigi.IntParameter(default=1)
     # use decomposer workflow
-    use_decomposition_multicut = luigi.BoolParameter(default=False)
     skip_ws = luigi.BoolParameter(default=False)
     # path to random forest (if available)
     rf_path = luigi.Parameter(default='')
+    # run some sanity checks for sub-results
+    sanity_checks = luigi.BoolParameter(default=False)
     # TODO list to skip jobs
 
     def _get_mc_wf(self, dep):
         # hard-coded keys
-        if self.use_decomposition_multicut:
-            raise NotImplementedError("Decomposition mutlicut not adjusted to new problem format yey")
-            # mc_wf = DecompositionWorkflow(tmp_folder=self.tmp_folder,
-            #                               max_jobs=self.max_jobs_multicut,
-            #                               config_dir=self.config_dir,
-            #                               target=self.target,
-            #                               dependency=dep,
-            #                               graph_path=self.graph_path,
-            #                               graph_key=graph_key,
-            #                               costs_path=self.costs_path,
-            #                               costs_key=costs_key,
-            #                               output_path=self.node_labels_path,
-            #                               output_key=self.node_labels_key,
-            #                               decomposition_path=self.output_path)
-        else:
-            mc_wf = MulticutWorkflow(tmp_folder=self.tmp_folder,
-                                     max_jobs=self.max_jobs_multicut,
-                                     config_dir=self.config_dir,
-                                     target=self.target,
-                                     dependency=dep,
-                                     problem_path=self.problem_path,
-                                     n_scales=self.n_scales,
-                                     assignment_path=self.node_labels_path,
-                                     assignment_key=self.node_labels_key)
+        mc_wf = MulticutWorkflow(tmp_folder=self.tmp_folder,
+                                 max_jobs=self.max_jobs_multicut,
+                                 config_dir=self.config_dir,
+                                 target=self.target,
+                                 dependency=dep,
+                                 problem_path=self.problem_path,
+                                 n_scales=self.n_scales,
+                                 assignment_path=self.node_labels_path,
+                                 assignment_key=self.node_labels_key)
         return mc_wf
 
     # TODO implement mechanism to skip existing dependencies
@@ -80,82 +67,88 @@ class MulticutSegmentationWorkflow(WorkflowBase):
         if self.skip_ws:
             assert os.path.exists(os.path.join(self.ws_path, self.ws_key)), "%s:%s" % (self.ws_path,
                                                                                        self.ws_key)
-            ws_wf = self.dependency
+            dep = self.dependency
         else:
-            ws_wf = WatershedWorkflow(tmp_folder=self.tmp_folder,
-                                      max_jobs=self.max_jobs,
-                                      config_dir=self.config_dir,
-                                      target=self.target,
-                                      dependency=self.dependency,
-                                      input_path=self.input_path,
-                                      input_key=self.input_key,
-                                      output_path=self.ws_path,
-                                      output_key=self.ws_key,
-                                      mask_path=self.mask_path,
-                                      mask_key=self.mask_key)
+            dep = WatershedWorkflow(tmp_folder=self.tmp_folder,
+                                    max_jobs=self.max_jobs,
+                                    config_dir=self.config_dir,
+                                    target=self.target,
+                                    dependency=self.dependency,
+                                    input_path=self.input_path,
+                                    input_key=self.input_key,
+                                    output_path=self.ws_path,
+                                    output_key=self.ws_key,
+                                    mask_path=self.mask_path,
+                                    mask_key=self.mask_key)
         # TODO in the current implementation, we can only compute the
         # graph with n_scales=1, otherwise we will clash with the
         # multicut merged graphs
-        graph_wf = GraphWorkflow(tmp_folder=self.tmp_folder,
-                                 max_jobs=self.max_jobs,
-                                 config_dir=self.config_dir,
-                                 target=self.target,
-                                 dependency=ws_wf,
-                                 input_path=self.ws_path,
-                                 input_key=self.ws_key,
-                                 graph_path=self.problem_path,
-                                 output_key=graph_key,
-                                 n_scales=1)
+        dep = GraphWorkflow(tmp_folder=self.tmp_folder,
+                            max_jobs=self.max_jobs,
+                            config_dir=self.config_dir,
+                            target=self.target,
+                            dependency=dep,
+                            input_path=self.ws_path,
+                            input_key=self.ws_key,
+                            graph_path=self.problem_path,
+                            output_key=graph_key,
+                            n_scales=1)
+        if self.sanity_checks:
+            graph_block_prefix = os.path.join(self.problem_path,
+                                              's0', 'sub_graphs', 'block_')
+            dep = CheckSubGraphsWorkflow(tmp_folder=self.tmp_folder,
+                                         max_jobs=self.max_jobs,
+                                         config_dir=self.config_dir,
+                                         target=self.target,
+                                         ws_path=self.ws_path,
+                                         ws_key=self.ws_key,
+                                         graph_block_prefix=graph_block_prefix,
+                                         dependency=dep)
         # TODO add options to choose which features to use
-        features_wf = EdgeFeaturesWorkflow(tmp_folder=self.tmp_folder,
-                                           max_jobs=self.max_jobs,
-                                           config_dir=self.config_dir,
-                                           target=self.target,
-                                           dependency=graph_wf,
-                                           input_path=self.input_path,
-                                           input_key=self.input_key,
-                                           labels_path=self.ws_path,
-                                           labels_key=self.ws_key,
-                                           graph_path=self.problem_path,
-                                           graph_key=graph_key,
-                                           output_path=self.problem_path,
-                                           output_key=features_key,
-                                           max_jobs_merge=self.max_jobs_merge_features)
-        costs_wf = EdgeCostsWorkflow(tmp_folder=self.tmp_folder,
-                                     max_jobs=self.max_jobs,
-                                     config_dir=self.config_dir,
-                                     target=self.target,
-                                     dependency=features_wf,
-                                     features_path=self.problem_path,
-                                     features_key=features_key,
-                                     output_path=self.problem_path,
-                                     output_key=costs_key,
-                                     rf_path=self.rf_path)
-        mc_wf = self._get_mc_wf(costs_wf)
-        # return mc_wf
-        write_task = getattr(write_tasks,
-                             self._get_task_name('Write'))
-        t = write_task(tmp_folder=self.tmp_folder,
-                       max_jobs=self.max_jobs,
-                       config_dir=self.config_dir,
-                       dependency=mc_wf,
-                       input_path=self.ws_path,
-                       input_key=self.ws_key,
-                       output_path=self.output_path,
-                       output_key=self.output_key,
-                       assignment_path=self.node_labels_path,
-                       assignment_key=self.node_labels_key,
-                       identifier='multicut')
-        return t
+        dep = EdgeFeaturesWorkflow(tmp_folder=self.tmp_folder,
+                                   max_jobs=self.max_jobs,
+                                   config_dir=self.config_dir,
+                                   target=self.target,
+                                   dependency=dep,
+                                   input_path=self.input_path,
+                                   input_key=self.input_key,
+                                   labels_path=self.ws_path,
+                                   labels_key=self.ws_key,
+                                   graph_path=self.problem_path,
+                                   graph_key=graph_key,
+                                   output_path=self.problem_path,
+                                   output_key=features_key,
+                                   max_jobs_merge=self.max_jobs_merge_features)
+        dep = EdgeCostsWorkflow(tmp_folder=self.tmp_folder,
+                                max_jobs=self.max_jobs,
+                                config_dir=self.config_dir,
+                                target=self.target,
+                                dependency=dep,
+                                features_path=self.problem_path,
+                                features_key=features_key,
+                                output_path=self.problem_path,
+                                output_key=costs_key,
+                                rf_path=self.rf_path)
+        dep = self._get_mc_wf(dep)
+        write_task = getattr(write_tasks, self._get_task_name('Write'))
+        dep = write_task(tmp_folder=self.tmp_folder,
+                         max_jobs=self.max_jobs,
+                         config_dir=self.config_dir,
+                         dependency=dep,
+                         input_path=self.ws_path,
+                         input_key=self.ws_key,
+                         output_path=self.output_path,
+                         output_key=self.output_key,
+                         assignment_path=self.node_labels_path,
+                         assignment_key=self.node_labels_key,
+                         identifier='multicut')
+        return dep
 
     @staticmethod
-    def get_config(use_decomposition_multicut=False):
+    def get_config():
         config = {**WatershedWorkflow.get_config(),
                   **GraphWorkflow.get_config(),
                   **EdgeFeaturesWorkflow.get_config(),
-                  **EdgeCostsWorkflow.get_config()}
-        if use_decomposition_multicut:
-            config.update(**DecompositionWorkflow.get_config())
-        else:
-            config.update(**MulticutWorkflow.get_config())
+                  **EdgeCostsWorkflow.get_config(),
+                  **MulticutWorkflow.get_config()}
         return config

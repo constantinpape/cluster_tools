@@ -397,6 +397,8 @@ def _ws_block_masked(blocking, block_id,
         # check if we apply pre-smoothing in 2d
         presmooth_2d = config.get('apply_presmooth_2d', True)
         input_ = vu.apply_filter(input_, 'gaussianSmoothing', sigma_weights, presmooth_2d)
+        # normalize after smoothing
+        input_ = vu.normalize(input_)
 
     # mask the input
     inv_mask = np.logical_not(in_mask)

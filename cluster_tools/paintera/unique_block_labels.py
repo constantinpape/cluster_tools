@@ -75,10 +75,10 @@ class UniqueBlockLabelsBase(luigi.Task):
                               chunks=chunks, dtype=dtype)
         n_jobs = min(len(block_list), self.max_jobs)
 
-        # we don't need any additional config besides the paths
-        config = {"input_path": self.input_path, "input_key": self.input_key,
-                  "output_path": self.output_path, "output_key": self.output_key,
-                  "block_shape": block_shape, "is_multiset": is_multiset}
+        config = self.get_task_config()
+        config.update({"input_path": self.input_path, "input_key": self.input_key,
+                       "output_path": self.output_path, "output_key": self.output_key,
+                       "block_shape": block_shape, "is_multiset": is_multiset})
         self._write_log('scheduling %i blocks to be processed' % len(block_list))
 
         # prime and run the jobs
