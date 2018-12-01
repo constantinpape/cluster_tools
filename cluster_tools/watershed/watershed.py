@@ -60,7 +60,7 @@ class WatershedBase(luigi.Task):
 
     def run_impl(self):
         # get the global config and init configs
-        shebang, block_shape, roi_begin, roi_end = self.global_config_values()
+        shebang, block_shape, roi_begin, roi_end, block_list_path = self.global_config_values(True)
         self.init(shebang)
 
         # get shape and make block config
@@ -94,6 +94,8 @@ class WatershedBase(luigi.Task):
         # for the blocks
         if is_2pass:
 
+            assert block_list_path is None, "Can't rerun watersheds if 2-pass is activated"
+
             # retries for two pass watershed are too complicated now
             # this could be fixed if we seperate the passes in two different
             # task instances
@@ -112,7 +114,8 @@ class WatershedBase(luigi.Task):
         else:
             self._write_log("run one pass watershed")
             if self.n_retries == 0:
-                block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+                block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end,
+                                                 block_list_path=block_list_path)
             else:
                 block_list = self.block_list
                 self.clean_up_for_retry(block_list)
