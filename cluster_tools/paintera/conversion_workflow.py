@@ -311,7 +311,7 @@ class ConversionWorkflow(WorkflowBase):
                 frag_to_seg = np.vstack((non_triv_fragments, non_triv_segments))
 
                 out_key = os.path.join(self.label_out_key, 'fragment-segment-assignment')
-                chunks = (1, len(frag_to_seg))
+                chunks = (1, frag_to_seg.shape[1])
                 f_out.require_dataset(out_key, data=frag_to_seg, shape=frag_to_seg.shape,
                                       compression='gzip', chunks=chunks)
             return dependency, max_id
