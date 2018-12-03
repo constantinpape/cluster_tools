@@ -25,9 +25,8 @@ class BlockNodeLabelsBase(luigi.Task):
     task_name = 'block_node_labels'
     src_file = os.path.abspath(__file__)
 
-    # input volumes and graph
-    labels_path = luigi.Parameter()
-    labels_key = luigi.Parameter()
+    ws_path = luigi.Parameter()
+    ws_key = luigi.Parameter()
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
@@ -39,7 +38,6 @@ class BlockNodeLabelsBase(luigi.Task):
         return self.dependency
 
     def clean_up_for_retry(self, block_list):
-        # TODO does this work with the mixin pattern?
         super().clean_up_for_retry(block_list)
         # TODO remove any output of failed blocks because it might be corrupted
 
@@ -53,14 +51,18 @@ class BlockNodeLabelsBase(luigi.Task):
 
         # update the config with input and graph paths and keys
         # as well as block shape
-        config.update({'labels_path': self.labels_path, 'labels_key': self.labels_key,
+        config.update({'ws_path': self.ws_path, 'ws_key': self.ws_key,
                        'input_path': self.input_path,
                        'input_key': self.input_key,
                        'block_shape': block_shape,
                        'output_path': self.output_path, 'output_key': self.output_key})
 
         # make graph file and write shape as attribute
-        shape = vu.get_shape(self.labels_path, self.labels_key)
+        shape = vu.get_shape(self.ws_path, self.ws_key)
+        # create output dataset
+        with vu.file_reader(self.output_path) as f:
+            f.require_dataset(self.output_key, shape=shape, chunks=tuple(block_shape),
+                              compression='gzip')
 
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
@@ -68,10 +70,6 @@ class BlockNodeLabelsBase(luigi.Task):
             block_list = self.block_list
             self.clean_up_for_retry(block_list)
         n_jobs = min(len(block_list), self.max_jobs)
-
-        # TODO initial implementation without proper parallelization.
-        # remove this once we have scalable implementation
-        n_jobs = 1
 
         # prime and run the jobs
         self.prepare_jobs(n_jobs, block_list, config)
@@ -104,19 +102,27 @@ class BlockNodeLabelsLSF(BlockNodeLabelsBase, LSFTask):
 # Implementation
 #
 
-
-def _labels_for_block(block_id, blocking, ds_labels, ds_in):
+def _labels_for_block(block_id, blocking,
+                      ds_ws, out_path, labels):
+    fu.log("start processing block %i" % block_id)
     # read labels and input in this block
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
-    labels = ds_labels[bb]
-    # check if label block is empty
-    if (labels != 0).sum() == 0:
-        return None
-    input_ = ds_in[bb]
-    # get the overlaps
-    overlaps = ndist.computeLabelOverlaps(labels, input_)
-    return overlaps
+    ws = ds_ws[bb]
+
+    # check if watershed block is empty
+    if ws.sum() == 0:
+        fu.log_block_success(block_id)
+        return
+
+    # serialize the overlaps
+    labs = labels[bb]
+    chunk_id = tuple(beg // ch
+                     for beg, ch in zip(block.begin,
+                                        blocking.blockShape))
+    overlaps = ndist.serializeLabelOverlaps(ws, labs,
+                                            out_path, chunk_id)
+    fu.log_block_success(block_id)
 
 
 def block_node_labels(job_id, config_path):
@@ -128,68 +134,42 @@ def block_node_labels(job_id, config_path):
     with open(config_path) as f:
         config = json.load(f)
 
-    labels_path = config['labels_path']
-    labels_key = config['labels_key']
+    ws_path = config['ws_path']
+    ws_key = config['ws_key']
     input_path = config['input_path']
     input_key = config['input_key']
-    block_shape = config['block_shape']
-    block_list = config['block_list']
     output_path = config['output_path']
     output_key = config['output_key']
 
-    with vu.file_reader(labels_path, 'r') as f:
-        shape = f[labels_key].shape
+    block_shape = config['block_shape']
+    block_list = config['block_list']
 
-    # blocking = nt.blocking([0, 0, 0],
-    #                        list(shape),
-    #                        list(block_shape))
+    with vu.file_reader(ws_path, 'r') as f:
+        shape = f[ws_key].shape
 
-    # TODO change to proper blocking once we have scalable implementation
     blocking = nt.blocking([0, 0, 0],
                            list(shape),
-                           list(shape))
-    block_list = [0]
+                           list(block_shape))
 
-    with vu.file_reader(labels_path, 'r') as fl, vu.file_reader(input_path, 'r') as fi:
-        ds_labels = fl[labels_key]
-        ds_in = fi[input_key]
-        results = [_labels_for_block(block_id, blocking,
-                                     ds_labels, ds_in) for block_id in block_list]
-    # filter empty results
-    results = [res for res in results if res is not None]
-
-    # check if we have results
-    if len(results) == 0:
-        raise RuntimeError("Woo")
-        overlaps = {}
-
-    elif len(results) == 1:
-        overlaps = results[0]
-
+    # labels can either be interpolated or full volume
+    f_lab = vu.file_reader(input_path, 'r')
+    ds_labels = f_lab[input_key]
+    lab_shape = ds_labels.shape
+    # label shape is smaller than ws shape
+    # -> interpolated
+    if all(lsh < sh for lsh, sh in zip(lab_shape, shape)):
+        labels = InterpolatedVolume(ds_labels[:], shape)
+        f_lab.close()
     else:
-        raise NotImplementedError("Scalable implementation not available")
-        # merge the overlaps, we use results[0] as target vector
-        overlaps = results[0]
-        # TODO this looks sloooow, speed this up
-        for ovlp in results[1:]:
-            for node, node_ovlp in ovlp.items():
-                if node in overlaps:
-                    pass
-                else:
-                    overlaps[node] = node_ovlp
+        assert lab_shape == shape
+        labels = ds_labels
 
-    # TODO properly save sub results for scalable implementation
-    node_ids = np.array(list(overlaps.keys()))
-    node_max = node_ids.max()
-    overlap_vector = np.zeros(node_max + 1, dtype='uint64')
-
-    for node, ovlp in overlaps.items():
-        ovl_labels, ovl_counts = np.array(list(ovlp.keys())), np.array(list(ovlp.values()))
-        max_ol = ovl_labels[np.argmax(ovl_counts)]
-        overlap_vector[node] = max_ol
-
-    with vu.file_reader(output_path) as f:
-        f.create_dataset(output_key, data=overlap_vector, chunks=overlap_vector.shape)
+    with vu.file_reader(ws_path, 'r') as f_in:
+        ds_ws = f_in[ws_key]
+        out_path = os.path.join(output_path, output_key)
+        [_labels_for_block(block_id, blocking,
+                           ds_ws, out_path, labels)
+         for block_id in block_list]
     fu.log_job_success(job_id)
 
 
