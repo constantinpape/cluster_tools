@@ -106,9 +106,9 @@ def merge_node_labels(job_id, config_path):
     n_threads = config.get('threads_per_job', 1)
 
     # merge and serialize the overlaps
-    mergeAndSerializeOverlaps(os.path.join(input_path, input_key),
-                              os.path.join(output_path, output_key),
-                              max_overlap, numberOfThreads=n_threads)
+    ndist.mergeAndSerializeOverlaps(os.path.join(input_path, input_key),
+                                    os.path.join(output_path, output_key),
+                                    max_overlap, numberOfThreads=n_threads)
     fu.log_job_success(job_id)
 
 

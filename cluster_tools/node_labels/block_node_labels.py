@@ -61,11 +61,14 @@ class BlockNodeLabelsBase(luigi.Task):
         shape = vu.get_shape(self.ws_path, self.ws_key)
         # create output dataset
         with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, shape=shape, chunks=tuple(block_shape),
+            f.require_dataset(self.output_key, shape=shape,
+                              dtype='uint64',
+                              chunks=tuple(block_shape),
                               compression='gzip')
 
         if self.n_retries == 0:
-            block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+            block_list = vu.blocks_in_volume(shape, block_shape,
+                                             roi_begin, roi_end)
         else:
             block_list = self.block_list
             self.clean_up_for_retry(block_list)
