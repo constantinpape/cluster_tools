@@ -123,8 +123,8 @@ def _labels_for_block(block_id, blocking,
     chunk_id = tuple(beg // ch
                      for beg, ch in zip(block.begin,
                                         blocking.blockShape))
-    overlaps = ndist.serializeLabelOverlaps(ws, labs,
-                                            out_path, chunk_id)
+    overlaps = ndist.computeAndSerializeLabelOverlaps(ws, labs,
+                                                      out_path, chunk_id)
     fu.log_block_success(block_id)
 
 

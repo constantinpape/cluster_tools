@@ -43,9 +43,6 @@ class MergeNodeLabelsBase(luigi.Task):
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 
-        if not self.max_overlap:
-            raise NotImplementedError("Only implemented for max overlap")
-
         # load the task config
         config = self.get_task_config()
 
@@ -58,12 +55,19 @@ class MergeNodeLabelsBase(luigi.Task):
                        'max_overlap': self.max_overlap})
 
         # prime and run the jobs
-        self.prepare_jobs(1, None, config)
-        self.submit_jobs(1)
+        prefix = 'max_ol' if self.max_overlap else 'all_ol'
+        self.prepare_jobs(1, None, config, prefix)
+        self.submit_jobs(1, prefix)
 
         # wait till jobs finish and check for job success
-        self.wait_for_jobs()
-        self.check_jobs(1)
+        self.wait_for_jobs(prefix)
+        self.check_jobs(1, prefix)
+
+    # part of the luigi API
+    def output(self):
+        max_ol_str = 'max_ol' if self.max_overlap else 'all_ol'
+        return luigi.LocalTarget(os.path.join(self.tmp_folder,
+                                              self.task_name + '_%s.log' % max_ol_str))
 
 
 class MergeNodeLabelsLocal(MergeNodeLabelsBase, LocalTask):
