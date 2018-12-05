@@ -161,7 +161,7 @@ def block_node_labels(job_id, config_path):
     # label shape is smaller than ws shape
     # -> interpolated
     if all(lsh < sh for lsh, sh in zip(lab_shape, shape)):
-        labels = InterpolatedVolume(ds_labels[:], shape)
+        labels = vu.InterpolatedVolume(ds_labels[:], shape)
         f_lab.close()
     else:
         assert lab_shape == shape
