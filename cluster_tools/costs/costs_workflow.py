@@ -13,6 +13,7 @@ class EdgeCostsWorkflow(WorkflowBase):
     features_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
+    node_label_dict = luigi.DictParameter(default={})
     rf_path = luigi.Parameter(default='')
 
     def _costs_with_rf(self):
@@ -38,7 +39,8 @@ class EdgeCostsWorkflow(WorkflowBase):
                             features_key=self.features_key,
                             output_path=self.output_path,
                             output_key=self.output_key,
-                            dependency=t1)
+                            dependency=t1,
+                            node_label_dict=self.node_label_dict)
         return t2
 
     def _costs(self):
@@ -53,7 +55,8 @@ class EdgeCostsWorkflow(WorkflowBase):
                             features_key=self.features_key,
                             output_path=self.output_path,
                             output_key=self.output_key,
-                            dependency=self.dependency)
+                            dependency=self.dependency,
+                            node_label_dict=self.node_label_dict)
         return t1
 
     def requires(self):

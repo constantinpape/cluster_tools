@@ -41,6 +41,8 @@ class MulticutSegmentationWorkflow(WorkflowBase):
     skip_ws = luigi.BoolParameter(default=False)
     # path to random forest (if available)
     rf_path = luigi.Parameter(default='')
+    # node label dict: dictionary for additional node labels used in costs
+    node_label_dict = luigi.DictParameter(default={})
     # run some sanity checks for sub-results
     sanity_checks = luigi.BoolParameter(default=False)
     # TODO list to skip jobs
@@ -128,6 +130,7 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                                 features_key=features_key,
                                 output_path=self.problem_path,
                                 output_key=costs_key,
+                                node_label_dict=self.node_label_dict,
                                 rf_path=self.rf_path)
         dep = self._get_mc_wf(dep)
         write_task = getattr(write_tasks, self._get_task_name('Write'))
