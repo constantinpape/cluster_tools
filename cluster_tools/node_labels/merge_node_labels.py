@@ -31,6 +31,7 @@ class MergeNodeLabelsBase(luigi.Task):
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
+    number_of_labels = luigi.IntParameter()
     max_overlap = luigi.BoolParameter(default=True)
     #
     dependency = luigi.TaskParameter()
@@ -40,11 +41,21 @@ class MergeNodeLabelsBase(luigi.Task):
 
     def run_impl(self):
         # get the global config and init configs
-        shebang, block_shape, roi_begin, roi_end = self.global_config_values()
+        shebang = self.global_config_values()[0]
         self.init(shebang)
 
         # load the task config
         config = self.get_task_config()
+
+        node_shape = (self.number_of_labels,)
+        node_chunks = (min(self.number_of_labels, 100000),)
+        block_list = vu.blocks_in_volume(node_shape, node_chunks)
+
+        # create output dataset
+        with vu.file_reader(self.output_path) as f:
+            f.require_dataset(self.output_key, shape=node_shape,
+                              chunks=node_chunks, compression='gzip',
+                              dtype='uint64')
 
         # update the config with input and graph paths and keys
         # as well as block shape
@@ -52,16 +63,18 @@ class MergeNodeLabelsBase(luigi.Task):
                        'input_key': self.input_key,
                        'output_path': self.output_path,
                        'output_key': self.output_key,
-                       'max_overlap': self.max_overlap})
+                       'max_overlap': self.max_overlap,
+                       'node_shape': node_shape,
+                       'node_chunks': node_chunks})
 
         # prime and run the jobs
         prefix = 'max_ol' if self.max_overlap else 'all_ol'
-        self.prepare_jobs(1, None, config, prefix)
-        self.submit_jobs(1, prefix)
+        self.prepare_jobs(self.max_jobs, block_list, config, prefix)
+        self.submit_jobs(self.max_jobs, prefix)
 
         # wait till jobs finish and check for job success
         self.wait_for_jobs(prefix)
-        self.check_jobs(1, prefix)
+        self.check_jobs(self.max_jobs, prefix)
 
     # part of the luigi API
     def output(self):
@@ -108,11 +121,22 @@ def merge_node_labels(job_id, config_path):
     output_key = config['output_key']
     max_overlap = config['max_overlap']
     n_threads = config.get('threads_per_job', 1)
+    block_list = config['block_list']
+    node_shape = config['node_shape']
+    node_chunks = config['node_chunks']
+
+    blocking = nt.blocking([0], list(node_shape), list(node_chunks))
 
     # merge and serialize the overlaps
-    ndist.mergeAndSerializeOverlaps(os.path.join(input_path, input_key),
-                                    os.path.join(output_path, output_key),
-                                    max_overlap, numberOfThreads=n_threads)
+    for block_id in block_list:
+        block = blocking.getBlock(block_id)
+        label_begin = block.begin[0]
+        label_end = block.end[0]
+        ndist.mergeAndSerializeOverlaps(os.path.join(input_path, input_key),
+                                        os.path.join(output_path, output_key),
+                                        max_overlap,
+                                        labelBegin=label_begin, labelEnd=label_end,
+                                        numberOfThreads=n_threads)
     fu.log_job_success(job_id)
 
 

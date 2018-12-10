@@ -115,16 +115,24 @@ def _labels_for_block(block_id, blocking,
 
     # check if watershed block is empty
     if ws.sum() == 0:
+        fu.log("watershed of block %i is empty" % block_id)
         fu.log_block_success(block_id)
         return
 
     # serialize the overlaps
-    labs = labels[bb]
+    labs = labels[bb].astype('uint64')
+
+    # check if label block is empty:
+    if labs.sum() == 0:
+        fu.log("labels of block %i is empty" % block_id)
+        fu.log_block_success(block_id)
+        return
+
     chunk_id = tuple(beg // ch
                      for beg, ch in zip(block.begin,
                                         blocking.blockShape))
-    overlaps = ndist.computeAndSerializeLabelOverlaps(ws, labs,
-                                                      out_path, chunk_id)
+    ndist.computeAndSerializeLabelOverlaps(ws, labs,
+                                           out_path, chunk_id)
     fu.log_block_success(block_id)
 
 
@@ -161,7 +169,7 @@ def block_node_labels(job_id, config_path):
     # label shape is smaller than ws shape
     # -> interpolated
     if all(lsh < sh for lsh, sh in zip(lab_shape, shape)):
-        labels = vu.InterpolatedVolume(ds_labels[:], shape)
+        labels = vu.InterpolatedVolume(ds_labels[:], shape, spline_order=0)
         f_lab.close()
     else:
         assert lab_shape == shape

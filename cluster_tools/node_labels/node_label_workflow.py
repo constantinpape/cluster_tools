@@ -3,6 +3,7 @@ import json
 import luigi
 
 from .. cluster_tasks import WorkflowBase
+from ..utils import volume_utils as vu
 from . import block_node_labels as label_tasks
 from . import merge_node_labels as merge_tasks
 
@@ -33,6 +34,8 @@ class NodeLabelWorkflow(WorkflowBase):
                          output_key=tmp_key)
         merge_task = getattr(merge_tasks,
                              self._get_task_name('MergeNodeLabels'))
+        with vu.file_reader(self.ws_path) as f:
+            number_of_labels = f[self.ws_key].attrs['maxId'] + 1
         dep = merge_task(input_path=self.output_path,
                          input_key=tmp_key,
                          output_path=self.output_path,
@@ -41,6 +44,7 @@ class NodeLabelWorkflow(WorkflowBase):
                          max_jobs=self.max_jobs,
                          tmp_folder=self.tmp_folder,
                          config_dir=self.config_dir,
+                         number_of_labels=number_of_labels,
                          dependency=dep)
         return dep
 
