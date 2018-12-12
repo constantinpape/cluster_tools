@@ -4,6 +4,8 @@ from datetime import datetime
 
 import numpy as np
 import luigi
+import nifty.tools as nt
+
 # NOTE we don't need to bother with the file reader
 # wrapper here, because paintera needs n5 files anyway.
 import z5py
@@ -101,6 +103,7 @@ class ConversionWorkflow(WorkflowBase):
     label_in_key = luigi.Parameter()
     label_out_key = luigi.Parameter()
     label_scale = luigi.IntParameter()
+    assignment_path = luigi.Parameter(default='')
     assignment_key = luigi.Parameter(default='')
     use_label_multiset = luigi.BoolParameter(default=False)
     offset = luigi.ListParameter(default=[0, 0, 0])
@@ -277,34 +280,40 @@ class ConversionWorkflow(WorkflowBase):
     #####################################################
 
     def _fragment_segment_assignment(self, dependency):
-        if self.assignment_key == '':
+        if self.assignment_path == '':
             # get the framgent max id
             with z5py.File(self.path) as f:
                 max_id = f[self.label_in_key].attrs['maxId']
             return dependency, max_id
         else:
+            assert self.assignment_key != ''
+            assert os.path.exists(self.assignment_path), self.assignment_path
             # TODO should make this a task
-            with z5py.File(self.path) as f:
+            with z5py.File(self.assignment_path) as f, z5py.File(self.path) as f_out:
                 assignments = f[self.assignment_key][:]
                 n_fragments = len(assignments)
 
                 # find the fragments which have non-trivial assignment
-                segment_ids, counts = np.unique(assignments, return_counts=True)
+                segment_ids, counts = np.unique(assignments,
+                                                return_counts=True)
+                seg_ids_to_counts = {seg_id: count for seg_id, count in zip(segment_ids, counts)}
+                fragment_ids_to_counts =  nt.takeDict(seg_ids_to_counts, assignments)
                 fragment_ids = np.arange(n_fragments, dtype='uint64')
-                fragment_ids_to_counts = counts[segment_ids[fragment_ids]]
+
                 non_triv_fragments = fragment_ids[fragment_ids_to_counts > 1]
-                non_triv_segments = assignments[non_triv_fragment_ids]
+                non_triv_segments = assignments[non_triv_fragments]
                 non_triv_segments += n_fragments
 
                 # determine the overall max id
-                max_id = int(non_triv_segments).max()
+                max_id = int(non_triv_segments.max())
 
                 # TODO do we need to assign a special value to ignore label (0) ?
                 frag_to_seg = np.vstack((non_triv_fragments, non_triv_segments))
 
                 out_key = os.path.join(self.label_out_key, 'fragment-segment-assignment')
-                chunks = (1, n_fragments)
-                f.require_dataset(out_key, data=frag_to_seg, compression='gzip', chunks=chunks)
+                chunks = (1, frag_to_seg.shape[1])
+                f_out.require_dataset(out_key, data=frag_to_seg, shape=frag_to_seg.shape,
+                                      compression='gzip', chunks=chunks)
             return dependency, max_id
 
     def requires(self):

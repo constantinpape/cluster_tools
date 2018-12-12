@@ -33,7 +33,7 @@ class CopyVolumeBase(luigi.Task):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     prefix = luigi.Parameter()
-    fit_to_roi = luigi.Parameter(default=False)
+    fit_to_roi = luigi.BoolParameter(default=False)
     effective_scale_factor = luigi.ListParameter(default=[])
     dependency = luigi.TaskParameter(default=DummyTask())
 

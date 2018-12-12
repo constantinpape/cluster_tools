@@ -24,6 +24,12 @@ class ProbsToCostsBase(luigi.Task):
     task_name = 'probs_to_costs'
     src_file = os.path.abspath(__file__)
     allow_retry = False
+    # modes which can be used to mask edges
+    # that connect nodes of a certain type (specified via `node_label_dict`)
+    # - ignore: set all edges connecting to a node with label to be maximally repulsive
+    # - isolate : set all edges between nodes with label to be maximally attractive,
+    #             all edges between nodes with and w/o label to be maximally attractive
+    label_modes = ('ignore', 'isolate')
 
     # input and output volumes
     input_path = luigi.Parameter()
@@ -33,6 +39,7 @@ class ProbsToCostsBase(luigi.Task):
     features_path = luigi.Parameter()
     features_key = luigi.Parameter()
     dependency = luigi.TaskParameter()
+    node_label_dict = luigi.DictParameter(default={})
 
     def requires(self):
         return self.dependency
@@ -69,6 +76,12 @@ class ProbsToCostsBase(luigi.Task):
         config.update({'input_path': self.input_path, 'input_key': self.input_key,
                        'output_path': self.output_path, 'output_key': self.output_key,
                        'features_path': self.features_path, 'features_key': self.features_key})
+
+        # check if we have additional node labels and update the config accordingly
+        if self.node_label_dict:
+            assert all(mode in self.label_modes
+                       for mode in self.node_label_dict), str(list(self.node_label_dict.keys()))
+            config.update({'node_labels': dict(self.node_label_dict)})
 
         # prime and run the jobs
         self.prepare_jobs(1, None, config)
@@ -120,6 +133,37 @@ def _transform_probabilities_to_costs(costs, beta=.5, edge_sizes=None,
     return costs
 
 
+def _apply_node_labels(costs, uv_ids, mode, labels,
+                       max_repulsive, max_attractive):
+    # TODO for now we assume binary node labeling,
+    # but of course we could also have something more fancy with
+    # multiple label ids
+    n_nodes = len(labels)
+    max_node_id = int(uv_ids.max())
+    assert max_node_id +1 <= n_nodes, "%i, %i" % (max_node_id, n_nodes)
+    with_label = np.arange(n_nodes, dtype='uint64')[labels > 0]
+    fu.log("number of nodes with label %i / %i" % (len(with_label), n_nodes))
+    if mode == 'ignore':
+        # ignore mode: set all edges that connect to a node with label to max repulsive
+        edges_with_label = np.in1d(uv_ids, with_label).reshape(uv_ids.shape)
+        edges_with_label = edges_with_label.any(axis=1)
+        costs[edges_with_label] = max_repulsive
+    elif mode == 'isolate':
+        # isolate mode: set all edges that connect to a node with label to node without label to max repulsive
+        # ignore mode: set all edges that connect two node with label to max attractive
+        edges_with_label = np.in1d(uv_ids, with_label).reshape(uv_ids.shape)
+        label_sum = edges_with_label.sum(axis=1)
+        att_edges = label_sum == 2
+        rep_edges = label_sum == 1
+        fu.log("number of attractive edges: %i / %i" % (att_edges.sum(), len(att_edges)))
+        fu.log("number of repulsive edges: %i / %i" % (rep_edges.sum(), len(rep_edges)))
+        costs[att_edges] = max_attractive
+        costs[rep_edges] = max_repulsive
+    else:
+        raise RuntimeError("Invalid label mode: %s" % mode)
+    return costs
+
+
 def probs_to_costs(job_id, config_path):
 
     fu.log("start processing job %i" % job_id)
@@ -140,6 +184,9 @@ def probs_to_costs(job_id, config_path):
     weight_edges = config.get('weight_edges', False)
     weighting_exponent = config.get('weighting_exponent', 1.)
     beta = config.get('beta', 0.5)
+
+    # additional node labels
+    node_labels = config.get('node_labels', None)
 
     n_threads = config['threads_per_job']
 
@@ -177,6 +224,27 @@ def probs_to_costs(job_id, config_path):
         costs = _transform_probabilities_to_costs(costs, beta=beta,
                                                   edge_sizes=edge_sizes,
                                                   weighting_exponent=weighting_exponent)
+
+        # adjust edges of nodes with labels if given
+        if node_labels is not None:
+            fu.log("have node labels")
+            max_repulsive = 5 * costs.min()
+            max_attractive= 5 * costs.max()
+            fu.log("maximally attractive edge weight %f" % max_attractive)
+            fu.log("maximally repulsive edge weight %f" % max_repulsive)
+            with vu.file_reader(features_path, 'r') as f:
+                ds = f['s0/graph/edges']
+                ds.n_threads = n_threads
+                uv_ids = ds[:]
+            for mode, path_key in node_labels.items():
+                path, key = path_key
+                fu.log("applying node labels with mode %s from %s:%s" % (mode, path, key))
+                with vu.file_reader(path, 'r') as f:
+                    ds = f[key]
+                    ds.n_threads = n_threads
+                    labels = ds[:]
+                costs = _apply_node_labels(costs, uv_ids, mode, labels,
+                                           max_repulsive, max_attractive)
 
     with vu.file_reader(output_path) as f:
         ds = f[output_key]

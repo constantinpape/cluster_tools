@@ -149,19 +149,22 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
     # we allow for invalid nodes here,
     # which can occur for un-connected graphs resulting from bad masks ...
     inner_edges, outer_edges = graph.extractSubgraphFromNodes(nodes, allowInvalidNodes=True)
-    sub_uvs = uv_ids[inner_edges]
-    fu.log("Block %i: Solving sub-block with %i nodes and %i edges" % (block_id,
-                                                                       len(nodes),
-                                                                       len(inner_edges)))
 
-    # if we only have a single node (= no edges), save the
-    # outer edges as cut edges
-    if len(nodes) == 1:
+    # if we only have no inner edges, return
+    # the outer edges as cut edges
+    if len(inner_edges) == 0:
+        if len(nodes) > 1:
+            assert removed_ignore_label,\
+			    "Can only have trivial sub-graphs for more than one node if we removed ignore label"
         cut_edge_ids = outer_edges
         sub_result = None
         fu.log("Block %i: has no inner edges" % block_id)
     # otherwise solve the multicut for this block
     else:
+        fu.log("Block %i: Solving sub-block with %i nodes and %i edges" % (block_id,
+                                                                           len(nodes),
+                                                                           len(inner_edges)))
+        sub_uvs = uv_ids[inner_edges]
         # relabel the sub-nodes and associated uv-ids for more efficient processing
         nodes_relabeled, max_id, mapping = vigra.analysis.relabelConsecutive(nodes,
                                                                              start_label=0,
@@ -183,7 +186,8 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
         cut_edge_ids = inner_edges[sub_edgeresult]
         cut_edge_ids = np.concatenate([cut_edge_ids, outer_edges])
 
-        _, res_max_id, _ = vigra.analysis.relabelConsecutive(sub_result, start_label=1, keep_zeros=False,
+        _, res_max_id, _ = vigra.analysis.relabelConsecutive(sub_result, start_label=1,
+                                                             keep_zeros=False,
                                                              out=sub_result)
         fu.log("Block %i: Subresult has %i unique ids" % (block_id, res_max_id))
         # IMPORTANT !!!
@@ -191,8 +195,6 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
         if removed_ignore_label:
             sub_result = np.concatenate((np.zeros(1, dtype='uint64'),
                                          sub_result))
-
-
 
     # get chunk id of this block
     block = blocking.getBlock(block_id)

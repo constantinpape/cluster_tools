@@ -38,11 +38,12 @@ class WatershedBase(luigi.Task):
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'threshold': .5, 'apply_presmooth_2d': True,
+        config.update({'threshold': .5,
                        'apply_dt_2d': True, 'pixel_pitch': None,
                        'apply_ws_2d': True, 'sigma_seeds': 2., 'size_filter': 25,
                        'sigma_weights': 2., 'halo': [0, 0, 0],
-                       'two_pass': False, 'channel_begin': 0, 'channel_end': None})
+                       'two_pass': False, 'channel_begin': 0, 'channel_end': None,
+                       'alpha': 0.8})
         return config
 
     def clean_up_for_retry(self, block_list):
@@ -60,7 +61,7 @@ class WatershedBase(luigi.Task):
 
     def run_impl(self):
         # get the global config and init configs
-        shebang, block_shape, roi_begin, roi_end = self.global_config_values()
+        shebang, block_shape, roi_begin, roi_end, block_list_path = self.global_config_values(True)
         self.init(shebang)
 
         # get shape and make block config
@@ -94,6 +95,8 @@ class WatershedBase(luigi.Task):
         # for the blocks
         if is_2pass:
 
+            assert block_list_path is None, "Can't rerun watersheds if 2-pass is activated"
+
             # retries for two pass watershed are too complicated now
             # this could be fixed if we seperate the passes in two different
             # task instances
@@ -112,7 +115,8 @@ class WatershedBase(luigi.Task):
         else:
             self._write_log("run one pass watershed")
             if self.n_retries == 0:
-                block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+                block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end,
+                                                 block_list_path=block_list_path)
             else:
                 block_list = self.block_list
                 self.clean_up_for_retry(block_list)
@@ -167,11 +171,22 @@ def _apply_dt(input_, config):
     return dt
 
 
+def _make_hmap(input_, distances, alpha, sigma_weights):
+    distances = 1. - vu.normalize(distances)
+    hmap = (1. - alpha) * input_ + alpha * distances
+    # smooth input if sigma is given
+    if sigma_weights != 0:
+        hmap = vu.apply_filter(hmap, 'gaussianSmoothing', sigma_weights)
+    return hmap
+
+
 # apply watershed
 def _apply_watershed(input_, dt, offset, config, mask=None):
     apply_2d = config.get('apply_ws_2d', True)
     sigma_seeds = config.get('sigma_seeds', 2.)
+    sigma_weights = config.get('sigma_weights', 2.)
     size_filter = config.get('size_filter', 25)
+    alpha = config.get('alpha', 0.2)
 
     # apply the watersheds in 2d
     if apply_2d:
@@ -183,8 +198,9 @@ def _apply_watershed(input_, dt, offset, config, mask=None):
             seeds = vigra.analysis.localMaxima(dtz, marker=np.nan,
                                                allowAtBorder=True, allowPlateaus=True)
             seeds = vigra.analysis.labelImageWithBackground(np.isnan(seeds).view('uint8'))
-            # run watershed for this slize
-            wsz, max_id = vu.watershed(input_[z], seeds=seeds, size_filter=size_filter)
+            # run watershed for this slice
+            hmap = _make_hmap(input_[z], dtz, alpha, sigma_weights)
+            wsz, max_id = vu.watershed(hmap, seeds=seeds, size_filter=size_filter)
             # mask seeds if we have a mask
             if mask is None:
                 wsz += offset
@@ -204,7 +220,8 @@ def _apply_watershed(input_, dt, offset, config, mask=None):
         seeds = vigra.analysis.localMaxima3D(dt, marker=np.nan,
                                              allowAtBorder=True, allowPlateaus=True)
         seeds = vigra.analysis.labelVolumeWithBackground(np.isnan(seeds).view('uint8'))
-        ws, max_id = vu.watershed(input_, seeds, size_filter=size_filter)
+        hmap = _make_hmap(input_, dt, alpha, sigma_weights)
+        ws, max_id = vu.watershed(hmap, seeds, size_filter=size_filter)
         ws += offset
         # check if we have a mask
         if mask is not None:
@@ -217,6 +234,8 @@ def _apply_watershed_with_seeds(input_, dt, offset,
     apply_2d = config.get('apply_ws_2d', True)
     sigma_seeds = config.get('sigma_seeds', 2.)
     size_filter = config.get('size_filter', 25)
+    sigma_weights = config.get('sigma_weights', 2.)
+    alpha = config.get('alpha', 0.2)
 
     # apply the watersheds in 2d
     if apply_2d:
@@ -254,7 +273,8 @@ def _apply_watershed_with_seeds(input_, dt, offset,
             new_to_old = {new: old for old, new in old_to_new.items()}
 
             # run watershed
-            wsz, max_id = vu.watershed(input_[z], seeds=seeds, size_filter=size_filter,
+            hmap = _make_hmap(input_[z], dtz, alpha, sigma_weights)
+            wsz, max_id = vu.watershed(hmap, seeds=seeds, size_filter=size_filter,
                                        exclude=initial_seeds_z)
             # mask the result if we have a mask
             if mask is not None:
@@ -298,7 +318,8 @@ def _apply_watershed_with_seeds(input_, dt, offset,
 
         # run watershed
         initial_seed_ids = np.unique(initial_seeds[initial_seed_mask])
-        ws, max_id = vu.watershed(input_, seeds=seeds, size_filter=size_filter,
+        hmap = _make_hmap(input_, dt, alpha, sigma_weights)
+        ws, max_id = vu.watershed(hmap, seeds=seeds, size_filter=size_filter,
                                   exclude=initial_seed_ids)
         ws = nt.takeDict(new_to_old, ws)
         if mask is not None:
@@ -342,14 +363,6 @@ def _ws_block(blocking, block_id, ds_in, ds_out, config, pass_):
                                              config)
     input_ = _read_data(ds_in, input_bb, config)
 
-    # smooth input if sigma is given
-    sigma_weights = config.get('sigma_weights', 2.)
-    if sigma_weights != 0:
-        # check if we apply pre-smoothing in 2d
-        presmooth_2d = config.get('apply_presmooth_2d', True)
-        input_ = vu.apply_filter(input_, 'gaussianSmoothing',
-                                 sigma_weights, presmooth_2d)
-
     # apply distance transform
     dt = _apply_dt(input_, config)
 
@@ -390,13 +403,6 @@ def _ws_block_masked(blocking, block_id,
         return
     # read the input
     input_ = _read_data(ds_in, input_bb, config)
-
-    # smooth input if sigma is given
-    sigma_weights = config.get('sigma_weights', 2.)
-    if sigma_weights != 0:
-        # check if we apply pre-smoothing in 2d
-        presmooth_2d = config.get('apply_presmooth_2d', True)
-        input_ = vu.apply_filter(input_, 'gaussianSmoothing', sigma_weights, presmooth_2d)
 
     # mask the input
     inv_mask = np.logical_not(in_mask)

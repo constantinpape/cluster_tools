@@ -120,7 +120,6 @@ def _graph_block(block_id, blocking, input_path, input_key, graph_path,
     fu.log_block_success(block_id)
 
 
-# TODO make work with hdf5 as well
 def initial_sub_graphs(job_id, config_path):
 
     fu.log("start processing job %i" % job_id)
