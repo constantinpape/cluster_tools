@@ -21,12 +21,6 @@ class CostsFromNodeLabelsBase(luigi.Task):
     """ CostsFromNodeLabels base class
     """
 
-    # TODO we need to get the attractive and repulsive edge strength
-    # edge strength of lifted edges connecting two nodes with the same node label
-    intra_label_weight = ''
-    # edge strength of lifted edges connecting two nodes with the same node label
-    inter_label_weight = ''
-
     task_name = 'costs_from_node_labels'
     src_file = os.path.abspath(__file__)
     allow_retry = False
@@ -43,6 +37,17 @@ class CostsFromNodeLabelsBase(luigi.Task):
     def requires(self):
         return self.dependency
 
+    @staticmethod
+    def default_task_config():
+        config = LocalTask.default_task_config()
+        # intra_label_cost: cost of lifted edge connecting two nodes with the same node label
+        #                   by default we set this to be very attractive (6 is close to the usual max val for costs)
+        # inter_label_cost: cost of lifted edge connecting two nodes with different node labels
+        #                   by default we set this to be very repulsive
+        config.update({'intra_label_cost': 6.,
+                       'inter_label_cost': -6.})
+        return config
+
     def run_impl(self):
         # get the global config and init configs
         shebang = self.global_config_values()[0]
@@ -50,6 +55,16 @@ class CostsFromNodeLabelsBase(luigi.Task):
 
         # load the task config
         config = self.get_task_config()
+        #
+        with vu.file_reader(self.nh_path, 'r') as f:
+            n_lifted_edges = f[self.nh_key].shape
+
+        # chunk size = 64**3
+        chunk_size = min(262144, n_lifted_edges)
+        with vu.file_reader(self.output_path) as f:
+            f.require_dataset(self.output_key, shape=(n_lifted_edges,),
+                              chunks=(edge_chunk_size,), compression='gzip',
+                              dtype='float32')
 
         # update the config with input and graph paths and keys
         # as well as block shape
@@ -58,24 +73,18 @@ class CostsFromNodeLabelsBase(luigi.Task):
                        'node_label_path': self.node_label_path,
                        'node_label_key': self.node_label_key,
                        'output_path': self.output_path,
-                       'output_key': self.output_key})
-        #
-        with vu.file_reader(self.nh_path, 'r') as f:
-            n_lifted_edges = f[self.nh_key].shape
-        edge_chunk_size = min(64**3, n_lifted_edges)
-        with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, shape=(n_lifted_edges,),
-                              chunks=(edge_chunk_size,), compression='gzip',
-                              dtype='float32')
+                       'output_key': self.output_key,
+                       'chunk_size': chunk_size})
 
-        # TODO can we split this into chunks ???
+        edge_block_list = vu.blocks_in_volume([n_lifted_edges], [chunk_size])
+        n_jobs = min(self.max_jobs, len(edge_block_list))
         # prime and run the jobs
-        self.prepare_jobs(1, None, config, self.prefix)
-        self.submit_jobs(1, self.prefix)
+        self.prepare_jobs(n_jobs, edge_block_list, config, self.prefix)
+        self.submit_jobs(n_jobs, self.prefix)
 
         # wait till jobs finish and check for job success
         self.wait_for_jobs(self.prefix)
-        self.check_jobs(1, self.prefix)
+        self.check_jobs(n_jobs, self.prefix)
 
     # part of the luigi API
     def output(self):
@@ -105,6 +114,29 @@ class CostsFromNodeLabelsLSF(CostsFromNodeLabelsBase, LSFTask):
 # Implementation
 #
 
+
+def _costs_for_edge_block(block_id, blocking,
+                          ds_in, ds_out, node_labels,
+                          inter_label_cost, intra_label_cost):
+    fu.log("start processing block %i" % block_id)
+    block = blocking.getBlock(block_id)
+    id_begin, id_end = block.begin, block.end
+    uv_ids = ds_in[id_begin:id_end]
+
+    labels_a = node_labels[uv_ids[:, 0]]
+    labels_b = node_labels[uv_ids[:, 1]]
+
+    # make sure we don't have nodes without labels
+    assert np.sum(labels_a == 0) == np.sum(labels_b == 0) == 0
+
+    edge_costs = intra_label_cost * np.ones(len(uv_ids), dtype='float32')
+    edge_costs[labels_a != labels_b] = inter_label_cost
+
+    ds_out[id_begin:id_end] = edge_costs
+    # log block success
+    fu.log_block_success(block_id)
+
+
 def costs_from_node_labels(job_id, config_path):
 
     fu.log("start processing job %i" % job_id)
@@ -114,20 +146,32 @@ def costs_from_node_labels(job_id, config_path):
     with open(config_path) as f:
         config = json.load(f)
 
-    graph_path = config['graph_path']
-    graph_key = config['graph_key']
+    nh_path = config['nh_path']
+    nh_key = config['nh_key']
     node_label_path = config['node_label_path']
     node_label_key = config['node_label_key']
     output_path = config['output_path']
     output_key = config['output_key']
+    chunk_size = config['chunk_size']
 
-    n_threads = config.get('threads_per_job', 1)
-    graph_depth = config['nh_graph_depth']
+    inter_label_cost = config['inter_label_cost']
+    intra_label_cost = config['intra_label_cost']
 
-    ndist.computeLiftedNeighborhoodFromNodeLabels(os.path.join(graph_path, graph_key),
-                                                  os.path.join(node_label_path, node_label_key),
-                                                  os.path.join(output_path, output_key),
-                                                  graph_depth, n_threads)
+    block_list = config['block_list']
+
+    with vu.file_reader(node_label_path, 'r') as f:
+        node_labels = f[node_label_key][:]
+    with vu.file_reader(nh_path) as f_in, vu.file_reader(output_path) as f_out:
+        ds_in = f_in[nh_key]
+        ds_out = f_out[output_path]
+
+        n_lifted_edges = ds_in.shape[0]
+        blocking = nt.blocking([0], [n_lifted_edges], [chunk_size])
+
+        for block_id in block_list:
+            _costs_for_edge_block(block_id, blocking,
+                                  ds_in, ds_out, node_labels,
+                                  inter_label_cost, intra_label_cost)
 
     fu.log_job_success(job_id)
 
