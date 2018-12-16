@@ -19,7 +19,7 @@ class MergePredictionsBase(luigi.Task):
     """ MergePredictions base class
     """
 
-    task_name = 'merge_prediction'
+    task_name = 'merge_predictions'
     src_file = os.path.abspath(__file__)
     allow_retry = False
 
@@ -88,43 +88,6 @@ class MergePredictionsLSF(MergePredictionsBase, LSFTask):
     pass
 
 
-def _predict_block(block_id, blocking, input_path, input_key,
-                   output_prefix, halo,
-                   ilastik_executable, ilastik_project):
-    fu.log("Start processing block %i" % block_id)
-    block = blocking.getBlockWithHalo(block_id, halo)
-
-    # assemble the ilastik headless command
-    input_str = '%s/%s' % (input_path, input_key)
-    subregion_str = ''
-    output_str = '%s_block%i.h5' % (output_prefix, block_id)
-
-    start, stop = block.begin, block.end
-    # ilastik always wants 5d coordinates, for now we only support 3d
-    assert len(start) == len(stop) == 3, "Only support 3d data"
-    start = ['None', 'None'] + [str(st) for st in start]
-    stop = ['None', 'None'] + [str(st) for st in stop]
-    start = '(%s)' % ','.join(start)
-    stop = '(%s)' % ','.join(stop)
-    subregion_str = '\"%s,%s\""' % (start, stop)
-
-    cmd = ['.%s' % ilastik_executable, '--headless',
-           '--project=%s' % ilastik_project,
-           '--output_format=compressed_hdf5',
-           '--raw_data=%s' % input_str,
-           '--cutout_subregion=%s' % subregion_str,
-           '--output_filename_format=%s' % output_str]
-
-
-    # log the cmd string
-    cmd_str = ' '.join(cmd)
-    fu.log("Calling ilastik with command %s" % cmd_str)
-    # call it
-    call(cmd)
-
-    fu.log_block_success(block_id)
-
-
 def _merge_block(block_id, blocking, ds, tmp_prefix, halo, n_channels):
     fu.log("Start processing block %i" % block_id)
     block = blocking.getBlockWithHalo(block_id, halo)
@@ -133,13 +96,16 @@ def _merge_block(block_id, blocking, ds, tmp_prefix, halo, n_channels):
     local_bb = vu.block_to_bb(block.innerBlockLocal)
 
     # TODO does ilastik output 5D ????
+    # Note that ilastik uses zyxc, while we use czyx
     if n_channels > 1:
         inner_bb = (slice(None),) + inner_bb
-        local_bb = (slice(None),) + local_bb
+        local_bb = local_bb + (slice(None),)
 
     tmp_path = '%s_block%i.h5' % (tmp_prefix, block_id)
-    with h5py.File(tmp_path, 'r') as f:
+    with vu.file_reader(tmp_path, 'r') as f:
         data = f['exported_data'][local_bb]
+    if n_channels > 1:
+        data = data.transpose((3, 0, 1, 2))
 
     ds[inner_bb] = data
     # TODO remove tmp files once we are sure all works
@@ -147,7 +113,7 @@ def _merge_block(block_id, blocking, ds, tmp_prefix, halo, n_channels):
     fu.log_block_success(block_id)
 
 
-def merge_prediction(job_id, config_path):
+def merge_predictions(job_id, config_path):
 
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
@@ -162,6 +128,9 @@ def merge_prediction(job_id, config_path):
     halo = config['halo']
     n_channels = config['n_channels']
 
+    shape = vu.get_shape(output_path, output_key)
+    if len(shape) > 3:
+        shape = shape[-3:]
     block_shape = config['block_shape']
     blocking = nt.blocking([0, 0, 0], shape, block_shape)
 
@@ -179,4 +148,4 @@ if __name__ == '__main__':
     path = sys.argv[1]
     assert os.path.exists(path), path
     job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
-    merge_prediction(job_id, path)
+    merge_predictions(job_id, path)
