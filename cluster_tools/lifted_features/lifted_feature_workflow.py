@@ -6,7 +6,7 @@ from .. cluster_tasks import WorkflowBase
 from ..utils import volume_utils as vu
 from ..node_labels import NodeLabelWorkflow
 from . import sparse_lifted_neighborhood as nh_tasks
-from . import features_from_node_labels as feat_tasks
+from . import costs_from_node_labels as cost_tasks
 
 
 class LiftedFeaturesFromNodeLabelsWorkflow(WorkflowBase):
@@ -45,10 +45,10 @@ class LiftedFeaturesFromNodeLabelsWorkflow(WorkflowBase):
                       prefix=self.prefix)
 
         # 3.) find the lifted features based on neighborhood and node labels
-        feat_task = getattr(feat_tasks,
+        cost_task = getattr(cost_tasks,
                             self._get_task_name('FeaturesFromNodeLabels'))
         feat_key = self.output_key
-        dep = feat_task(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
+        dep = cost_task(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
                         max_jobs=self.max_jobs, dependency=dep,
                         nh_path=self.output_path, nh_key=nh_key,
                         node_label_path=self.output_path, node_label_key=labels_key,
@@ -58,10 +58,11 @@ class LiftedFeaturesFromNodeLabelsWorkflow(WorkflowBase):
 
     @staticmethod
     def get_config():
-        configs = super(LiftedFeaturesFromNodeLabelsWorkflow, LiftedFeaturesFromNodeLabelsWorkflow).get_config()
+        configs = super(LiftedFeaturesFromNodeLabelsWorkflow,
+                        LiftedFeaturesFromNodeLabelsWorkflow).get_config()
         configs.update({**NodeLabelWorkflow.get_config(),
                         'sparse_lifted_neighborhood':
                         nh_tasks.SparseLiftedNeighborhoodLocal.default_task_config(),
                         'features_from_node_labels':
-                        feat_tasks.FeaturesFromNodeLabelsLocal.default_task_config()})
+                        cost_tasks.FeaturesFromNodeLabelsLocal.default_task_config()})
         return configs
