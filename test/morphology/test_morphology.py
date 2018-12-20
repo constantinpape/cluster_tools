@@ -49,7 +49,7 @@ class TestMorphology(unittest.TestCase):
         except OSError:
             pass
 
-    # TODO also check com and bounding box
+    # TODO also check bounding box
     def _check_result(self):
         # read the input and compute count und unique ids
         with z5py.File(self.input_path) as f:
@@ -59,9 +59,18 @@ class TestMorphology(unittest.TestCase):
         with z5py.File(self.output_path) as f:
             res = f[self.output_key][:]
 
+        # check correctness for ids and counts / sizes
         self.assertEqual(len(res), len(ids))
         self.assertTrue(np.allclose(ids, res[:, 0]))
         self.assertTrue(np.allclose(counts, res[:, 1]))
+
+        # check correctness for center off mass
+        coms = np.zeros((len(ids), 3))
+        for label_id in ids:
+            coords = np.where(seg == label_id)
+            com = [np.mean(coord) for coord in coords]
+            coms[label_id] = com
+        self.assertTrue(np.allclose(coms, res[:, 2:5]))
 
     def test_morphology(self):
         max_jobs = 8
