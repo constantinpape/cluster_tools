@@ -26,10 +26,12 @@ class PredictionBase(luigi.Task):
 
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
-    output_prefix = luigi.Parameter()
     ilastik_folder = luigi.Parameter()
     ilastik_project = luigi.Parameter()
     halo = luigi.ListParameter()
+    output_path = luigi.Parameter()
+    output_key = luigi.Parameter(default=None)
+    n_channels = luigi.IntParameter(default=1)
 
     def run_impl(self):
         # get the global config and init configs
@@ -43,10 +45,22 @@ class PredictionBase(luigi.Task):
         # update the config with input and output paths and keys
         # as well as block shape
         config.update({'input_path': self.input_path, 'input_key': self.input_key,
-                       'output_prefix': self.output_prefix, 'halo': self.halo,
+                       'output_path': self.output_path, 'halo': self.halo,
                        'ilastik_project': self.ilastik_project,
                        'ilastik_folder': self.ilastik_folder,
                        'block_shape': block_shape})
+        # if the output key is not None, we have a z5 file and
+        # need to require the dataset
+        if self.output_key is not None:
+            config.update({'output_key': self.output_key})
+            shape = vu.get_shape(self.input_path, self.input_key)
+            chunks = tuple(block_shape)
+            if n_channels > 1:
+                shape = (n_channels,) + shape
+                chunks = (1,) + chunks
+            with vu.file_reader(self.output_path) as f:
+                f.require_dataset(self.output_key, shape=shape, chunks=chunks,
+                                  dtype='float32', compression='gzip')
 
         block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
 
@@ -131,6 +145,25 @@ def _predict_block(block_id, blocking, input_path, input_key,
     fu.log_block_success(block_id)
 
 
+# TODO should refactor _predict_block to properly log jub success
+def _predict_and_serialize_block(block_id, blocking, input_path, input_key,
+                                 output_prefix, halo,
+                                 ilastik_folder, ilastik_project, ds):
+    _predict_block(block_id, blocking, input_path, input_key,
+                   output_prefix, halo,
+                   ilastik_folder, ilastik_project)
+    block = blocking.getBlock(block_id)
+    bb = vu.block_to_bb(block)
+    path = '%s_block%i.h5' % (output_prefix, block_id)
+    with vu.file_reader(path, 'r') as f:
+        pred = f['exported_data'][:]
+        if len(pred) == 4 and pred.shape[-1] > 0:
+            pred = pred.transpose((3, 0, 1, 2))
+            bb = (slice(None),) + bb
+    ds[bb] = pred
+    os.remove(path)
+
+
 def prediction(job_id, config_path):
 
     fu.log("start processing job %i" % job_id)
@@ -142,13 +175,15 @@ def prediction(job_id, config_path):
 
     input_path = config['input_path']
     input_key = config['input_key']
-    output_prefix = config['output_prefix']
+    output_path = config['output_path']
     halo = config['halo']
     ilastik_project = config['ilastik_project']
     ilastik_folder = config['ilastik_folder']
     n_threads = config.get('threads_per_job', 1)
     mem_in_gb = config.get('mem_limit', 1)
     mem_in_mb = mem_in_gb * 1000
+
+    output_key = config.get('output_key', None)
 
     # set lazyflow environment variables
     os.environ['LAZYFLOW_THREADS'] = str(n_threads)
@@ -165,10 +200,19 @@ def prediction(job_id, config_path):
 
     blocking = nt.blocking([0, 0, 0], shape, block_shape)
 
-    for block_id in block_list:
-        _predict_block(block_id, blocking, input_path, input_key,
-                       output_prefix, halo,
-                       ilastik_folder, ilastik_project)
+    output_prefix = os.path.splitext(output_path)[0]
+    if output_key is None:
+        for block_id in block_list:
+            _predict_block(block_id, blocking, input_path, input_key,
+                           output_prefix, halo,
+                           ilastik_folder, ilastik_project)
+    else:
+        ds_out = vu.file_reader(output_path)[output_key]
+        for block_id in block_list:
+            _predict_and_serialize_block(block_id, blocking, input_path, input_key,
+                                         output_prefix, halo,
+                                         ilastik_folder, ilastik_project,
+                                         ds_out)
 
     fu.log_job_success(job_id)
 

@@ -18,14 +18,23 @@ except ImportError:
 from nifty.tools import blocking
 
 
+def is_z5(path):
+    ext = os.path.splitext()[1:].lower()
+    return ext in ('n5', 'zr', 'zarr')
+
+
+def is_h5(path):
+    ext = os.path.splitext()[1:].lower()
+    return ext in ('h5', 'hdf5', 'hdf')
+
+
 def file_reader(path, mode='a'):
-    ending = path.split('.')[-1].lower()
-    if ending in ('n5', 'zr', 'zarr'):
+    if is_z5(path):
         return z5py.File(path, mode=mode)
-    elif ending in ('h5', 'hdf5', 'hdf'):
+    elif is_h5(path):
         return h5py.File(path, mode=mode)
     else:
-        raise RuntimeError("Invalid file format %s" % ending)
+        raise RuntimeError("Invalid file format %s" % ext)
 
 
 def get_shape(path, key):

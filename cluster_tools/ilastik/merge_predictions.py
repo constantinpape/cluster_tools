@@ -108,8 +108,8 @@ def _merge_block(block_id, blocking, ds, tmp_prefix, halo, n_channels):
         data = data.transpose((3, 0, 1, 2))
 
     ds[inner_bb] = data
-    # TODO remove tmp files once we are sure all works
-    # os.remove(tmp_path)
+    # remove temp files
+    os.remove(tmp_path)
     fu.log_block_success(block_id)
 
 
