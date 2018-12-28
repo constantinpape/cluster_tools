@@ -23,10 +23,7 @@ class TestMulticutWorkflow(unittest.TestCase):
     input_path = '/home/constantin/Work/data/cluster_tools_test_data/test_data.n5'
     input_key = 'volumes/boundaries_float32'
     ws_key = 'volumes/watershed'
-    graph_key = 'graph'
     tmp_folder = './tmp'
-    output_path = './tmp/features.n5'
-    output_key = 'features'
     config_folder = './tmp/configs'
     target = 'local'
     block_shape = [10, 256, 256]

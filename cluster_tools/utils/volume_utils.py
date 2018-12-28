@@ -19,12 +19,12 @@ from nifty.tools import blocking
 
 
 def is_z5(path):
-    ext = os.path.splitext()[1:].lower()
+    ext = os.path.splitext(path)[1][1:].lower()
     return ext in ('n5', 'zr', 'zarr')
 
 
 def is_h5(path):
-    ext = os.path.splitext()[1:].lower()
+    ext = os.path.splitext(path)[1][1:].lower()
     return ext in ('h5', 'hdf5', 'hdf')
 
 
