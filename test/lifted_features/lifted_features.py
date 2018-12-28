@@ -57,7 +57,7 @@ class TestLiftedFeatureWorkflow(unittest.TestCase):
     def _check_result(self):
         out_path = self.tmp_folder + '/lifted_feats.n5'
         with z5py.File(out_path) as f:
-            uv_ids = f['lifted_neighborhoods/test'][:]
+            uv_ids = f['lifted_nh'][:]
             costs = f['lifted_feats'][:]
         self.assertEqual(len(uv_ids), len(costs))
         self.assertFalse((uv_ids == 0).all())
@@ -74,7 +74,8 @@ class TestLiftedFeatureWorkflow(unittest.TestCase):
                                 graph_path=self.input_path,
                                 graph_key=self.graph_key,
                                 output_path=out_path,
-                                output_key='lifted_feats',
+                                nh_out_key='lifted_nh',
+                                feat_out_key='lifted_feats',
                                 prefix='test',
                                 config_dir=self.config_folder,
                                 tmp_folder=self.tmp_folder,

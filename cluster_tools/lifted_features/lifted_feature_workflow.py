@@ -14,10 +14,11 @@ class LiftedFeaturesFromNodeLabelsWorkflow(WorkflowBase):
     ws_key = luigi.Parameter()
     labels_path = luigi.Parameter()
     labels_key = luigi.Parameter()
-    output_path = luigi.Parameter()
-    output_key = luigi.Parameter()
     graph_path = luigi.Parameter()
     graph_key = luigi.Parameter()
+    output_path = luigi.Parameter()
+    nh_out_key = luigi.Parameter()
+    feat_out_key = luigi.Parameter()
     prefix = luigi.Parameter()
     nh_graph_depth = luigi.IntParameter(default=4)
 
@@ -36,24 +37,22 @@ class LiftedFeaturesFromNodeLabelsWorkflow(WorkflowBase):
         # and the neighborhood graph depth
         nh_task = getattr(nh_tasks,
                           self._get_task_name('SparseLiftedNeighborhood'))
-        nh_key = 'lifted_neighborhoods/%s' % self.prefix
         dep = nh_task(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
                       max_jobs=self.max_jobs, dependency=dep,
                       graph_path=self.graph_path, graph_key=self.graph_key,
                       node_label_path=self.output_path, node_label_key=labels_key,
-                      output_path=self.output_path, output_key=nh_key,
+                      output_path=self.output_path, output_key=self.nh_out_key,
                       nh_graph_depth=self.nh_graph_depth,
                       prefix=self.prefix)
 
         # 3.) find the lifted features based on neighborhood and node labels
         cost_task = getattr(cost_tasks,
                             self._get_task_name('CostsFromNodeLabels'))
-        feat_key = self.output_key
         dep = cost_task(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
                         max_jobs=self.max_jobs, dependency=dep,
-                        nh_path=self.output_path, nh_key=nh_key,
+                        nh_path=self.output_path, nh_key=self.nh_out_key,
                         node_label_path=self.output_path, node_label_key=labels_key,
-                        output_path=self.output_path, output_key=feat_key,
+                        output_path=self.output_path, output_key=self.feat_out_key,
                         prefix=self.prefix)
         return dep
 
