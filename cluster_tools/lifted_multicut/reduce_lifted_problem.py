@@ -19,21 +19,22 @@ import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 #
-# Multicut Tasks
+# Lifted Multicut Tasks
 #
 
 
-class ReduceProblemBase(luigi.Task):
-    """ ReduceProblem base class
+class ReduceLiftedProblemBase(luigi.Task):
+    """ ReduceLiftedProblem base class
     """
 
-    task_name = 'reduce_problem'
+    task_name = 'reduce_lifted_problem'
     src_file = os.path.abspath(__file__)
     allow_retry = False
 
     # input volumes and graph
     problem_path = luigi.Parameter()
     scale = luigi.IntParameter()
+    lifted_prefix = luigi.Parameter()
     #
     dependency = luigi.TaskParameter()
 
@@ -47,6 +48,7 @@ class ReduceProblemBase(luigi.Task):
         config.update({'accumulation_method': 'sum'})
         return config
 
+    # TODO log reduction of lifted edges
     def _log_reduction(self):
         key1 = 's%i/graph' % self.scale
         key2 = 's%i/graph' % (self.scale + 1,)
@@ -69,7 +71,7 @@ class ReduceProblemBase(luigi.Task):
         # update the config with input and graph paths and keys
         # as well as block shape
         config.update({'problem_path': self.problem_path, 'scale': self.scale,
-                       'block_shape': block_shape})
+                       'block_shape': block_shape, 'lifted_prefix': self.lifted_prefix})
         if roi_begin is not None:
             assert roi_end is not None
             config.update({'roi_begin': roi_begin,
@@ -100,20 +102,20 @@ class ReduceProblemBase(luigi.Task):
                                               self.task_name + '_s%i.log' % self.scale))
 
 
-class ReduceProblemLocal(ReduceProblemBase, LocalTask):
-    """ ReduceProblem on local machine
+class ReduceLiftedProblemLocal(ReduceLiftedProblemBase, LocalTask):
+    """ ReduceLiftedProblem on local machine
     """
     pass
 
 
-class ReduceProblemSlurm(ReduceProblemBase, SlurmTask):
-    """ ReduceProblem on slurm cluster
+class ReduceLiftedProblemSlurm(ReduceLiftedProblemBase, SlurmTask):
+    """ ReduceLiftedProblem on slurm cluster
     """
     pass
 
 
-class ReduceProblemLSF(ReduceProblemBase, LSFTask):
-    """ ReduceProblem on lsf cluster
+class ReduceLiftedProblemLSF(ReduceLiftedProblemBase, LSFTask):
+    """ ReduceLiftedProblem on lsf cluster
     """
     pass
 
@@ -206,7 +208,7 @@ def _get_new_edges(uv_ids, node_labeling, costs, accumulation_method, n_threads)
     edge_labeling = edge_mapping.edgeMapping()
     new_costs = edge_mapping.mapEdgeValues(costs, accumulation_method,
                                            numberOfThreads=n_threads)
-    assert new_uv_ids.max() == node_labeling.max(), "%i, %i" % (new_uv_ids.max(),
+    assert new_uv_ids.max() <= node_labeling.max(), "%i, %i" % (new_uv_ids.max(),
                                                                 node_labeling.max())
     assert len(new_uv_ids) == len(new_costs)
     assert len(edge_labeling) == len(uv_ids)
@@ -218,8 +220,10 @@ def _serialize_new_problem(problem_path,
                            n_new_nodes, new_uv_ids,
                            node_labeling, edge_labeling,
                            new_costs, new_initial_node_labeling,
+                           new_lifted_uvs, new_lifted_costs,
                            shape, scale, initial_block_shape,
-                           n_threads, roi_begin, roi_end):
+                           n_threads, roi_begin, roi_end,
+                           lifted_prefix):
 
     next_scale = scale + 1
     f_out = z5py.File(problem_path)
@@ -280,11 +284,14 @@ def _serialize_new_problem(problem_path,
     _serialize(graph_out, 'edges', new_uv_ids)
     _serialize(g_out, 'node_labeling', new_initial_node_labeling)
     _serialize(g_out, 'costs', new_costs, dtype='float32')
+    # serialize lifted uvs and costs
+    _serialize(g_out, 'lifted_nh_%s' % lifted_prefix, new_lifted_uvs)
+    _serialize(g_out, 'lifted_costs_%s' % lifted_prefix, new_lifted_costs)
 
     return n_new_edges
 
 
-def reduce_problem(job_id, config_path):
+def reduce_lifted_problem(job_id, config_path):
 
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
@@ -296,6 +303,8 @@ def reduce_problem(job_id, config_path):
     initial_block_shape = config['block_shape']
     scale = config['scale']
     block_list = config['block_list']
+    lifted_prefix = config['lifted_prefix']
+
     accumulation_method = config.get('accumulation_method', 'sum')
     n_threads = config['threads_per_job']
     roi_begin = config.get('roi_begin', None)
@@ -329,6 +338,24 @@ def reduce_problem(job_id, config_path):
         uv_ids = ds[:]
         n_edges = len(uv_ids)
 
+        # costs
+        costs_key = 's%i/costs' % scale
+        ds = f[costs_key]
+        ds.n_threads = n_threads
+        costs = ds[:]
+        assert len(costs) == n_edges, "%i, %i" (len(costs), n_edges)
+
+        # lifted edges
+        nh_key = 's%i/lifted_nh_%s' % (scale, lifted_prefix)
+        ds = f[nh_key]
+        ds.n_threads = 8
+        lifted_uvs = ds[:]
+
+        lifted_costs_key = 's%i/lifted_costs_%s' % (scale, lifted_prefix)
+        ds = f[lifted_costs_key]
+        ds.n_threads = 8
+        lifted_costs = ds[:]
+
         # read initial node labeling
         if scale == 0:
             initial_node_labeling = None
@@ -336,13 +363,6 @@ def reduce_problem(job_id, config_path):
             ds = f['s%i/node_labeling' % scale]
             ds.n_threads = n_threads
             initial_node_labeling = ds[:]
-
-    costs_key = 's%i/costs' % scale
-    with vu.file_reader(problem_path) as f:
-        ds = f[costs_key]
-        ds.n_threads = n_threads
-        costs = ds[:]
-    assert len(costs) == n_edges, "%i, %i" (len(costs), n_edges)
 
     block_shape = [bsh * 2**scale for bsh in initial_block_shape]
     blocking = nt.blocking([0, 0, 0], shape, block_shape)
@@ -357,14 +377,21 @@ def reduce_problem(job_id, config_path):
     new_uv_ids, edge_labeling, new_costs = _get_new_edges(uv_ids, node_labeling,
                                                           costs, accumulation_method, n_threads)
 
+    # get the new lifted edge assignment
+    fu.log("get new lifted edge ids")
+    new_lifted_uvs, _, new_lifted_costs = _get_new_edges(lifted_uvs, node_labeling,
+                                                         lifted_costs, accumulation_method, n_threads)
+
     # serialize the input graph and costs for the next scale level
     fu.log("serialize new problem to %s/s%i" % (problem_path, scale + 1))
     n_new_edges = _serialize_new_problem(problem_path,
                                          n_new_nodes, new_uv_ids,
                                          node_labeling, edge_labeling,
                                          new_costs, new_initial_node_labeling,
+                                         new_lifted_uvs, new_lifted_costs,
                                          shape, scale, initial_block_shape,
-                                         n_threads, roi_begin, roi_end)
+                                         n_threads, roi_begin, roi_end,
+                                         lifted_prefix)
 
     fu.log("Reduced graph from %i to %i nodes; %i to %i edges." % (n_nodes, n_new_nodes,
                                                                    n_edges, n_new_edges))
@@ -375,4 +402,4 @@ if __name__ == '__main__':
     path = sys.argv[1]
     assert os.path.exists(path), path
     job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
-    reduce_problem(job_id, path)
+    reduce_lifted_problem(job_id, path)

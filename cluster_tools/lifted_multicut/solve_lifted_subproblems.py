@@ -20,19 +20,20 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
 #
-# Multicut Tasks
+# Lifted Multicut Tasks
 #
 
 
-class SolveSubproblemsBase(luigi.Task):
-    """ SolveSubproblems base class
+class SolveLiftedSubproblemsBase(luigi.Task):
+    """ SolveLiftedSubproblems base class
     """
 
-    task_name = 'solve_subproblems'
+    task_name = 'solve_lifted_subproblems'
     src_file = os.path.abspath(__file__)
 
     # input volumes and graph
     problem_path = luigi.Parameter()
+    lifted_prefix = luigi.Parameter()
     scale = luigi.IntParameter()
     #
     dependency = luigi.TaskParameter()
@@ -59,9 +60,6 @@ class SolveSubproblemsBase(luigi.Task):
 
         with vu.file_reader(self.problem_path, 'r') as f:
             shape = tuple(f.attrs['shape'])
-            # TODO
-            # make sure we have lifted edges
-            assert 'lifted_nh' in f
 
         factor = 2**self.scale
         block_shape = tuple(bs * factor for bs in block_shape)
@@ -70,7 +68,7 @@ class SolveSubproblemsBase(luigi.Task):
         # as well as block shape
         config = self.get_task_config()
         config.update({'problem_path': self.problem_path, 'scale': self.scale,
-                       'block_shape': block_shape})
+                       'block_shape': block_shape, 'lifted_prefix': self.lifted_prefix})
 
         # make output datasets
         out_key = 's%i/sub_results' % self.scale
@@ -105,20 +103,20 @@ class SolveSubproblemsBase(luigi.Task):
                                               self.task_name + '_s%i.log' % self.scale))
 
 
-class SolveSubproblemsLocal(SolveSubproblemsBase, LocalTask):
-    """ SolveSubproblems on local machine
+class SolveLiftedSubproblemsLocal(SolveLiftedSubproblemsBase, LocalTask):
+    """ SolveLiftedSubproblems on local machine
     """
     pass
 
 
-class SolveSubproblemsSlurm(SolveSubproblemsBase, SlurmTask):
-    """ SolveSubproblems on slurm cluster
+class SolveLiftedSubproblemsSlurm(SolveLiftedSubproblemsBase, SlurmTask):
+    """ SolveLiftedSubproblems on slurm cluster
     """
     pass
 
 
-class SolveSubproblemsLSF(SolveSubproblemsBase, LSFTask):
-    """ SolveSubproblems on lsf cluster
+class SolveLiftedSubproblemsLSF(SolveLiftedSubproblemsBase, LSFTask):
+    """ SolveLiftedSubproblems on lsf cluster
     """
     pass
 
@@ -127,9 +125,20 @@ class SolveSubproblemsLSF(SolveSubproblemsBase, LSFTask):
 # Implementation
 #
 
+def _find_lifted_edges(lifted_uv_ids, node_list):
+    lifted_indices = np.arange(len(lifted_uv_ids), dtype='uint64')
+    # find overlap of node_list with u-edges
+    inner_us = np.in1d(lifted_uv_ids[:, 0], node_list)
+    inner_indices = lifted_indices[inner_us]
+    inner_uvs = lifted_uv_ids[inner_us]
+    # find overlap of node_list with v-edges
+    inner_vs = np.in1d(inner_uvs[:, 1], node_list)
+    return inner_indices[inner_vs]
+
 
 def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
-                         costs, agglomerator, ignore_label,
+                         costs, lifted_uvs, lifted_costs,
+                         agglomerator, ignore_label,
                          blocking, out, time_limit):
     fu.log("Start processing block %i" % block_id)
 
@@ -164,9 +173,12 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
         fu.log("Block %i: has no inner edges" % block_id)
     # otherwise solve the multicut for this block
     else:
-        fu.log("Block %i: Solving sub-block with %i nodes and %i edges" % (block_id,
-                                                                           len(nodes),
-                                                                           len(inner_edges)))
+        # find  the lifted uv-ids that correspond to the inner edges
+        inner_lifted_edges = _find_lifted_edges(lifted_uvs, nodes)
+        fu.log("Block %i: Solving sub-block with %i nodes, %i edges and % lifted edges" % (block_id,
+                                                                                           len(nodes),
+                                                                                           len(inner_edges),
+                                                                                           len(inner_lifted_edges)))
         sub_uvs = uv_ids[inner_edges]
         # relabel the sub-nodes and associated uv-ids for more efficient processing
         nodes_relabeled, max_id, mapping = vigra.analysis.relabelConsecutive(nodes,
@@ -180,8 +192,12 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
         sub_costs = costs[inner_edges]
         assert len(sub_costs) == sub_graph.numberOfEdges
 
+        sub_lifted_uvs = nt.takeDict(mapping, lifted_uvs[inner_lifted_edges])
+        sub_lifted_costs = lifted_costs[inner_lifted_edges]
+
         # solve multicut and relabel the result
-        sub_result = agglomerator(sub_graph, sub_costs, time_limit=time_limit)
+        sub_result = agglomerator(sub_graph, sub_costs, sub_lifted_uvs, sub_lifted_costs,
+                                  time_limit=time_limit)
         assert len(sub_result) == len(nodes), "%i, %i" % (len(sub_result), len(nodes))
 
         sub_edgeresult = sub_result[sub_uvs[:, 0]] != sub_result[sub_uvs[:, 1]]
@@ -216,7 +232,7 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
     fu.log_block_success(block_id)
 
 
-def solve_subproblems(job_id, config_path):
+def solve_lifted_subproblems(job_id, config_path):
 
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
@@ -229,9 +245,11 @@ def solve_subproblems(job_id, config_path):
     scale = config['scale']
     block_shape = config['block_shape']
     block_list = config['block_list']
-    n_threads = config['threads_per_job']
+
+    lifted_prefix = config['lifted_prefix']
     agglomerator_key = config['agglomerator']
     time_limit = config.get('time_limit_solver', None)
+    n_threads = config.get('threads_per_job', 1)
 
     fu.log("reading problem from %s" % problem_path)
     problem = z5py.N5File(problem_path)
@@ -255,7 +273,18 @@ def solve_subproblems(job_id, config_path):
     fu.log("ignore label is %s" % ('true' if ignore_label else 'false'))
 
     fu.log("using agglomerator %s" % agglomerator_key)
-    agglomerator = su.key_to_agglomerator(agglomerator_key)
+    agglomerator = su.key_to_lifted_agglomerator(agglomerator_key)
+
+    # load the lifted edges and costs
+    nh_key = 's%i/lifted_nh_%s' % (scale, lifted_prefix)
+    lifted_costs_key = 's%i/lifted_costs_%s' % (scale, lifted_prefix)
+    ds = problem[nh_key]
+    ds.n_threads = n_threads
+    lifted_uvs = ds[:]
+
+    ds = problem[lifted_costs_key]
+    ds.n_threads = n_threads
+    lifted_costs = ds[:]
 
     # the output group
     out = problem['s%i/sub_results' % scale]
@@ -269,7 +298,8 @@ def solve_subproblems(job_id, config_path):
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(_solve_block_problem,
                            block_id, graph, uv_ids, block_prefix,
-                           costs, agglomerator, ignore_label,
+                           costs, lifted_uvs, lifted_costs,
+                           agglomerator, ignore_label,
                            blocking, out, time_limit)
                  for block_id in block_list]
         [t.result() for t in tasks]
@@ -281,4 +311,4 @@ if __name__ == '__main__':
     path = sys.argv[1]
     assert os.path.exists(path), path
     job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
-    solve_subproblems(job_id, path)
+    solve_lifted_subproblems(job_id, path)

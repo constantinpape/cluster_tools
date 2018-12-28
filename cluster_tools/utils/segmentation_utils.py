@@ -1,3 +1,4 @@
+import time
 from concurrent import futures
 from functools import partial
 
@@ -5,7 +6,7 @@ import numpy as np
 import nifty
 import nifty.ufd as nufd
 import nifty.graph.opt.multicut as nmc
-# import nifty.graph.opt.lifted_multicut as nlmc
+import nifty.graph.opt.lifted_multicut as nlmc
 from vigra.analysis import relabelConsecutive
 
 
@@ -136,5 +137,78 @@ def key_to_agglomerator(key):
                   'decomposition-gaec': partial(multicut_decomposition,
                                                 solver='greedy-additive'),
                   'fusion-moves': multicut_fusion_moves}
+    assert key in agglo_dict, key
+    return agglo_dict[key]
+
+
+def lifted_multicut_kernighan_lin(graph, costs, lifted_uv_ids, lifted_costs,
+                                  warmstart=True, time_limit=None, n_threads=1):
+    objective = nlmc.liftedMulticutObjective(graph)
+    objective.setGraphEdgesCosts(costs)
+    objective.setCosts(lifted_uv_ids, lifted_costs)
+    solver_kl = objective.liftedMulticutKernighanLinFactory().create(objective)
+    if time_limit is None:
+        if warmstart:
+            solver_gaec = objective.liftedMulticutGreedyAdditiveFactory().create(objective)
+            res = solver_gaec.optimize()
+            return solver_kl.optimize(nodeLabels=res)
+        else:
+            return solver_kl.optimize()
+    else:
+        if warmstart:
+            solver_gaec = objective.liftedMulticutGreedyAdditiveFactory().create(objective)
+            visitor1 = objective.verboseVisitor(visitNth=1000000,
+                                                timeLimitTotal=time_limit)
+            t0 = time.time()
+            res = solver_gaec.optimize(visitor=visitor)
+            t0 = time.time() - t0
+            # time limit is not hard, so t0 might actually be bigger than
+            # our time limit already
+            if t0 > time_limit:
+                return res
+            visitor2 = objective.verboseVisitor(visitNth=1000000,
+                                                timeLimitTotal=time_limit - t0)
+            return solver_kl.optimize(nodeLabels=res,
+                                      visitor=visitor)
+
+        else:
+            visitor = objective.verboseVisitor(visitNth=1000000,
+                                               timeLimitTotal=time_limit)
+            return solver_kl.optimize(visitor=visitor)
+
+
+def lifted_multicut_gaec(graph, costs, lifted_uv_ids, lifted_costs,
+                         time_limit=None, n_threads=1):
+    objective = nlmc.liftedMulticutObjective(graph)
+    objective.setGraphEdgesCosts(costs)
+    objective.setCosts(lifted_uv_ids, lifted_costs)
+    solver = objective.liftedMulticutGreedyAdditiveFactory().create(objective)
+    if time_limit is None:
+        return solver.optimize()
+    else:
+        visitor = objective.verboseVisitor(visitNth=1000000,
+                                            timeLimitTotal=time_limit)
+        return solver.optimize(visitor=visitor)
+
+
+# TODO
+def lifted_multicut_fusion_moves(graph, costs, lifted_uv_ids, lifted_costs,
+                                 time_limit=None, n_threads=1, solver='kernighan-lin'):
+    assert solver in ('kernighan-lin', 'greedy-additive')
+    objective = nlmc.liftedMulticutObjective(graph)
+    objective.setGraphEdgesCosts(costs)
+    objective.setCosts(lifted_uv_ids, lifted_costs)
+    if time_limit is None:
+        return solver.optimize()
+    else:
+        visitor = objective.verboseVisitor(visitNth=1000000,
+                                           timeLimitTotal=time_limit)
+        return solver.optimize(visitor=visitor)
+
+
+def key_to_lifted_agglomerator(key):
+    agglo_dict = {'kernighan-lin': lifted_multicut_kernighan_lin,
+                  'greedy-additive': lifted_multicut_gaec,
+                  'fusion-moves': lifted_multicut_fusion_moves}
     assert key in agglo_dict, key
     return agglo_dict[key]

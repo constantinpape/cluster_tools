@@ -14,15 +14,15 @@ import cluster_tools.utils.segmentation_utils as su
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 #
-# Multicut Tasks
+# Lifted Multicut Tasks
 #
 
 
-class SolveGlobalBase(luigi.Task):
-    """ SolveGlobal base class
+class SolveLiftedGlobalBase(luigi.Task):
+    """ SolveLiftedGlobal base class
     """
 
-    task_name = 'solve_global'
+    task_name = 'solve_lifted_global'
     src_file = os.path.abspath(__file__)
     allow_retry = False
 
@@ -31,6 +31,7 @@ class SolveGlobalBase(luigi.Task):
     assignment_path = luigi.Parameter()
     assignment_key = luigi.Parameter()
     scale = luigi.IntParameter()
+    lifted_prefix = luigi.Parameter()
     #
     dependency = luigi.TaskParameter()
 
@@ -56,7 +57,8 @@ class SolveGlobalBase(luigi.Task):
         # update the config with input and graph paths and keys
         # as well as block shape
         config.update({'assignment_path': self.assignment_path, 'assignment_key': self.assignment_key,
-                       'scale': self.scale, 'problem_path': self.problem_path})
+                       'scale': self.scale, 'problem_path': self.problem_path,
+                       'lifted_prefix': self.lifted_prefix})
 
         # prime and run the job
         prefix = 's%i' % self.scale
@@ -73,20 +75,20 @@ class SolveGlobalBase(luigi.Task):
                                               self.task_name + '_s%i.log' % self.scale))
 
 
-class SolveGlobalLocal(SolveGlobalBase, LocalTask):
-    """ SolveGlobal on local machine
+class SolveLiftedGlobalLocal(SolveLiftedGlobalBase, LocalTask):
+    """ SolveLiftedGlobal on local machine
     """
     pass
 
 
-class SolveGlobalSlurm(SolveGlobalBase, SlurmTask):
-    """ SolveGlobal on slurm cluster
+class SolveLiftedGlobalSlurm(SolveLiftedGlobalBase, SlurmTask):
+    """ SolveLiftedGlobal on slurm cluster
     """
     pass
 
 
-class SolveGlobalLSF(SolveGlobalBase, LSFTask):
-    """ SolveGlobal on lsf cluster
+class SolveLiftedGlobalLSF(SolveLiftedGlobalBase, LSFTask):
+    """ SolveLiftedGlobal on lsf cluster
     """
     pass
 
@@ -96,7 +98,7 @@ class SolveGlobalLSF(SolveGlobalBase, LSFTask):
 #
 
 
-def solve_global(job_id, config_path):
+def solve_lifted_global(job_id, config_path):
 
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
@@ -109,15 +111,16 @@ def solve_global(job_id, config_path):
     # path where the node labeling shall be written
     assignment_path = config['assignment_path']
     assignment_key = config['assignment_key']
+
+    lifted_prefix = config['lifted_prefix']
     scale = config['scale']
     agglomerator_key = config['agglomerator']
     n_threads = config['threads_per_job']
     time_limit = config.get('time_limit_solver', None)
 
     fu.log("using agglomerator %s" % agglomerator_key)
-    agglomerator = su.key_to_agglomerator(agglomerator_key)
+    agglomerator = su.key_to_lifted_agglomerator(agglomerator_key)
 
-    # TODO this should come from input variable
     with vu.file_reader(problem_path) as f:
         group = f['s%i' % scale]
         graph_group = group['graph']
@@ -138,10 +141,19 @@ def solve_global(job_id, config_path):
         costs = ds[:]
         assert len(costs) == n_edges, "%i, %i" (len(costs), n_edges)
 
+        ds = group['lifted_nh_%s' % lifted_prefix]
+        ds.n_threads = n_threads
+        lifted_uvs = ds[:]
+
+        ds = group['lifted_costs_%s' % lifted_prefix]
+        ds.n_threads = n_threads
+        lifted_costs = ds[:]
+
     graph = nifty.graph.undirectedGraph(n_nodes)
     graph.insertEdges(uv_ids)
     fu.log("start agglomeration")
     node_labeling = agglomerator(graph, costs,
+                                 lifted_uvs, lifted_costs,
                                  n_threads=n_threads,
                                  time_limit=time_limit)
     fu.log("finished agglomeration")
@@ -174,4 +186,4 @@ if __name__ == '__main__':
     path = sys.argv[1]
     assert os.path.exists(path), path
     job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
-    solve_global(job_id, path)
+    solve_lifted_global(job_id, path)

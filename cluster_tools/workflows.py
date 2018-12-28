@@ -5,11 +5,17 @@ import luigi
 from .cluster_tasks import WorkflowBase
 from .watershed import WatershedWorkflow
 from .graph import GraphWorkflow
+
 # TODO more features and options to choose which features to choose
 from .features import EdgeFeaturesWorkflow
 from .costs import EdgeCostsWorkflow
+
+# TODO more options for lifted problems
+from .lifted_features import LiftedFeaturesFromNodeLabelsWorkflow
+
 from .multicut import MulticutWorkflow
-from .decomposition_multicut import DecompositionWorkflow
+from .lifted_multicut import LiftedMulticutWorkflow
+
 from .debugging import CheckSubGraphsWorkflow
 from . import write as write_tasks
 
@@ -45,31 +51,17 @@ class MulticutSegmentationWorkflow(WorkflowBase):
     node_label_dict = luigi.DictParameter(default={})
     # run some sanity checks for sub-results
     sanity_checks = luigi.BoolParameter(default=False)
-    # TODO list to skip jobs
 
-    def _get_mc_wf(self, dep):
-        # hard-coded keys
-        mc_wf = MulticutWorkflow(tmp_folder=self.tmp_folder,
-                                 max_jobs=self.max_jobs_multicut,
-                                 config_dir=self.config_dir,
-                                 target=self.target,
-                                 dependency=dep,
-                                 problem_path=self.problem_path,
-                                 n_scales=self.n_scales,
-                                 assignment_path=self.node_labels_path,
-                                 assignment_key=self.node_labels_key)
-        return mc_wf
+    # hard-coded keys
+    graph_key = 's0/graph'
+    features_key = 'features'
+    costs_key = 's0/costs'
 
-    # TODO implement mechanism to skip existing dependencies
-    def requires(self):
-        # hard-coded keys
-        graph_key = 's0/graph'
-        features_key = 'features'
-        costs_key = 's0/costs'
+    def _watershed_tasks(self):
         if self.skip_ws:
             assert os.path.exists(os.path.join(self.ws_path, self.ws_key)), "%s:%s" % (self.ws_path,
                                                                                        self.ws_key)
-            dep = self.dependency
+            return self.dependency
         else:
             dep = WatershedWorkflow(tmp_folder=self.tmp_folder,
                                     max_jobs=self.max_jobs,
@@ -82,9 +74,12 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                                     output_key=self.ws_key,
                                     mask_path=self.mask_path,
                                     mask_key=self.mask_key)
-        # TODO in the current implementation, we can only compute the
-        # graph with n_scales=1, otherwise we will clash with the
-        # multicut merged graphs
+            return dep
+
+    # TODO add options to choose which features to use
+    # TODO in the current implementation, we can only compute the
+    # graph with n_scales=1, otherwise we will clash with the multicut merged graphs
+    def _problem_tasks(self, dep):
         dep = GraphWorkflow(tmp_folder=self.tmp_folder,
                             max_jobs=self.max_jobs,
                             config_dir=self.config_dir,
@@ -93,7 +88,7 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                             input_path=self.ws_path,
                             input_key=self.ws_key,
                             graph_path=self.problem_path,
-                            output_key=graph_key,
+                            output_key=self.graph_key,
                             n_scales=1)
         if self.sanity_checks:
             graph_block_prefix = os.path.join(self.problem_path,
@@ -106,7 +101,6 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                                          ws_key=self.ws_key,
                                          graph_block_prefix=graph_block_prefix,
                                          dependency=dep)
-        # TODO add options to choose which features to use
         dep = EdgeFeaturesWorkflow(tmp_folder=self.tmp_folder,
                                    max_jobs=self.max_jobs,
                                    config_dir=self.config_dir,
@@ -117,9 +111,9 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                                    labels_path=self.ws_path,
                                    labels_key=self.ws_key,
                                    graph_path=self.problem_path,
-                                   graph_key=graph_key,
+                                   graph_key=self.graph_key,
                                    output_path=self.problem_path,
-                                   output_key=features_key,
+                                   output_key=self.features_key,
                                    max_jobs_merge=self.max_jobs_merge_features)
         dep = EdgeCostsWorkflow(tmp_folder=self.tmp_folder,
                                 max_jobs=self.max_jobs,
@@ -127,12 +121,30 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                                 target=self.target,
                                 dependency=dep,
                                 features_path=self.problem_path,
-                                features_key=features_key,
+                                features_key=self.features_key,
                                 output_path=self.problem_path,
-                                output_key=costs_key,
+                                output_key=self.costs_key,
                                 node_label_dict=self.node_label_dict,
                                 rf_path=self.rf_path)
-        dep = self._get_mc_wf(dep)
+        return dep
+
+    def _multicut_tasks(self, dep):
+        # hard-coded keys
+        mc_wf = MulticutWorkflow(tmp_folder=self.tmp_folder,
+                                 max_jobs=self.max_jobs_multicut,
+                                 config_dir=self.config_dir,
+                                 target=self.target,
+                                 dependency=dep,
+                                 problem_path=self.problem_path,
+                                 n_scales=self.n_scales,
+                                 assignment_path=self.node_labels_path,
+                                 assignment_key=self.node_labels_key)
+        return mc_wf
+
+    def requires(self):
+        dep = self._watershed_tasks()
+        dep = self._problem_tasks(dep)
+        dep = self._multicut_tasks(dep)
         write_task = getattr(write_tasks, self._get_task_name('Write'))
         dep = write_task(tmp_folder=self.tmp_folder,
                          max_jobs=self.max_jobs,
@@ -154,4 +166,76 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                   **EdgeFeaturesWorkflow.get_config(),
                   **EdgeCostsWorkflow.get_config(),
                   **MulticutWorkflow.get_config()}
+        return config
+
+
+class LiftedMulticutSegmentationWorkflow(MulticutSegmentationWorkflow):
+    lifted_labels_path = luigi.Parameter()
+    lifted_labels_key = luigi.Parameter()
+    lifted_prefix = luigi.Parameter()
+    nh_graph_depth = luigi.IntParameter(default=4)
+
+    # TODO different options for lifted problems
+    def _lifted_problem_tasks(self, dep):
+        nh_key = 's0/lifted_nh_%s' % self.lifted_prefix
+        feat_key = 's0/lifted_costs_%s' % self.lifted_prefix
+        dep = LiftedFeaturesFromNodeLabelsWorkflow(tmp_folder=self.tmp_folder,
+                                                   max_jobs=self.max_jobs,
+                                                   config_dir=self.config_dir,
+                                                   target=self.target,
+                                                   dependency=dep,
+                                                   ws_path=self.ws_path,
+                                                   ws_key=self.ws_key,
+                                                   labels_path=self.lifted_labels_path,
+                                                   labels_key=self.lifted_labels_key,
+                                                   output_path=self.problem_path,
+                                                   nh_out_key=nh_key,
+                                                   feat_out_key=feat_key,
+                                                   graph_path=self.problem_path,
+                                                   graph_key=self.graph_key,
+                                                   prefix=self.lifted_prefix,
+                                                   nh_graph_depth=self.nh_graph_depth)
+        return dep
+
+    def _lifted_multicut_tasks(self, dep):
+        # hard-coded keys
+        mc_wf = LiftedMulticutWorkflow(tmp_folder=self.tmp_folder,
+                                       max_jobs=self.max_jobs_multicut,
+                                       config_dir=self.config_dir,
+                                       target=self.target,
+                                       dependency=dep,
+                                       problem_path=self.problem_path,
+                                       n_scales=self.n_scales,
+                                       assignment_path=self.node_labels_path,
+                                       assignment_key=self.node_labels_key,
+                                       lifted_prefix=self.lifted_prefix)
+        return mc_wf
+
+    def requires(self):
+        dep = self._watershed_tasks()
+        dep = self._problem_tasks(dep)
+        dep = self._lifted_problem_tasks(dep)
+        dep = self._lifted_multicut_tasks(dep)
+        write_task = getattr(write_tasks, self._get_task_name('Write'))
+        dep = write_task(tmp_folder=self.tmp_folder,
+                         max_jobs=self.max_jobs,
+                         config_dir=self.config_dir,
+                         dependency=dep,
+                         input_path=self.ws_path,
+                         input_key=self.ws_key,
+                         output_path=self.output_path,
+                         output_key=self.output_key,
+                         assignment_path=self.node_labels_path,
+                         assignment_key=self.node_labels_key,
+                         identifier='lifted_multicut')
+        return dep
+
+    @staticmethod
+    def get_config():
+        config = {**WatershedWorkflow.get_config(),
+                  **GraphWorkflow.get_config(),
+                  **EdgeFeaturesWorkflow.get_config(),
+                  **EdgeCostsWorkflow.get_config(),
+                  **LiftedFeaturesFromNodeLabelsWorkflow.get_config(),
+                  **LiftedMulticutWorkflow.get_config()}
         return config
