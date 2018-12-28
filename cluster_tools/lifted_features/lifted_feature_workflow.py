@@ -27,6 +27,7 @@ class LiftedFeaturesFromNodeLabelsWorkflow(WorkflowBase):
         labels_key = 'node_overlaps/%s' % self.prefix
         dep = NodeLabelWorkflow(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
                                 max_jobs=self.max_jobs, dependency=self.dependency,
+                                target=self.target,
                                 ws_path=self.ws_path, ws_key=self.ws_key,
                                 input_path=self.labels_path, input_key=self.labels_key,
                                 prefix=self.prefix, output_path=self.output_path,
@@ -34,7 +35,7 @@ class LiftedFeaturesFromNodeLabelsWorkflow(WorkflowBase):
         # 2.) find the sparse lifted neighborhood based on the node overlaps
         # and the neighborhood graph depth
         nh_task = getattr(nh_tasks,
-                          self._get_task_name('SparseLiftedNeighborhoods'))
+                          self._get_task_name('SparseLiftedNeighborhood'))
         nh_key = 'lifted_neighborhoods/%s' % self.prefix
         dep = nh_task(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
                       max_jobs=self.max_jobs, dependency=dep,
@@ -46,7 +47,7 @@ class LiftedFeaturesFromNodeLabelsWorkflow(WorkflowBase):
 
         # 3.) find the lifted features based on neighborhood and node labels
         cost_task = getattr(cost_tasks,
-                            self._get_task_name('FeaturesFromNodeLabels'))
+                            self._get_task_name('CostsFromNodeLabels'))
         feat_key = self.output_key
         dep = cost_task(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
                         max_jobs=self.max_jobs, dependency=dep,
@@ -64,5 +65,5 @@ class LiftedFeaturesFromNodeLabelsWorkflow(WorkflowBase):
                         'sparse_lifted_neighborhood':
                         nh_tasks.SparseLiftedNeighborhoodLocal.default_task_config(),
                         'features_from_node_labels':
-                        cost_tasks.FeaturesFromNodeLabelsLocal.default_task_config()})
+                        cost_tasks.CostsFromNodeLabelsLocal.default_task_config()})
         return configs

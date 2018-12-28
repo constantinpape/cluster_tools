@@ -7,6 +7,7 @@ import numpy as np
 
 import luigi
 import nifty.distributed as ndist
+import nifty.tools as nt
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -57,13 +58,13 @@ class CostsFromNodeLabelsBase(luigi.Task):
         config = self.get_task_config()
         #
         with vu.file_reader(self.nh_path, 'r') as f:
-            n_lifted_edges = f[self.nh_key].shape
+            n_lifted_edges = f[self.nh_key].shape[0]
 
         # chunk size = 64**3
         chunk_size = min(262144, n_lifted_edges)
         with vu.file_reader(self.output_path) as f:
             f.require_dataset(self.output_key, shape=(n_lifted_edges,),
-                              chunks=(edge_chunk_size,), compression='gzip',
+                              chunks=(chunk_size,), compression='gzip',
                               dtype='float32')
 
         # update the config with input and graph paths and keys
@@ -120,7 +121,7 @@ def _costs_for_edge_block(block_id, blocking,
                           inter_label_cost, intra_label_cost):
     fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
-    id_begin, id_end = block.begin, block.end
+    id_begin, id_end = block.begin[0], block.end[0]
     uv_ids = ds_in[id_begin:id_end]
 
     labels_a = node_labels[uv_ids[:, 0]]
@@ -163,7 +164,7 @@ def costs_from_node_labels(job_id, config_path):
         node_labels = f[node_label_key][:]
     with vu.file_reader(nh_path) as f_in, vu.file_reader(output_path) as f_out:
         ds_in = f_in[nh_key]
-        ds_out = f_out[output_path]
+        ds_out = f_out[output_key]
 
         n_lifted_edges = ds_in.shape[0]
         blocking = nt.blocking([0], [n_lifted_edges], [chunk_size])
