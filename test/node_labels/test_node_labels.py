@@ -140,7 +140,7 @@ class TestNodeLabels(unittest.TestCase):
                                  max_overlap=False)
         ret = luigi.build([task1, task2], local_scheduler=True)
         self.assertTrue(ret)
-        # self._check_sub_results()
+        self._check_sub_results()
         self._check_result()
 
 

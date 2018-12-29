@@ -33,7 +33,6 @@ class ConnectedComponentsWorkflow(WorkflowBase):
         with vu.file_reader(self.input_path, 'r') as f:
             ds = f[self.input_key]
             shape = list(ds.shape)
-            n_labels = ds.attrs['maxId'] + 1
 
         # temporary path for offsets
         offset_path = os.path.join(self.tmp_folder, 'cc_offsets.json')
@@ -62,7 +61,7 @@ class ConnectedComponentsWorkflow(WorkflowBase):
                               max_jobs=self.max_jobs,
                               output_path=assignment_path,
                               output_key=assignment_key,
-                              shape=shape, number_of_labels=n_labels,
+                              shape=shape,
                               dependency=dep)
         # we write in-place to the output dataset
         dep = write_task(tmp_folder=self.tmp_folder,

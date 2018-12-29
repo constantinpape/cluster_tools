@@ -50,11 +50,10 @@ class TestFeatures(unittest.TestCase):
             json.dump(global_config, f)
 
     def tearDown(self):
-        pass
-        # try:
-        #     rmtree(self.tmp_folder)
-        # except OSError:
-        #     pass
+        try:
+            rmtree(self.tmp_folder)
+        except OSError:
+            pass
 
     def _check_subresults(self):
         f = z5py.File(self.input_path)

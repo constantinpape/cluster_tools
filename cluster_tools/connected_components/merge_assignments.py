@@ -30,7 +30,6 @@ class MergeAssignmentsBase(luigi.Task):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     shape = luigi.ListParameter()
-    number_of_labels = luigi.IntParameter()
     # task that is required before running this task
     dependency = luigi.TaskParameter()
 
@@ -49,9 +48,7 @@ class MergeAssignmentsBase(luigi.Task):
         config.update({'output_path': self.output_path,
                        'output_key': self.output_key,
                        'tmp_folder': self.tmp_folder,
-                       'n_jobs': n_jobs,
-                       'number_of_labels': int(self.number_of_labels)})
-
+                       'n_jobs': n_jobs})
 
         # we only have a single job to find the labeling
         self.prepare_jobs(1, None, config)
@@ -96,7 +93,6 @@ def merge_assignments(job_id, config_path):
 
     tmp_folder = config['tmp_folder']
     n_jobs = config['n_jobs']
-    number_of_labels = config['number_of_labels']
 
     assignments = [np.load(os.path.join(tmp_folder,
                                         'assignments_%i.npy' % block_job_id))
@@ -106,6 +102,7 @@ def merge_assignments(job_id, config_path):
     # for block_job_id in range(n_jobs):
     #     os.remove(os.path.join(tmp_folder,
     #                            'assignments_%i.npy' % block_job_id))
+    number_of_labels = assignments.max() + 1
 
     labels = np.arange(number_of_labels, dtype='uint64')
     ufd = nufd.boost_ufd(labels)
