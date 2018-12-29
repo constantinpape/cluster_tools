@@ -52,7 +52,6 @@ class TestConnectedComponents(unittest.TestCase):
             pass
 
     def _check_result(self):
-        # load the max ol result
         with z5py.File(self.output_path) as f:
             res = f[self.output_key][:]
         with z5py.File(self.input_path) as f:

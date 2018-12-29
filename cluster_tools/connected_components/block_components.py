@@ -7,9 +7,8 @@ import pickle
 
 import luigi
 import numpy as np
-import vigra
 import nifty.tools as nt
-# from skimage.morphology import label
+from skimage.morphology import label
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -17,7 +16,7 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
 #
-# Find Labeling Tasks
+# Block-wise connected components tasks
 #
 
 class BlockComponentsBase(luigi.Task):
@@ -113,11 +112,7 @@ def _cc_block(block_id, blocking, ds_in, ds_out):
     if np.sum(input_) == 0:
         fu.log_block_success(block_id)
         return 0
-
-    # TODO we should check that the max value in labels is smaller
-    # than uint32 max
-    components = vigra.analysis.labelVolumeWithBackground(input_.astype('uint32'))
-    components = components.astype('uint64')
+    components = label(input_)
     ds_out[bb] = components
     fu.log_block_success(block_id)
     return int(components.max()) + 1
@@ -130,13 +125,10 @@ def _cc_block_with_threshold(block_id, blocking,
     bb = vu.block_to_bb(block)
     input_ = ds_in[bb]
     input_ = input_ > threshold
-
     if np.sum(input_) == 0:
         fu.log_block_success(block_id)
         return 0
-
-    components = vigra.analysis.labelVolumeWithBackground(input_.view('uint8'))
-    components = components.astype('uint64')
+    components = label(input_)
     ds_out[bb] = components
     fu.log_block_success(block_id)
     return int(components.max()) + 1
@@ -174,7 +166,6 @@ def block_components(job_id, config_path):
         else:
             offsets = [_cc_block_with_threshold(block_id, blocking,
                                                 ds_in, ds_out, threshold) for block_id in block_list]
-
 
     offset_dict = {block_id: off for block_id, off in zip(block_list, offsets)}
     save_path = os.path.join(tmp_folder,

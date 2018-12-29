@@ -113,8 +113,6 @@ def _process_face(blocking, block_id,
     assert all(beg_a == beg_b if dim != axis else beg_a != beg_b
                for dim, beg_a, beg_b in zip(range(3), begin_a, begin_b))
 
-    # shape of the overlap
-    oshape = tuple(end - beg for beg, end in zip(begin_a, end_a))
     # get the global bounding box of the face
     # and load it
     face = tuple(slice(off + beg, off + end)
