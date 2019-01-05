@@ -25,7 +25,7 @@ class IlastikPredictionWorkflow(WorkflowBase):
     def requires(self):
 
         is_h5 = vu.is_h5(self.output_path)
-        out_key = None if self.is_h5 else self.output_key
+        out_key = None if is_h5 else self.output_key
         predict_task = getattr(predict_tasks,
                                self._get_task_name('Prediction'))
         dep = predict_task(tmp_folder=self.tmp_folder,
