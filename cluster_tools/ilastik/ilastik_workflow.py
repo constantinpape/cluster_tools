@@ -18,12 +18,9 @@ class IlastikPredictionWorkflow(WorkflowBase):
     ilastik_folder = luigi.Parameter()
     ilastik_project = luigi.Parameter()
     halo = luigi.ListParameter()
-    # TODO we could also read this from the temporary
-    # results, but I am too lazy right now
     n_channels = luigi.IntParameter()
 
     def requires(self):
-
         is_h5 = vu.is_h5(self.output_path)
         out_key = None if is_h5 else self.output_key
         predict_task = getattr(predict_tasks,
@@ -34,6 +31,7 @@ class IlastikPredictionWorkflow(WorkflowBase):
                            input_path=self.input_path,
                            input_key=self.input_key,
                            output_path=self.output_path,
+                           output_key=out_key,
                            ilastik_folder=self.ilastik_folder,
                            ilastik_project=self.ilastik_project,
                            halo=self.halo, n_channels=self.n_channels)
