@@ -55,7 +55,7 @@ class PredictionBase(luigi.Task):
         if self.output_key is not None:
             config.update({'output_key': self.output_key})
             shape = vu.get_shape(self.input_path, self.input_key)
-            chunks = tuple(block_shape)
+            chunks = tuple(bs // 2 for bs in block_shape)
             if self.n_channels > 1:
                 shape = (self.n_channels,) + shape
                 chunks = (1,) + chunks
