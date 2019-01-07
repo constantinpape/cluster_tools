@@ -173,7 +173,7 @@ def _apply_dt(input_, config):
 
 def _make_hmap(input_, distances, alpha, sigma_weights):
     distances = 1. - vu.normalize(distances)
-    hmap = (1. - alpha) * input_ + alpha * distances
+    hmap = alpha * input_ + (1. - alpha) * distances
     # smooth input if sigma is given
     if sigma_weights != 0:
         hmap = vu.apply_filter(hmap, 'gaussianSmoothing', sigma_weights)
@@ -186,7 +186,7 @@ def _apply_watershed(input_, dt, offset, config, mask=None):
     sigma_seeds = config.get('sigma_seeds', 2.)
     sigma_weights = config.get('sigma_weights', 2.)
     size_filter = config.get('size_filter', 25)
-    alpha = config.get('alpha', 0.2)
+    alpha = config.get('alpha', 0.8)
 
     # apply the watersheds in 2d
     if apply_2d:
@@ -235,7 +235,7 @@ def _apply_watershed_with_seeds(input_, dt, offset,
     sigma_seeds = config.get('sigma_seeds', 2.)
     size_filter = config.get('size_filter', 25)
     sigma_weights = config.get('sigma_weights', 2.)
-    alpha = config.get('alpha', 0.2)
+    alpha = config.get('alpha', 0.8)
 
     # apply the watersheds in 2d
     if apply_2d:
