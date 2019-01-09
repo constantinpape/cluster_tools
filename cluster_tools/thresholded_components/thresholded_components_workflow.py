@@ -11,12 +11,12 @@ from . import block_faces as face_tasks
 from . import merge_assignments as assignment_tasks
 
 
-class ConnectedComponentsWorkflow(WorkflowBase):
+class ThresholdedComponentsWorkflow(WorkflowBase):
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
-    threshold = luigi.FloatParameter(default=None)
+    threshold = luigi.FloatParameter()
 
     def requires(self):
         block_task = getattr(block_tasks,
@@ -61,7 +61,7 @@ class ConnectedComponentsWorkflow(WorkflowBase):
                               max_jobs=self.max_jobs,
                               output_path=assignment_path,
                               output_key=assignment_key,
-                              shape=shape,
+                              shape=shape, offset_path=offset_path,
                               dependency=dep)
         # we write in-place to the output dataset
         dep = write_task(tmp_folder=self.tmp_folder,
@@ -76,7 +76,7 @@ class ConnectedComponentsWorkflow(WorkflowBase):
 
     @staticmethod
     def get_config():
-        configs = super(ConnectedComponentsWorkflow, ConnectedComponentsWorkflow).get_config()
+        configs = super(ThresholdedComponentsWorkflow, ThresholdedComponentsWorkflow).get_config()
         configs.update({'block_components':
                         block_tasks.BlockComponentsLocal.default_task_config(),
                         'merge_offsets':

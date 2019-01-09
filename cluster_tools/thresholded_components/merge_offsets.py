@@ -98,8 +98,15 @@ def merge_offsets(job_id, config_path):
             offsets.update(json.load(f))
         os.remove(path)
 
-    offset_list = np.array([v for _, v in sorted(offsets.items())],
-                           dtype='uint64')
+    # NOTE: the block-id keys in 'offsets' are stored as str, so we can't just use
+    # 'sorted(offsets.items())' because it would string-sort!
+    blocks = list(map(int, list(offsets.keys())))
+    offset_list = list(offsets.values())
+
+    key_sort = np.argsort(blocks)
+    offset_list = np.array([offset_list[k] for k in key_sort], dtype='uint64')
+    last_offset = offset_list[-1]
+
     empty_blocks = np.where(offset_list == 0)[0].tolist()
 
     offset_list = np.roll(offset_list, 1)
@@ -107,10 +114,13 @@ def merge_offsets(job_id, config_path):
     offset_list = np.cumsum(offset_list).tolist()
     assert len(offset_list) == n_blocks, "%i, %i" % (len(offset_list), n_blocks)
 
+    n_labels = offset_list[-1] + last_offset + 1
+
     fu.log("dumping offsets to %s" % save_path)
     with open(save_path, 'w') as f:
         json.dump({'offsets': offset_list,
-                   'empty_blocks': empty_blocks}, f)
+                   'empty_blocks': empty_blocks,
+                   'n_labels': n_labels}, f)
     fu.log_job_success(job_id)
 
 

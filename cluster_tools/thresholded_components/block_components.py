@@ -33,7 +33,7 @@ class BlockComponentsBase(luigi.Task):
     output_key = luigi.Parameter()
     # task that is required before running this task
     dependency = luigi.TaskParameter()
-    threshold = luigi.FloatParameter(default=None)
+    threshold = luigi.FloatParameter()
 
     def requires(self):
         return self.dependency
@@ -55,7 +55,8 @@ class BlockComponentsBase(luigi.Task):
                        'output_path': self.output_path,
                        'output_key': self.output_key,
                        'block_shape': block_shape,
-                       'tmp_folder': self.tmp_folder})
+                       'tmp_folder': self.tmp_folder,
+                       'threshold': self.threshold})
         # make output dataset
         chunks = config.pop('chunks', None)
         if chunks is None:
@@ -69,9 +70,6 @@ class BlockComponentsBase(luigi.Task):
                                          roi_begin, roi_end)
 
         n_jobs = min(len(block_list), self.max_jobs)
-
-        if self.threshold is not None:
-            config.update({'threshold': self.threshold})
 
         # we only have a single job to find the labeling
         self.prepare_jobs(n_jobs, block_list, config)
@@ -104,22 +102,8 @@ class BlockComponentsLSF(BlockComponentsBase, LSFTask):
     pass
 
 
-def _cc_block(block_id, blocking, ds_in, ds_out):
-    fu.log("start processing block %i" % block_id)
-    block = blocking.getBlock(block_id)
-    bb = vu.block_to_bb(block)
-    input_ = ds_in[bb]
-    if np.sum(input_) == 0:
-        fu.log_block_success(block_id)
-        return 0
-    components = label(input_)
-    ds_out[bb] = components
-    fu.log_block_success(block_id)
-    return int(components.max()) + 1
-
-
-def _cc_block_with_threshold(block_id, blocking,
-                             ds_in, ds_out, threshold):
+def _cc_block(block_id, blocking,
+              ds_in, ds_out, threshold):
     fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
@@ -148,8 +132,7 @@ def block_components(job_id, config_path):
     block_list = config['block_list']
     tmp_folder = config['tmp_folder']
     block_shape = config['block_shape']
-
-    threshold = config.get('threshold', None)
+    threshold = config['threshold']
 
     with vu.file_reader(input_path, 'r') as f_in,\
         vu.file_reader(output_path) as f_out:
@@ -160,12 +143,8 @@ def block_components(job_id, config_path):
         shape = ds_in.shape
         blocking = nt.blocking([0, 0, 0], list(shape), block_shape)
 
-        if threshold is None:
-            offsets = [_cc_block(block_id, blocking,
-                                 ds_in, ds_out) for block_id in block_list]
-        else:
-            offsets = [_cc_block_with_threshold(block_id, blocking,
-                                                ds_in, ds_out, threshold) for block_id in block_list]
+        offsets = [_cc_block(block_id, blocking,
+                             ds_in, ds_out, threshold) for block_id in block_list]
 
     offset_dict = {block_id: off for block_id, off in zip(block_list, offsets)}
     save_path = os.path.join(tmp_folder,

@@ -13,6 +13,7 @@ from cluster_tools import MulticutSegmentationWorkflow
 
 def run_mc(sample, tmp_folder, max_jobs, target='local'):
 
+    # input_path = '/g/kreshuk/data/cremi/padded_realigned/sample%s.n5' % sample
     input_path = '/g/kreshuk/data/cremi/realigned/sample%s_small.n5' % sample
     input_key = 'predictions/full_affs'
 
@@ -61,15 +62,14 @@ def run_mc(sample, tmp_folder, max_jobs, target='local'):
             json.dump(config, f)
 
     ret = luigi.build([MulticutSegmentationWorkflow(input_path=input_path, input_key=input_key,
-                                                    mask_path=mask_path, mask_key=mask_key,
                                                     ws_path=input_path, ws_key='segmentation/watershed',
-                                                    graph_path=exp_path, features_path=exp_path,
-                                                    costs_path=exp_path, problem_path=exp_path,
+                                                    mask_path=mask_path, mask_key=mask_key,
+                                                    problem_path=exp_path,
                                                     node_labels_path=exp_path, node_labels_key='node_labels',
-                                                    output_path=input_path, output_key='segmentation/multicut',
+                                                    output_path=exp_path, output_key='segmentation/multicut',
                                                     use_decomposition_multicut=use_decomposer,
                                                     rf_path=rf_path,
-                                                    n_scales=1,
+                                                    n_scales=2,
                                                     config_dir='./config_mc',
                                                     tmp_folder=tmp_folder,
                                                     target=target,
@@ -92,6 +92,7 @@ def run_mc(sample, tmp_folder, max_jobs, target='local'):
             ds.n_threads = max_jobs
             ws = ds[:]
 
+        with z5py.File(exp_path) as f:
             ds = f['segmentation/multicut']
             ds.n_threads = max_jobs
             seg = ds[:]

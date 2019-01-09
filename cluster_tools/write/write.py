@@ -139,12 +139,23 @@ def _write_block_with_offsets(ds_in, ds_out, blocking, block_id,
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
     seg = ds_in[bb]
-    seg[seg != 0] += off
+
+    # check if this block is empty and don't write if it is
+    mask = seg != 0
+    if np.sum(mask) == 0:
+        fu.log_block_success(block_id)
+        return
+
+    seg[mask] += off
     # choose the appropriate function for array or dictionary
     if isinstance(node_labels, np.ndarray):
         seg = nt.take(node_labels, seg)
     else:
-        seg = nt.takeDict(node_labels, seg)
+        # this copys the dict and hence is extremely RAM hungry
+        # so we make the dict as small as possible
+        this_labels = nt.unique(seg)
+        this_assignment = {label: node_labels[label] for label in this_labels}
+        seg = nt.takeDict(this_assignment, seg)
     ds_out[bb] = seg
     fu.log_block_success(block_id)
 
