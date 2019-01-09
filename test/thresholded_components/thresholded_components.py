@@ -53,13 +53,18 @@ class TestThresholdedComponents(unittest.TestCase):
         except OSError:
             pass
 
-    def _check_result(self, check_for_equality=True):
+    def _check_result(self, mode, check_for_equality=True):
         with z5py.File(self.output_path) as f:
             res = f[self.output_key][:]
         with z5py.File(self.input_path) as f:
             inp = f[self.input_key][:]
 
-        expected = label(inp > .5)
+        if mode == 'greater':
+            expected = label(inp > .5)
+        elif mode == 'less':
+            expected = label(inp < .5)
+        elif mode == 'equal':
+            expected = label(inp == .5)
         self.assertEqual(res.shape, expected.shape)
 
         # from cremi_tools.viewer.volumina import view
@@ -69,7 +74,7 @@ class TestThresholdedComponents(unittest.TestCase):
             score = adjusted_rand_score(expected.ravel(), res.ravel())
             self.assertAlmostEqual(score, 1., places=4)
 
-    def test_ccs(self):
+    def _test_mode(self, mode):
         task = ThresholdedComponentsWorkflow(tmp_folder=self.tmp_folder,
                                            config_dir=self.config_folder,
                                            target=self.target, max_jobs=8,
@@ -77,11 +82,22 @@ class TestThresholdedComponents(unittest.TestCase):
                                            input_key=self.input_key,
                                            output_path=self.output_path,
                                            output_key=self.output_key,
-                                           threshold=.5)
+                                           threshold=.5, threshold_mode=mode)
         ret = luigi.build([task], local_scheduler=True)
         self.assertTrue(ret)
-        self._check_result()
+        self._check_result(mode)
 
+    def test_greater(self):
+        self._test_mode('greater')
+
+    def test_less(self):
+        self._test_mode('less')
+
+    @unittest.skip
+    def test_equal(self):
+        self._test_mode('equal')
+
+    @unittest.skip
     def test_first_stage(self):
         from cluster_tools.thresholded_components.block_components import BlockComponentsLocal
         from cluster_tools.utils.task_utils import DummyTask
@@ -96,7 +112,7 @@ class TestThresholdedComponents(unittest.TestCase):
                                     dependency=DummyTask())
         ret = luigi.build([task], local_scheduler=True)
         self.assertTrue(ret)
-        self._check_result(check_for_equality=False)
+        self._check_result('greater', check_for_equality=False)
 
     @unittest.skip
     def test_second_stage(self):

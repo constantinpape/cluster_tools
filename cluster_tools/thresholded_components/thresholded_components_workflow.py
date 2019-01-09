@@ -17,6 +17,7 @@ class ThresholdedComponentsWorkflow(WorkflowBase):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     threshold = luigi.FloatParameter()
+    threshold_mode = luigi.Parameter(default='greater')
 
     def requires(self):
         block_task = getattr(block_tasks,
@@ -45,7 +46,8 @@ class ThresholdedComponentsWorkflow(WorkflowBase):
                          max_jobs=self.max_jobs,
                          input_path=self.input_path, input_key=self.input_key,
                          output_path=self.output_path, output_key=self.output_key,
-                         threshold=self.threshold, dependency=self.dependency)
+                         threshold=self.threshold, threshold_mode=self.threshold_mode,
+                         dependency=self.dependency)
         dep = offset_task(tmp_folder=self.tmp_folder,
                           config_dir=self.config_dir,
                           max_jobs=self.max_jobs,

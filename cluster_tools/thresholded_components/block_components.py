@@ -34,6 +34,9 @@ class BlockComponentsBase(luigi.Task):
     # task that is required before running this task
     dependency = luigi.TaskParameter()
     threshold = luigi.FloatParameter()
+    threshold_mode = luigi.Parameter(default='greater')
+
+    threshold_modes = ('greater', 'less', 'equal')
 
     def requires(self):
         return self.dependency
@@ -49,6 +52,7 @@ class BlockComponentsBase(luigi.Task):
                                          roi_begin, roi_end)
         n_jobs = min(len(block_list), self.max_jobs)
 
+        assert self.threshold_mode in self.threshold_modes
         config = self.get_task_config()
         config.update({'input_path': self.input_path,
                        'input_key': self.input_key,
@@ -56,7 +60,8 @@ class BlockComponentsBase(luigi.Task):
                        'output_key': self.output_key,
                        'block_shape': block_shape,
                        'tmp_folder': self.tmp_folder,
-                       'threshold': self.threshold})
+                       'threshold': self.threshold,
+                       'threshold_mode': self.threshold_mode})
         # make output dataset
         chunks = config.pop('chunks', None)
         if chunks is None:
@@ -103,15 +108,26 @@ class BlockComponentsLSF(BlockComponentsBase, LSFTask):
 
 
 def _cc_block(block_id, blocking,
-              ds_in, ds_out, threshold):
+              ds_in, ds_out, threshold,
+              threshold_mode):
     fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
     input_ = ds_in[bb]
-    input_ = input_ > threshold
+
+    if threshold_mode == 'greater':
+        input_ = input_ > threshold
+    elif threshold_mode == 'less':
+        input_ = input_ < threshold
+    elif threshold_mode == 'equal':
+        input_ = input_ == threshold
+    else:
+        raise RuntimeError("Thresholding Mode %s not supported" % threshold_mode)
+
     if np.sum(input_) == 0:
         fu.log_block_success(block_id)
         return 0
+
     components = label(input_)
     ds_out[bb] = components
     fu.log_block_success(block_id)
@@ -133,6 +149,9 @@ def block_components(job_id, config_path):
     tmp_folder = config['tmp_folder']
     block_shape = config['block_shape']
     threshold = config['threshold']
+    threshold_mode = config['threshold_mode']
+
+    fu.log("Applying threshold %f with mode %s" % (threshold, threshold_mode))
 
     with vu.file_reader(input_path, 'r') as f_in,\
         vu.file_reader(output_path) as f_out:
@@ -144,7 +163,8 @@ def block_components(job_id, config_path):
         blocking = nt.blocking([0, 0, 0], list(shape), block_shape)
 
         offsets = [_cc_block(block_id, blocking,
-                             ds_in, ds_out, threshold) for block_id in block_list]
+                             ds_in, ds_out, threshold,
+                             threshold_mode) for block_id in block_list]
 
     offset_dict = {block_id: off for block_id, off in zip(block_list, offsets)}
     save_path = os.path.join(tmp_folder,

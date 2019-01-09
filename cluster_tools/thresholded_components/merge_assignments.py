@@ -103,11 +103,12 @@ def merge_assignments(job_id, config_path):
     assignments = [np.load(os.path.join(tmp_folder,
                                         'assignments_%i.npy' % block_job_id))
                    for block_job_id in range(n_jobs)]
+
     assignments = np.concatenate(assignments, axis=0)
     assignments = np.unique(assignments, axis=0)
-    # for block_job_id in range(n_jobs):
-    #     os.remove(os.path.join(tmp_folder,
-    #                            'assignments_%i.npy' % block_job_id))
+    for block_job_id in range(n_jobs):
+        os.remove(os.path.join(tmp_folder,
+                               'assignments_%i.npy' % block_job_id))
 
     labels = np.arange(n_labels, dtype='uint64')
 

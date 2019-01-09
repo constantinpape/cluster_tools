@@ -160,7 +160,7 @@ def _process_face(blocking, block_id,
 def _process_faces(block_id, blocking, ds, offsets, empty_blocks):
     fu.log("start processing block %i" % block_id)
     if block_id in empty_blocks:
-        fu.log_block_success(blcok_id)
+        fu.log_block_success(block_id)
         return None
 
     assignments = [_process_face(blocking, block_id,
