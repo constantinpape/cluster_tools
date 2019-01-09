@@ -37,6 +37,7 @@ class BlockComponentsBase(luigi.Task):
     threshold_mode = luigi.Parameter(default='greater')
     mask_path = luigi.Parameter(default='')
     mask_key = luigi.Parameter(default='')
+    channel = luigi.IntParameter(default=None)
 
     threshold_modes = ('greater', 'less', 'equal')
 
@@ -49,10 +50,6 @@ class BlockComponentsBase(luigi.Task):
 
         # get shape and make block config
         shape = vu.get_shape(self.input_path, self.input_key)
-
-        block_list = vu.blocks_in_volume(shape, block_shape,
-                                         roi_begin, roi_end)
-        n_jobs = min(len(block_list), self.max_jobs)
 
         assert self.threshold_mode in self.threshold_modes
         config = self.get_task_config()
@@ -71,10 +68,24 @@ class BlockComponentsBase(luigi.Task):
             config.update({'mask_path': self.mask_path,
                            'mask_key': self.mask_key})
 
-        # make output dataset
+        # get chunks
         chunks = config.pop('chunks', None)
         if chunks is None:
             chunks = tuple(bs // 2 for bs in block_shape)
+
+        # check if we have a multi-channel volume and specify a channel
+        # to apply the threshold to
+        if self.channel is None:
+            # if no channel is specified, we need 3d input
+            assert len(shape) == 3, str(len(shape))
+        else:
+            # if channel is specified, we need 4d input
+            assert len(shape) == 4, str(len(shape))
+            assert shape[0] > self.channel, "%i, %i" % (shape[0], self.channel)
+            shape = shape[1:]
+            config.update({'channel': self.channel})
+
+        # make output dataset
         compression = config.pop('compression', 'gzip')
         with vu.file_reader(self.output_path) as f:
             f.require_dataset(self.output_key,  shape=shape, dtype='uint64',
@@ -82,7 +93,6 @@ class BlockComponentsBase(luigi.Task):
 
         block_list = vu.blocks_in_volume(shape, block_shape,
                                          roi_begin, roi_end)
-
         n_jobs = min(len(block_list), self.max_jobs)
 
         # we only have a single job to find the labeling
@@ -118,11 +128,14 @@ class BlockComponentsLSF(BlockComponentsBase, LSFTask):
 
 def _cc_block(block_id, blocking,
               ds_in, ds_out, threshold,
-              threshold_mode):
+              threshold_mode, channel):
     fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
+
     bb = vu.block_to_bb(block)
-    input_ = ds_in[bb]
+    bb_inp = bb if channel is None else (slice(channel, channel + 1),) + bb
+
+    input_ = ds_in[bb_inp]
 
     if threshold_mode == 'greater':
         input_ = input_ > threshold
@@ -145,7 +158,8 @@ def _cc_block(block_id, blocking,
 
 def _cc_block_with_mask(block_id, blocking,
                         ds_in, ds_out, threshold,
-                        threshold_mode, mask):
+                        threshold_mode, mask,
+                        channel):
     fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
@@ -154,9 +168,11 @@ def _cc_block_with_mask(block_id, blocking,
     in_mask = mask[bb].astype('bool')
     if np.sum(in_mask) == 0:
         fu.log_block_success(block_id)
-        return
+        return 0
 
-    input_ = ds_in[bb]
+    bb_inp = bb if channel is None else (slice(channel, channel + 1),) + bb
+    input_ = ds_in[bb_inp].squeeze()
+
     if threshold_mode == 'greater':
         input_ = input_ > threshold
     elif threshold_mode == 'less':
@@ -197,6 +213,8 @@ def block_components(job_id, config_path):
     mask_path = config.get('mask_path', '')
     mask_key = config.get('mask_key', '')
 
+    channel = config.get('channel', None)
+
     fu.log("Applying threshold %f with mode %s" % (threshold, threshold_mode))
 
     with vu.file_reader(input_path, 'r') as f_in,\
@@ -206,6 +224,10 @@ def block_components(job_id, config_path):
         ds_out = f_out[output_key]
 
         shape = ds_in.shape
+        if channel is not None:
+            shape = shape[1:]
+        assert len(shape) == 3
+
         blocking = nt.blocking([0, 0, 0], list(shape), block_shape)
 
         if mask_path != '':
@@ -215,12 +237,12 @@ def block_components(job_id, config_path):
             mask = vu.load_mask(mask_path, mask_key, shape)
             offsets = [_cc_block_with_mask(block_id, blocking,
                                            ds_in, ds_out, threshold,
-                                           threshold_mode, mask) for block_id in block_list]
+                                           threshold_mode, mask, channel) for block_id in block_list]
 
         else:
             offsets = [_cc_block(block_id, blocking,
                                  ds_in, ds_out, threshold,
-                                 threshold_mode) for block_id in block_list]
+                                 threshold_mode, channel) for block_id in block_list]
 
     offset_dict = {block_id: off for block_id, off in zip(block_list, offsets)}
     save_path = os.path.join(tmp_folder,

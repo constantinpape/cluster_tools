@@ -20,6 +20,7 @@ class ThresholdedComponentsWorkflow(WorkflowBase):
     threshold_mode = luigi.Parameter(default='greater')
     mask_path = luigi.Parameter(default='')
     mask_key = luigi.Parameter(default='')
+    channel = luigi.IntParameter(default=None)
 
     def requires(self):
         block_task = getattr(block_tasks,
@@ -37,6 +38,12 @@ class ThresholdedComponentsWorkflow(WorkflowBase):
             ds = f[self.input_key]
             shape = list(ds.shape)
 
+        if self.channel is None:
+            assert len(shape) == 3
+        else:
+            assert len(shape) == 4
+            shape = shape[1:]
+
         # temporary path for offsets
         offset_path = os.path.join(self.tmp_folder, 'cc_offsets.json')
         # path and key for assignments
@@ -50,6 +57,7 @@ class ThresholdedComponentsWorkflow(WorkflowBase):
                          output_path=self.output_path, output_key=self.output_key,
                          threshold=self.threshold, threshold_mode=self.threshold_mode,
                          mask_path=self.mask_path, mask_key=self.mask_key,
+                         channel=self.channel,
                          dependency=self.dependency)
         dep = offset_task(tmp_folder=self.tmp_folder,
                           config_dir=self.config_dir,

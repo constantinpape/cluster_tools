@@ -148,6 +148,9 @@ def _process_face(blocking, block_id,
     labels_b = labels_b[have_labels]
     assert labels_a.shape == labels_b.shape
 
+    if labels_a.size == 0:
+        return None
+
     # add the offsets that make the block ids unique
     labels_a += off_a
     labels_b += off_b
