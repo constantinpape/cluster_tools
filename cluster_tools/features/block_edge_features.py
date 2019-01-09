@@ -121,22 +121,21 @@ def _accumulate(input_path, input_key,
         dtype = f[input_key].dtype
         input_dim = f[input_key].ndim
     out_prefix = os.path.join(output_path, 'blocks')
-    # TODO print block success in c++ !
     if offsets is None:
-        assert input_dim == 3
+        assert input_dim == 3, str(input_dim)
         fu.log('accumulate boundary map for type %s' % str(dtype))
         boundary_function = ndist.extractBlockFeaturesFromBoundaryMaps_uint8 if dtype == 'uint8' else \
             ndist.extractBlockFeaturesFromBoundaryMaps_float32
         boundary_function(graph_block_prefix,
                           input_path, input_key,
                           labels_path, labels_key,
-                          block_list, out_prefix)
+                          block_list, out_prefix,
+                          increaseRoi=True)
     else:
-        assert input_dim == 4
+        assert input_dim == 4, str(input_dim)
         fu.log('accumulate affinity map for type %s' % str(dtype))
         affinity_function = ndist.extractBlockFeaturesFromAffinityMaps_uint8 if dtype == 'uint8' else \
             ndist.extractBlockFeaturesFromAffinityMaps_float32
-
         affinity_function(graph_block_prefix,
                           input_path, input_key,
                           labels_path, labels_key,
