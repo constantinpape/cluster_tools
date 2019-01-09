@@ -18,6 +18,8 @@ class ThresholdedComponentsWorkflow(WorkflowBase):
     output_key = luigi.Parameter()
     threshold = luigi.FloatParameter()
     threshold_mode = luigi.Parameter(default='greater')
+    mask_path = luigi.Parameter(default='')
+    mask_key = luigi.Parameter(default='')
 
     def requires(self):
         block_task = getattr(block_tasks,
@@ -47,6 +49,7 @@ class ThresholdedComponentsWorkflow(WorkflowBase):
                          input_path=self.input_path, input_key=self.input_key,
                          output_path=self.output_path, output_key=self.output_key,
                          threshold=self.threshold, threshold_mode=self.threshold_mode,
+                         mask_path=self.mask_path, mask_key=self.mask_key,
                          dependency=self.dependency)
         dep = offset_task(tmp_folder=self.tmp_folder,
                           config_dir=self.config_dir,

@@ -35,6 +35,8 @@ class BlockComponentsBase(luigi.Task):
     dependency = luigi.TaskParameter()
     threshold = luigi.FloatParameter()
     threshold_mode = luigi.Parameter(default='greater')
+    mask_path = luigi.Parameter(default='')
+    mask_key = luigi.Parameter(default='')
 
     threshold_modes = ('greater', 'less', 'equal')
 
@@ -62,6 +64,13 @@ class BlockComponentsBase(luigi.Task):
                        'tmp_folder': self.tmp_folder,
                        'threshold': self.threshold,
                        'threshold_mode': self.threshold_mode})
+
+        # check if we have a mask and add to the config if we do
+        if self.mask_path != '':
+            assert self.mask_key != ''
+            config.update({'mask_path': self.mask_path,
+                           'mask_key': self.mask_key})
+
         # make output dataset
         chunks = config.pop('chunks', None)
         if chunks is None:
@@ -134,6 +143,40 @@ def _cc_block(block_id, blocking,
     return int(components.max()) + 1
 
 
+def _cc_block_with_mask(block_id, blocking,
+                        ds_in, ds_out, threshold,
+                        threshold_mode, mask):
+    fu.log("start processing block %i" % block_id)
+    block = blocking.getBlock(block_id)
+    bb = vu.block_to_bb(block)
+
+    # get the mask and check if we have any pixels
+    in_mask = mask[bb].astype('bool')
+    if np.sum(in_mask) == 0:
+        fu.log_block_success(block_id)
+        return
+
+    input_ = ds_in[bb]
+    if threshold_mode == 'greater':
+        input_ = input_ > threshold
+    elif threshold_mode == 'less':
+        input_ = input_ < threshold
+    elif threshold_mode == 'equal':
+        input_ = input_ == threshold
+    else:
+        raise RuntimeError("Thresholding Mode %s not supported" % threshold_mode)
+
+    input_[np.logical_not(in_mask)] = 0
+    if np.sum(input_) == 0:
+        fu.log_block_success(block_id)
+        return 0
+
+    components = label(input_)
+    ds_out[bb] = components
+    fu.log_block_success(block_id)
+    return int(components.max()) + 1
+
+
 def block_components(job_id, config_path):
 
     fu.log("start processing job %i" % job_id)
@@ -151,6 +194,9 @@ def block_components(job_id, config_path):
     threshold = config['threshold']
     threshold_mode = config['threshold_mode']
 
+    mask_path = config.get('mask_path', '')
+    mask_key = config.get('mask_key', '')
+
     fu.log("Applying threshold %f with mode %s" % (threshold, threshold_mode))
 
     with vu.file_reader(input_path, 'r') as f_in,\
@@ -162,9 +208,19 @@ def block_components(job_id, config_path):
         shape = ds_in.shape
         blocking = nt.blocking([0, 0, 0], list(shape), block_shape)
 
-        offsets = [_cc_block(block_id, blocking,
-                             ds_in, ds_out, threshold,
-                             threshold_mode) for block_id in block_list]
+        if mask_path != '':
+            # note that the mask is usually small enough to keep it
+            # in memory (and we interpolate to get to the full volume)
+            # if this does not hold need to change this code!
+            mask = vu.load_mask(mask_path, mask_key, shape)
+            offsets = [_cc_block_with_mask(block_id, blocking,
+                                           ds_in, ds_out, threshold,
+                                           threshold_mode, mask) for block_id in block_list]
+
+        else:
+            offsets = [_cc_block(block_id, blocking,
+                                 ds_in, ds_out, threshold,
+                                 threshold_mode) for block_id in block_list]
 
     offset_dict = {block_id: off for block_id, off in zip(block_list, offsets)}
     save_path = os.path.join(tmp_folder,
