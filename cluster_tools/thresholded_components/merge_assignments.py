@@ -99,22 +99,27 @@ def merge_assignments(job_id, config_path):
 
     with open(offset_path) as f:
         n_labels = int(json.load(f)['n_labels'])
+    labels = np.arange(n_labels, dtype='uint64')
 
+    # load and remove assignments
     assignments = [np.load(os.path.join(tmp_folder,
                                         'assignments_%i.npy' % block_job_id))
                    for block_job_id in range(n_jobs)]
-
-    assignments = np.concatenate(assignments, axis=0)
-    assignments = np.unique(assignments, axis=0)
     for block_job_id in range(n_jobs):
         os.remove(os.path.join(tmp_folder,
                                'assignments_%i.npy' % block_job_id))
 
-    labels = np.arange(n_labels, dtype='uint64')
+    if all(ass.size for ass in assignments):
+        assignments = np.concatenate(assignments, axis=0)
+        assignments = np.unique(assignments, axis=0)
+        have_assignments = True
+    else:
+        have_assignments = False
 
-    assert int(assignments.max()) + 1 <= n_labels, "%i, %i" % (int(assignments.max()) + 1, n_labels)
     ufd = nufd.boost_ufd(labels)
-    ufd.merge(assignments)
+    if have_assignments:
+        assert int(assignments.max()) + 1 <= n_labels, "%i, %i" % (int(assignments.max()) + 1, n_labels)
+        ufd.merge(assignments)
 
     label_assignments = ufd.find(labels)
     vigra.analysis.relabelConsecutive(label_assignments, keep_zeros=True,

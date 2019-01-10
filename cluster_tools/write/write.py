@@ -224,6 +224,12 @@ def _load_assignments(path, key, n_threads):
             assert ds.ndim in (1, 2)
             ds.n_threads = n_threads
             node_labels = ds[:]
+
+            # this can happen if we only have a single label.
+            # for some reason z5 returns this as int, not as array
+            if isinstance(node_labels, int):
+                node_labels = np.array([node_labels], dtype='uint64')
+
             # if we have 2d node_labels, these correspond to an assignment table
             # and we turn them into a dict for efficient downstream processing
             if node_labels.ndim == 2:

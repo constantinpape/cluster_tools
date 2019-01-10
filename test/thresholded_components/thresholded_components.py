@@ -25,6 +25,7 @@ class TestThresholdedComponents(unittest.TestCase):
 
     output_path = './tmp/ccs.n5'
     output_key = 'data'
+    assignment_key = 'assignments'
     #
     tmp_folder = './tmp'
     config_folder = './tmp/configs'
@@ -47,24 +48,24 @@ class TestThresholdedComponents(unittest.TestCase):
         with open(os.path.join(self.config_folder, 'global.config'), 'w') as f:
             json.dump(global_config, f)
 
-    def _tearDown(self):
+    def tearDown(self):
         try:
             rmtree(self.tmp_folder)
         except OSError:
             pass
 
-    def _check_result(self, mode, check_for_equality=True):
+    def _check_result(self, mode, check_for_equality=True, threshold=.5):
         with z5py.File(self.output_path) as f:
             res = f[self.output_key][:]
         with z5py.File(self.input_path) as f:
             inp = f[self.input_key][:]
 
         if mode == 'greater':
-            expected = label(inp > .5)
+            expected = label(inp > threshold)
         elif mode == 'less':
-            expected = label(inp < .5)
+            expected = label(inp < threshold)
         elif mode == 'equal':
-            expected = label(inp == .5)
+            expected = label(inp == threshold)
         self.assertEqual(res.shape, expected.shape)
 
         # from cremi_tools.viewer.volumina import view
@@ -74,7 +75,7 @@ class TestThresholdedComponents(unittest.TestCase):
             score = adjusted_rand_score(expected.ravel(), res.ravel())
             self.assertAlmostEqual(score, 1., places=4)
 
-    def _test_mode(self, mode):
+    def _test_mode(self, mode, threshold=.5):
         task = ThresholdedComponentsWorkflow(tmp_folder=self.tmp_folder,
                                            config_dir=self.config_folder,
                                            target=self.target, max_jobs=8,
@@ -82,10 +83,11 @@ class TestThresholdedComponents(unittest.TestCase):
                                            input_key=self.input_key,
                                            output_path=self.output_path,
                                            output_key=self.output_key,
-                                           threshold=.5, threshold_mode=mode)
+                                           assignment_key=self.assignment_key,
+                                           threshold=threshold, threshold_mode=mode)
         ret = luigi.build([task], local_scheduler=True)
         self.assertTrue(ret)
-        self._check_result(mode)
+        self._check_result(mode, threshold=threshold)
 
     def test_greater(self):
         self._test_mode('greater')
@@ -93,9 +95,8 @@ class TestThresholdedComponents(unittest.TestCase):
     def test_less(self):
         self._test_mode('less')
 
-    @unittest.skip
     def test_equal(self):
-        self._test_mode('equal')
+        self._test_mode('equal', threshold=0)
 
     @unittest.skip
     def test_first_stage(self):

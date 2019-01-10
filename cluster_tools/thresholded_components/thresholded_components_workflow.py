@@ -16,6 +16,7 @@ class ThresholdedComponentsWorkflow(WorkflowBase):
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
+    assignment_key = luigi.Parameter()
     threshold = luigi.FloatParameter()
     threshold_mode = luigi.Parameter(default='greater')
     mask_path = luigi.Parameter(default='')
@@ -46,9 +47,6 @@ class ThresholdedComponentsWorkflow(WorkflowBase):
 
         # temporary path for offsets
         offset_path = os.path.join(self.tmp_folder, 'cc_offsets.json')
-        # path and key for assignments
-        assignment_path = self.output_path
-        assignment_key = 'cc_assignments'
 
         dep = block_task(tmp_folder=self.tmp_folder,
                          config_dir=self.config_dir,
@@ -72,8 +70,8 @@ class ThresholdedComponentsWorkflow(WorkflowBase):
         dep = assignment_task(tmp_folder=self.tmp_folder,
                               config_dir=self.config_dir,
                               max_jobs=self.max_jobs,
-                              output_path=assignment_path,
-                              output_key=assignment_key,
+                              output_path=self.output_path,
+                              output_key=self.assignment_key,
                               shape=shape, offset_path=offset_path,
                               dependency=dep)
         # we write in-place to the output dataset
@@ -82,8 +80,8 @@ class ThresholdedComponentsWorkflow(WorkflowBase):
                          max_jobs=self.max_jobs,
                          input_path=self.output_path, input_key=self.output_key,
                          output_path=self.output_path, output_key=self.output_key,
-                         assignment_path=assignment_path, assignment_key=assignment_key,
-                         identifier='connected_components', offset_path=offset_path,
+                         assignment_path=self.output_path, assignment_key=self.assignment_key,
+                         identifier='thresholded_components', offset_path=offset_path,
                          dependency=dep)
         return dep
 
