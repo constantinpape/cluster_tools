@@ -34,6 +34,7 @@ def file_reader(path, mode='a'):
     elif is_h5(path):
         return h5py.File(path, mode=mode)
     else:
+        ext = os.path.splitext(path)[1][1:].lower()
         raise RuntimeError("Invalid file format %s" % ext)
 
 
@@ -161,7 +162,6 @@ def make_checkerboard_block_lists(blocking, roi_begin=None, roi_end=None):
 
 class InterpolatedVolume(object):
     def __init__(self, volume, output_shape, spline_order=0):
-        assert isinstance(volume, np.ndarray)
         assert len(output_shape) == volume.ndim == 3, "Only 3d supported"
         assert all(osh > vsh for osh, vsh in zip(output_shape, volume.shape)),\
             "Can only interpolate to larger shapes, got %s %s" % (str(output_shape), str(volume.shape))
