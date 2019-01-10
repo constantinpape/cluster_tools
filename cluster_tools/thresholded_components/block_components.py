@@ -85,6 +85,9 @@ class BlockComponentsBase(luigi.Task):
             shape = shape[1:]
             config.update({'channel': self.channel})
 
+        # clip chunks
+        chunks = tuple(min(ch, sh) for ch, sh in zip(chunks, shape))
+
         # make output dataset
         compression = config.pop('compression', 'gzip')
         with vu.file_reader(self.output_path) as f:
@@ -134,8 +137,7 @@ def _cc_block(block_id, blocking,
 
     bb = vu.block_to_bb(block)
     bb_inp = bb if channel is None else (slice(channel, channel + 1),) + bb
-
-    input_ = ds_in[bb_inp]
+    input_ = ds_in[bb_inp].squeeze()
 
     if threshold_mode == 'greater':
         input_ = input_ > threshold

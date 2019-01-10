@@ -90,48 +90,34 @@ class BlockFacesLSF(BlockFacesBase, LSFTask):
 
 
 def _process_face(blocking, block_id,
-                  axis, direction, ds, offsets,
+                  axis, ds, offsets,
                   empty_blocks):
-    ngb_id = blocking.getNeighborId(block_id, axis,
-                                    direction)
-
-    if ngb_id in empty_blocks:
+    ngb_id = blocking.getNeighborId(block_id, axis, False)
+    if ngb_id == -1 or ngb_id in empty_blocks:
         return None
-
-    if ngb_id < block_id or ngb_id < 0:
-        return None
+    assert ngb_id > block_id, "%i, %i" % (ngb_id, block_id)
 
     off_a = offsets[block_id]
     off_b = offsets[ngb_id]
 
     block_a = blocking.getBlock(block_id)
     block_b = blocking.getBlock(ngb_id)
-    # we now that the overlap is along 'axis'
-    # get the overlap with halo 1 in block coordinates
-    halo = 3 * [0]
-    halo[axis] = 1
-    have_ovlp, begin_a, end_a, begin_b, end_b = blocking.getLocalOverlaps(block_id, ngb_id, halo)
-    # sanity checks
-    assert have_ovlp
-    assert all(beg_a == beg_b if dim != axis else begin_a != begin_b
-               for dim, beg_a, beg_b in zip(range(3), begin_a, begin_b))
+    assert all(beg_a == beg_b for dim, beg_a, beg_b
+               in zip(range(3), block_a.begin, block_b.begin) if dim != axis)
+    assert all(end_a == end_b for dim, end_a, end_b
+               in zip(range(3), block_a.end, block_b.end) if dim != axis)
+    assert block_a.begin[axis] < block_b.begin[axis]
 
+    # compute the bounding box corresponiding to the face between the two blocks
+    face = tuple(slice(beg, end) if dim != axis else slice(end - 1, end + 1)
+                 for dim, beg, end in zip(range(3), block_a.begin, block_a.end))
 
-    # get the global bounding box of the face and load it
-    face = tuple(slice(off + beg, off + end)
-                 for off, beg, end in zip(block_a.begin, begin_a, end_a))
     seg = ds[face]
     assert seg.shape[axis] == 2, "%i: %s" % (axis, str(seg.shape))
 
-    # find block with the lower coordinate in the overlap axis
-    if block_a.begin[axis] < block_b.begin[axis]:
-        slice_a = slice(0, 1)
-        slice_b = slice(1, 2)
-    else:
-        slice_a = slice(1, 2)
-        slice_b = slice(0, 1)
-
     # get the local coordinates of faces in a and b
+    slice_a = slice(0, 1)
+    slice_b = slice(1, 2)
     face_a = tuple(slice(None) if dim != axis else slice_a
                    for dim in range(3))
     face_b = tuple(slice(None) if dim != axis else slice_b
@@ -167,9 +153,9 @@ def _process_faces(block_id, blocking, ds, offsets, empty_blocks):
         return None
 
     assignments = [_process_face(blocking, block_id,
-                                 axis, direction, ds, offsets,
+                                 axis, ds, offsets,
                                  empty_blocks)
-                   for axis in range(3) for direction in (False, True)]
+                   for axis in range(3)]
     assignments = [ass for ass in assignments
                    if ass is not None]
 

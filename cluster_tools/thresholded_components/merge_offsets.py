@@ -102,6 +102,8 @@ def merge_offsets(job_id, config_path):
     # 'sorted(offsets.items())' because it would string-sort!
     blocks = list(map(int, list(offsets.keys())))
     offset_list = list(offsets.values())
+    assert len(blocks) == len(offset_list) == n_blocks
+    fu.log("merging offsets for %i blocks" % n_blocks)
 
     key_sort = np.argsort(blocks)
     offset_list = np.array([offset_list[k] for k in key_sort], dtype='uint64')
@@ -115,6 +117,8 @@ def merge_offsets(job_id, config_path):
     assert len(offset_list) == n_blocks, "%i, %i" % (len(offset_list), n_blocks)
 
     n_labels = offset_list[-1] + last_offset + 1
+    fu.log("number of empty blocks: %i / %i" % (len(empty_blocks), n_blocks))
+    fu.log("total number of labels: %i" % n_labels)
 
     fu.log("dumping offsets to %s" % save_path)
     with open(save_path, 'w') as f:

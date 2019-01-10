@@ -105,15 +105,18 @@ def merge_assignments(job_id, config_path):
     assignments = [np.load(os.path.join(tmp_folder,
                                         'assignments_%i.npy' % block_job_id))
                    for block_job_id in range(n_jobs)]
-    for block_job_id in range(n_jobs):
-        os.remove(os.path.join(tmp_folder,
-                               'assignments_%i.npy' % block_job_id))
+    # for block_job_id in range(n_jobs):
+    #     os.remove(os.path.join(tmp_folder,
+    #                            'assignments_%i.npy' % block_job_id))
 
     if all(ass.size for ass in assignments):
         assignments = np.concatenate(assignments, axis=0)
         assignments = np.unique(assignments, axis=0)
+        assert assignments.shape[1] == 2
+        fu.log("have %i pairs of node assignments" % len(assignments))
         have_assignments = True
     else:
+        fu.log("did not find any node assignments, label assignment will be identity")
         have_assignments = False
 
     ufd = nufd.boost_ufd(labels)
@@ -122,9 +125,10 @@ def merge_assignments(job_id, config_path):
         ufd.merge(assignments)
 
     label_assignments = ufd.find(labels)
-    vigra.analysis.relabelConsecutive(label_assignments, keep_zeros=True,
-                                      start_label=1)
+    label_assignemnts, max_id, _ = vigra.analysis.relabelConsecutive(label_assignments, keep_zeros=True,
+                                                                     start_label=1)
     assert len(label_assignments) == n_labels
+    fu.log("reducing the number of labels from %i to %i" % (n_labels, max_id + 1))
 
     chunks = (min(65334, n_labels),)
     with vu.file_reader(output_path) as f:
