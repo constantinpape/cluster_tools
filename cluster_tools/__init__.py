@@ -1,4 +1,4 @@
 from .workflows import MulticutSegmentationWorkflow
 from .workflows import LiftedMulticutSegmentationWorkflow
-from .thresholded_components import ThresholdedComponentsWorkflow
+from .thresholded_components import ThresholdedComponentsWorkflow, ThresholdAndWatershedWorkflow
 # from .learning import LearningWorkflow

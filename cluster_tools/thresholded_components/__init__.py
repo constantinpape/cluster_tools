@@ -1,1 +1,1 @@
-from .thresholded_components_workflow import ThresholdedComponentsWorkflow
+from .thresholded_components_workflow import ThresholdedComponentsWorkflow, ThresholdAndWatershedWorkflow
