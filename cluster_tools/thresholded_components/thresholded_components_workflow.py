@@ -4,8 +4,10 @@ import luigi
 
 from ..utils import volume_utils as vu
 from ..cluster_tasks import WorkflowBase
-from .. import write as write_tasks
+from ..filter_labels import FilterLabelsWorkflow
 from ..watershed import watershed_from_seeds as ws_tasks
+
+from .. import write as write_tasks
 from . import block_components as block_tasks
 from . import merge_offsets as offset_tasks
 from . import block_faces as face_tasks
@@ -113,11 +115,6 @@ class ThresholdAndWatershedWorkflow(WorkflowBase):
     mask_path = luigi.Parameter(default='')
     mask_key = luigi.Parameter(default='')
     channel = luigi.IntParameter(default=None)
-    background_path = luigi.Parameter(default='')
-    background_key = luigi.Parameter(default='')
-
-    def _filter_bg(self, dep):
-        return dep
 
     def requires(self):
         dep = ThresholdedComponentsWorkflow(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
@@ -136,14 +133,10 @@ class ThresholdAndWatershedWorkflow(WorkflowBase):
                       seeds_path=self.output_path, seeds_key=self.output_key,
                       output_path=self.output_path, output_key=self.output_key,
                       mask_path=self.mask_path, mask_key=self.mask_key)
-        # filter background label if given
-        if self.background_path != '':
-            assert self.background_key != ''
-            dep = self._filter_bg(dep)
         return dep
 
     @staticmethod
-    def get_config(with_background=False):
+    def get_config():
         configs = super(ThresholdAndWatershedWorkflow, ThresholdAndWatershedWorkflow).get_config()
         configs.update({'watershed_from_seeds':
                         ws_tasks.WatershedFromSeedsLocal.default_task_config(),
