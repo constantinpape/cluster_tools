@@ -57,13 +57,14 @@ class BlockNodeLabelsBase(luigi.Task):
                        'block_shape': block_shape,
                        'output_path': self.output_path, 'output_key': self.output_key})
 
-        # make graph file and write shape as attribute
         shape = vu.get_shape(self.ws_path, self.ws_key)
+        chunks = tuple(min(bs, sh) for bs, sh in zip(block_shape, shape))
+
         # create output dataset
         with vu.file_reader(self.output_path) as f:
             f.require_dataset(self.output_key, shape=shape,
                               dtype='uint64',
-                              chunks=tuple(block_shape),
+                              chunks=chunks,
                               compression='gzip')
 
         if self.n_retries == 0:

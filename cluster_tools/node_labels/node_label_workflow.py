@@ -34,8 +34,12 @@ class NodeLabelWorkflow(WorkflowBase):
                          output_key=tmp_key)
         merge_task = getattr(merge_tasks,
                              self._get_task_name('MergeNodeLabels'))
-        with vu.file_reader(self.ws_path) as f:
-            number_of_labels = f[self.ws_key].attrs['maxId'] + 1
+        try:
+            with vu.file_reader(self.ws_path) as f:
+                number_of_labels = f[self.ws_key].attrs['maxId'] + 1
+        except KeyError as e:
+            msg = "Expect attribute maxId in %s:%s" % (self.ws_path, self.ws_key)
+            raise KeyError(msg)
         dep = merge_task(input_path=self.output_path,
                          input_key=tmp_key,
                          output_path=self.output_path,

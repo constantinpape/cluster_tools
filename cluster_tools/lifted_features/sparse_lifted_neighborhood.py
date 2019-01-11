@@ -112,6 +112,7 @@ def sparse_lifted_neighborhood(job_id, config_path):
     n_threads = config.get('threads_per_job', 1)
     graph_depth = config['nh_graph_depth']
 
+    fu.log("start lifted neighborhood extraction for depth %i" % graph_depth)
     ndist.computeLiftedNeighborhoodFromNodeLabels(os.path.join(graph_path, graph_key),
                                                   os.path.join(node_label_path, node_label_key),
                                                   os.path.join(output_path, output_key),
