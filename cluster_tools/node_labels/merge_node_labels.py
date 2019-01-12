@@ -31,7 +31,6 @@ class MergeNodeLabelsBase(luigi.Task):
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
-    number_of_labels = luigi.IntParameter()
     max_overlap = luigi.BoolParameter(default=True)
     #
     dependency = luigi.TaskParameter()
@@ -47,8 +46,11 @@ class MergeNodeLabelsBase(luigi.Task):
         # load the task config
         config = self.get_task_config()
 
-        node_shape = (self.number_of_labels,)
-        node_chunks = (min(self.number_of_labels, 100000),)
+        with vu.file_reader(self.input_path, 'r') as f:
+            number_of_labels = int(f[self.input_key].attrs['maxId']) + 1
+
+        node_shape = (number_of_labels,)
+        node_chunks = (min(number_of_labels, 100000),)
         block_list = vu.blocks_in_volume(node_shape, node_chunks)
 
         # create output dataset

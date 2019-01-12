@@ -182,6 +182,15 @@ def block_node_labels(job_id, config_path):
         [_labels_for_block(block_id, blocking,
                            ds_ws, out_path, labels)
          for block_id in block_list]
+        max_id = ds_ws.attrs['maxId']
+
+    # need to serialize the label max-id here for
+    # the merge_node_labels task
+    if job_id == 0:
+        with vu.file_reader(output_path) as f:
+            ds_out = f[output_key]
+            ds_out.attrs['maxId'] = max_id
+
     fu.log_job_success(job_id)
 
 
