@@ -160,7 +160,7 @@ def lifted_multicut_kernighan_lin(graph, costs, lifted_uv_ids, lifted_costs,
             visitor1 = objective.verboseVisitor(visitNth=1000000,
                                                 timeLimitTotal=time_limit)
             t0 = time.time()
-            res = solver_gaec.optimize(visitor=visitor)
+            res = solver_gaec.optimize(visitor=visitor1)
             t0 = time.time() - t0
             # time limit is not hard, so t0 might actually be bigger than
             # our time limit already
@@ -169,7 +169,7 @@ def lifted_multicut_kernighan_lin(graph, costs, lifted_uv_ids, lifted_costs,
             visitor2 = objective.verboseVisitor(visitNth=1000000,
                                                 timeLimitTotal=time_limit - t0)
             return solver_kl.optimize(nodeLabels=res,
-                                      visitor=visitor)
+                                      visitor=visitor2)
 
         else:
             visitor = objective.verboseVisitor(visitNth=1000000,
