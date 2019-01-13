@@ -124,17 +124,18 @@ def solve_lifted_global(job_id, config_path):
     with vu.file_reader(problem_path) as f:
         group = f['s%i' % scale]
         graph_group = group['graph']
-        n_nodes = graph_group.attrs['numberOfNodes']
         ignore_label = graph_group.attrs['ignoreLabel']
 
         ds = graph_group['edges']
         ds.n_threads = n_threads
         uv_ids = ds[:]
         n_edges = len(uv_ids)
+        n_nodes = int(uv_ids.max()) + 1
 
-        ds = group['node_labeling']
-        ds.n_threads = n_threads
-        initial_node_labeling = ds[:]
+        if scale > 0:
+            ds = group['node_labeling']
+            ds.n_threads = n_threads
+            initial_node_labeling = ds[:]
 
         ds = group['costs']
         ds.n_threads = n_threads
@@ -158,8 +159,11 @@ def solve_lifted_global(job_id, config_path):
                                  time_limit=time_limit)
     fu.log("finished agglomeration")
 
-    # get the labeling of initial nodes
-    initial_node_labeling = node_labeling[initial_node_labeling]
+    if scale > 0:
+        # get the labeling of initial nodes
+        initial_node_labeling = node_labeling[initial_node_labeling]
+    else:
+        initial_node_labeling = node_labeling
     n_nodes = len(initial_node_labeling)
 
     # make sure zero is mapped to 0 if we have an ignore label
