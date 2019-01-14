@@ -182,7 +182,12 @@ def block_node_labels(job_id, config_path):
         [_labels_for_block(block_id, blocking,
                            ds_ws, out_path, labels)
          for block_id in block_list]
-        max_id = ds_ws.attrs['maxId']
+
+        try:
+            max_id = ds_ws.attrs['maxId']
+        except KeyError:
+            raise KeyError("Dataset %s:%s does not have attribute maxId" % (ws_path, ws_key))
+
 
     # need to serialize the label max-id here for
     # the merge_node_labels task

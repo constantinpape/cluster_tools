@@ -3,6 +3,7 @@ import json
 import luigi
 
 from ..cluster_tasks import WorkflowBase
+from ..multicut import sub_solutions as sub_tasks
 from .. import write as write_tasks
 from . import reduce_lifted_problem as reduce_tasks
 from . import solve_lifted_global as solve_tasks
@@ -71,4 +72,67 @@ class LiftedMulticutWorkflow(LiftedMulticutWorkflowBase):
     def get_config():
         configs = super(LiftedMulticutWorkflow, LiftedMulticutWorkflow).get_config()
         configs.update({'solve_lifted_global': solve_tasks.SolveLiftedGlobalLocal.default_task_config()})
+        return configs
+
+
+class SubLiftedSolutionsWorkflow(LiftedMulticutWorkflowBase):
+    ws_path = luigi.Parameter()
+    ws_key = luigi.Parameter()
+    output_path = luigi.Parameter()
+    output_key = luigi.Parameter()
+    roi_begin = luigi.ListParameter(default=None)
+    roi_end = luigi.ListParameter(default=None)
+
+    def requires(self):
+        sub_task = getattr(sub_tasks,
+                           self._get_task_name('SubSolutions'))
+        dep = self._hierarchical_tasks(self.dependency, self.n_scales + 1)
+        t_sub = sub_task(tmp_folder=self.tmp_folder,
+                         max_jobs=self.max_jobs,
+                         config_dir=self.config_dir,
+                         problem_path=self.problem_path,
+                         ws_path=self.ws_path,
+                         ws_key=self.ws_key,
+                         output_path=self.output_path,
+                         output_key=self.output_key,
+                         scale=self.n_scales,
+                         dependency=dep,
+                         roi_begin=self.roi_begin,
+                         roi_end=self.roi_end)
+        return t_sub
+
+    @staticmethod
+    def get_config():
+        configs = super(SubLiftedSolutionsWorkflow, SubLiftedSolutionsWorkflow).get_config()
+        configs.update({'sub_solutions': sub_tasks.SubSolutionsLocal.default_task_config()})
+        return configs
+
+
+class ReducedLiftedSolutionWorkflow(LiftedMulticutWorkflowBase):
+    ws_path = luigi.Parameter()
+    ws_key = luigi.Parameter()
+    output_path = luigi.Parameter()
+    output_key = luigi.Parameter()
+
+    def requires(self):
+        write_task = getattr(write_tasks,
+                             self._get_task_name('Write'))
+        dep = self._hierarchical_tasks(self.dependency, self.n_scales)
+        assignment_key = 's%i/node_labeling' % self.n_scales
+        return write_task(tmp_folder=self.tmp_folder,
+                          max_jobs=self.max_jobs,
+                          config_dir=self.config_dir,
+                          dependency=dep,
+                          input_path=self.ws_path,
+                          input_key=self.ws_key,
+                          output_path=self.output_path,
+                          output_key=self.output_key,
+                          assignment_path=self.problem_path,
+                          assignment_key=assignment_key,
+                          identifier='reduced_lifted')
+
+    @staticmethod
+    def get_config():
+        configs = super(ReducedLiftedSolutionWorkflow, ReducedLiftedSolutionWorkflow).get_config()
+        configs.update({'write': write_tasks.WriteLocal.default_task_config()})
         return configs

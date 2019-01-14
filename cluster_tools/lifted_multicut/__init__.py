@@ -1,1 +1,1 @@
-from .lifted_multicut_workflow import LiftedMulticutWorkflow
+from .lifted_multicut_workflow import LiftedMulticutWorkflow, SubLiftedSolutionsWorkflow, ReducedLiftedSolutionWorkflow

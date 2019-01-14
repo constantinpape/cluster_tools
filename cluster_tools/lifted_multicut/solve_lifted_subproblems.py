@@ -138,6 +138,7 @@ def _find_lifted_edges(lifted_uv_ids, node_list):
 
 def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
                          costs, lifted_uvs, lifted_costs,
+                         lifted_agglomerator,
                          agglomerator, ignore_label,
                          blocking, out, time_limit):
     fu.log("Start processing block %i" % block_id)
@@ -175,10 +176,10 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
     else:
         # find  the lifted uv-ids that correspond to the inner edges
         inner_lifted_edges = _find_lifted_edges(lifted_uvs, nodes)
-        fu.log("Block %i: Solving sub-block with %i nodes, %i edges and % lifted edges" % (block_id,
-                                                                                           len(nodes),
-                                                                                           len(inner_edges),
-                                                                                           len(inner_lifted_edges)))
+        fu.log("Block %i: Solving sub-block with %i nodes, %i edges and %i lifted edges" % (block_id,
+                                                                                            len(nodes),
+                                                                                            len(inner_edges),
+                                                                                            len(inner_lifted_edges)))
         sub_uvs = uv_ids[inner_edges]
         # relabel the sub-nodes and associated uv-ids for more efficient processing
         nodes_relabeled, max_id, mapping = vigra.analysis.relabelConsecutive(nodes,
@@ -192,14 +193,24 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
         sub_costs = costs[inner_edges]
         assert len(sub_costs) == sub_graph.numberOfEdges
 
-        sub_lifted_uvs = nt.takeDict(mapping, lifted_uvs[inner_lifted_edges])
-        sub_lifted_costs = lifted_costs[inner_lifted_edges]
+        # we only need to run lifted multicut if we have lifted edges in
+        # the subgraph
+        if len(inner_lifted_edges) > 0:
+            fu.log("Block %i: have lifted edges and use lifted multicut solver")
+            sub_lifted_uvs = nt.takeDict(mapping, lifted_uvs[inner_lifted_edges])
+            sub_lifted_costs = lifted_costs[inner_lifted_edges]
 
-        # solve multicut and relabel the result
-        sub_result = agglomerator(sub_graph, sub_costs, sub_lifted_uvs, sub_lifted_costs,
-                                  time_limit=time_limit)
+            # solve multicut and relabel the result
+            sub_result = lifted_agglomerator(sub_graph, sub_costs, sub_lifted_uvs, sub_lifted_costs,
+                                             time_limit=time_limit)
+
+        # otherwise we run normal multicut
+        else:
+            fu.log("Block %i: don't have lifted edges and use multicut solver")
+            # solve multicut and relabel the result
+            sub_result = agglomerator(sub_graph, sub_costs, time_limit=time_limit)
+
         assert len(sub_result) == len(nodes), "%i, %i" % (len(sub_result), len(nodes))
-
         sub_edgeresult = sub_result[sub_uvs[:, 0]] != sub_result[sub_uvs[:, 1]]
         assert len(sub_edgeresult) == len(inner_edges)
         cut_edge_ids = inner_edges[sub_edgeresult]
@@ -273,7 +284,9 @@ def solve_lifted_subproblems(job_id, config_path):
     fu.log("ignore label is %s" % ('true' if ignore_label else 'false'))
 
     fu.log("using agglomerator %s" % agglomerator_key)
-    agglomerator = su.key_to_lifted_agglomerator(agglomerator_key)
+    lifted_agglomerator = su.key_to_lifted_agglomerator(agglomerator_key)
+    # TODO enable different multicut agglomerator
+    agglomerator = su.key_to_agglomerator(agglomerator_key)
 
     # load the lifted edges and costs
     nh_key = 's%i/lifted_nh_%s' % (scale, lifted_prefix)
@@ -299,7 +312,7 @@ def solve_lifted_subproblems(job_id, config_path):
         tasks = [tp.submit(_solve_block_problem,
                            block_id, graph, uv_ids, block_prefix,
                            costs, lifted_uvs, lifted_costs,
-                           agglomerator, ignore_label,
+                           lifted_agglomerator, agglomerator, ignore_label,
                            blocking, out, time_limit)
                  for block_id in block_list]
         [t.result() for t in tasks]
