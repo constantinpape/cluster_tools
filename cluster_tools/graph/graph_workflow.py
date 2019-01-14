@@ -13,7 +13,7 @@ class GraphWorkflow(WorkflowBase):
     input_key = luigi.Parameter()
     graph_path = luigi.Parameter()
     output_key = luigi.Parameter()
-    n_scales = luigi.IntParameter()
+    n_scales = luigi.IntParameter(default=1)
 
     # for now we only support n5 / zarr input labels
     def _check_input(self):
