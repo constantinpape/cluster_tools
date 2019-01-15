@@ -225,6 +225,8 @@ def _serialize_new_problem(problem_path,
                            n_threads, roi_begin, roi_end,
                            lifted_prefix):
 
+    assert len(new_costs) == len(new_uv_ids)
+    assert len(new_lifted_uvs) == len(new_lifted_costs)
     next_scale = scale + 1
     f_out = z5py.File(problem_path)
     g_out = f_out.require_group('s%i' % next_scale)
@@ -286,7 +288,7 @@ def _serialize_new_problem(problem_path,
     _serialize(g_out, 'costs', new_costs, dtype='float32')
     # serialize lifted uvs and costs
     _serialize(g_out, 'lifted_nh_%s' % lifted_prefix, new_lifted_uvs)
-    _serialize(g_out, 'lifted_costs_%s' % lifted_prefix, new_lifted_costs)
+    _serialize(g_out, 'lifted_costs_%s' % lifted_prefix, new_lifted_costs, dtype='float32')
 
     return n_new_edges
 
