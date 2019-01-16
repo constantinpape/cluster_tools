@@ -55,7 +55,9 @@ class SolveLiftedSubproblemsBase(luigi.Task):
 
     def run_impl(self):
         # get the global config and init configs
-        shebang, block_shape, roi_begin, roi_end = self.global_config_values()
+        # shebang, block_shape, roi_begin, roi_end = self.global_config_values()
+        shebang, block_shape, roi_begin, roi_end, block_list_path\
+            = self.global_config_values(with_block_list_path=True)
         self.init(shebang)
 
         with vu.file_reader(self.problem_path, 'r') as f:
@@ -82,7 +84,8 @@ class SolveLiftedSubproblemsBase(luigi.Task):
                                 compression='raw', dtype='uint64')
 
         if self.n_retries == 0:
-            block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+            block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end,
+                                             block_list_path)
         else:
             block_list = self.block_list
             self.clean_up_for_retry(block_list)
@@ -292,9 +295,11 @@ def solve_lifted_subproblems(job_id, config_path):
     nh_key = 's%i/lifted_nh_%s' % (scale, lifted_prefix)
     lifted_costs_key = 's%i/lifted_costs_%s' % (scale, lifted_prefix)
     ds = problem[nh_key]
+    fu.log("reading lifted uvs")
     ds.n_threads = n_threads
     lifted_uvs = ds[:]
 
+    fu.log("reading lifted costs")
     ds = problem[lifted_costs_key]
     ds.n_threads = n_threads
     lifted_costs = ds[:]
@@ -308,6 +313,7 @@ def solve_lifted_subproblems(job_id, config_path):
                                 'sub_graphs', 'block_')
     blocking = nt.blocking([0, 0, 0], shape, list(block_shape))
 
+    fu.log("start processsing %i blocks" % len(block_list))
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(_solve_block_problem,
                            block_id, graph, uv_ids, block_prefix,
