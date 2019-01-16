@@ -32,6 +32,8 @@ class MergeNodeLabelsBase(luigi.Task):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     max_overlap = luigi.BoolParameter(default=True)
+    ignore_label = luigi.IntParameter(default=None)
+    serialize_counts = luigi.BoolParameter(default=False)
     #
     dependency = luigi.TaskParameter()
 
@@ -67,16 +69,19 @@ class MergeNodeLabelsBase(luigi.Task):
                        'output_key': self.output_key,
                        'max_overlap': self.max_overlap,
                        'node_shape': node_shape,
-                       'node_chunks': node_chunks})
+                       'node_chunks': node_chunks,
+                       'ignore_label': self.ignore_label,
+                       'serialize_counts': self.serialize_counts})
 
         # prime and run the jobs
         prefix = 'max_ol' if self.max_overlap else 'all_ol'
-        self.prepare_jobs(self.max_jobs, block_list, config, prefix)
-        self.submit_jobs(self.max_jobs, prefix)
+        n_jobs = min(self.max_jobs, len(block_list))
+        self.prepare_jobs(n_jobs, block_list, config, prefix)
+        self.submit_jobs(n_jobs, prefix)
 
         # wait till jobs finish and check for job success
         self.wait_for_jobs(prefix)
-        self.check_jobs(self.max_jobs, prefix)
+        self.check_jobs(n_jobs, prefix)
 
     # part of the luigi API
     def output(self):
@@ -126,6 +131,8 @@ def merge_node_labels(job_id, config_path):
     block_list = config['block_list']
     node_shape = config['node_shape']
     node_chunks = config['node_chunks']
+    ignore_label = config['ignore_label']
+    serialize_counts = config['serialize_counts']
 
     blocking = nt.blocking([0], list(node_shape), list(node_chunks))
 
@@ -138,7 +145,9 @@ def merge_node_labels(job_id, config_path):
                                         os.path.join(output_path, output_key),
                                         max_overlap,
                                         labelBegin=label_begin, labelEnd=label_end,
-                                        numberOfThreads=n_threads)
+                                        numberOfThreads=n_threads,
+                                        ignoreLabel=ignore_label,
+                                        serialize_counts=serialize_counts)
     fu.log_job_success(job_id)
 
 

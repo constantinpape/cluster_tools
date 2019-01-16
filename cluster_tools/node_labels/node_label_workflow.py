@@ -17,6 +17,8 @@ class NodeLabelWorkflow(WorkflowBase):
     output_key = luigi.Parameter()
     prefix = luigi.Parameter(default='')
     max_overlap = luigi.BoolParameter(default=True)
+    ignore_label = luigi.IntParameter(default=None)
+    serialize_counts = luigi.BoolParameter(default=True)
 
     def requires(self):
         label_task = getattr(label_tasks,
@@ -31,18 +33,21 @@ class NodeLabelWorkflow(WorkflowBase):
                          input_path=self.input_path,
                          input_key=self.input_key,
                          output_path=self.output_path,
-                         output_key=tmp_key)
+                         output_key=tmp_key,
+                         ignore_label=self.ignore_label)
         merge_task = getattr(merge_tasks,
                              self._get_task_name('MergeNodeLabels'))
-        dep = merge_task(input_path=self.output_path,
+        dep = merge_task(max_jobs=self.max_jobs,
+                         tmp_folder=self.tmp_folder,
+                         config_dir=self.config_dir,
+                         dependency=dep,
+                         input_path=self.output_path,
                          input_key=tmp_key,
                          output_path=self.output_path,
                          output_key=self.output_key,
                          max_overlap=self.max_overlap,
-                         max_jobs=self.max_jobs,
-                         tmp_folder=self.tmp_folder,
-                         config_dir=self.config_dir,
-                         dependency=dep)
+                         ignore_label=self.ignore_label,
+                         serialize_counts=self.serialize_counts)
         return dep
 
     @staticmethod
