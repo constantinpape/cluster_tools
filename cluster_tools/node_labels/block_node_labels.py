@@ -198,7 +198,7 @@ def block_node_labels(job_id, config_path):
     # need to serialize the label max-id here for
     # the merge_node_labels task
     if job_id == 0:
-        with vu.file_reader(ws_path, 'r')
+        with vu.file_reader(ws_path, 'r'):
             try:
                 max_id = ds_ws.attrs['maxId']
             except KeyError:
