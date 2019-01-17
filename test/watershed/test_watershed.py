@@ -7,7 +7,6 @@ from shutil import rmtree
 
 import vigra
 import luigi
-import h5py
 import z5py
 
 try:
