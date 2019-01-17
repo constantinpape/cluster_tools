@@ -1,1 +1,1 @@
-from mws_worfklow import MwsWorkflow
+from .mws_workflow import MwsWorkflow

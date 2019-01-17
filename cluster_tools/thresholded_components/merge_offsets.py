@@ -29,6 +29,7 @@ class MergeOffsetsBase(luigi.Task):
 
     shape = luigi.ListParameter()
     save_path = luigi.Parameter()
+    save_prefix = luigi.Parameter(default='connected_components_offsets')
     # task that is required before running this task
     dependency = luigi.TaskParameter()
 
@@ -45,7 +46,8 @@ class MergeOffsetsBase(luigi.Task):
 
         config = self.get_task_config()
         config.update({'tmp_folder': self.tmp_folder, 'n_jobs': n_jobs,
-                       'save_path': self.save_path, 'n_blocks': len(block_list)})
+                       'save_path': self.save_path, 'n_blocks': len(block_list),
+                       'save_prefix': self.save_prefix})
 
         # we only have a single job to find the labeling
         self.prepare_jobs(1, None, config)
@@ -89,11 +91,12 @@ def merge_offsets(job_id, config_path):
     n_jobs = config['n_jobs']
     save_path = config['save_path']
     n_blocks = config['n_blocks']
+    save_prefix = config['save_prefix']
 
     offsets = {}
     for block_job_id in range(n_jobs):
         path = os.path.join(tmp_folder,
-                            'connected_components_offsets_%i.json' % block_job_id)
+                            '%s_%i.json' % (save_prefix, block_job_id))
         with open(path, 'r') as f:
             offsets.update(json.load(f))
         os.remove(path)

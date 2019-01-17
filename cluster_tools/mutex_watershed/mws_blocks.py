@@ -133,6 +133,9 @@ def _mws_block(block_id, blocking,
     aff_bb = (slice(None),) + bb
     affs = vu.normalize(ds_in[aff_bb])
 
+    affs[:3] *= -1
+    affs[:3] += 1
+
     seg = compute_mws_segmentation(affs, offsets,
                                    number_of_attractive_channels=3,
                                    strides=strides,
@@ -156,6 +159,9 @@ def _mws_block_with_mask(block_id, blocking,
     aff_bb = (slice(None),) + bb
     affs = vu.normalize(ds_in[aff_bb])
     bb_mask = mask[bb].astype('bool')
+
+    affs[:3] *= -1
+    affs[:3] += 1
 
     # TODO implement mws with mask
     seg = compute_mws_segmentation(affs, offsets,
@@ -183,7 +189,7 @@ def mws_blocks(job_id, config_path):
     block_shape = config['block_shape']
     block_list = config['block_list']
     tmp_folder = config['tmp_folder']
-    offset = config['offsets']
+    offsets = config['offsets']
 
     strides = config['strides']
     assert len(strides) == 3
