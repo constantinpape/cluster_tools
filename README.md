@@ -10,6 +10,7 @@ Supports Slurm, LSF and local execution, easy to extend to more scheduling syste
   - Distance Transform Watersheds
   - Region Adjacency Graph
   - Edge Feature Extraction from Boundary-or-Affinity Maps
+  - Agglomeration via (lifted) Multicut
 - [Mutex Watershed](https://link.springer.com/chapter/10.1007/978-3-030-01225-0_34)
 - Connected Components
 - Downscaling and Pyramids
@@ -18,3 +19,4 @@ Supports Slurm, LSF and local execution, easy to extend to more scheduling syste
   - [Bigcat Format](https://github.com/saalfeldlab/bigcat)
 - [Ilastik Prediction](https://www.ilastik.org/)
 - Skeletonization
+- (WIP) Distributed Neural Network Prediction (originally implemented [here](https://github.com/constantinpape/simpleference))
