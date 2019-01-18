@@ -89,39 +89,11 @@ class BlockFacesLSF(BlockFacesBase, LSFTask):
     pass
 
 
-def _process_face(blocking, block_id,
-                  axis, ds, offsets,
-                  empty_blocks):
-    ngb_id = blocking.getNeighborId(block_id, axis, False)
-    if ngb_id == -1 or ngb_id in empty_blocks:
-        return None
-    assert ngb_id > block_id, "%i, %i" % (ngb_id, block_id)
-
-    off_a = offsets[block_id]
-    off_b = offsets[ngb_id]
-
-    block_a = blocking.getBlock(block_id)
-    block_b = blocking.getBlock(ngb_id)
-    assert all(beg_a == beg_b for dim, beg_a, beg_b
-               in zip(range(3), block_a.begin, block_b.begin) if dim != axis)
-    assert all(end_a == end_b for dim, end_a, end_b
-               in zip(range(3), block_a.end, block_b.end) if dim != axis)
-    assert block_a.begin[axis] < block_b.begin[axis]
-
-    # compute the bounding box corresponiding to the face between the two blocks
-    face = tuple(slice(beg, end) if dim != axis else slice(end - 1, end + 1)
-                 for dim, beg, end in zip(range(3), block_a.begin, block_a.end))
-
+def _process_face(ds, offsets, face, face_a, face_b,
+                  block_a, block_b):
+    off_a = offsets[block_a]
+    off_b = offsets[block_b]
     seg = ds[face]
-    assert seg.shape[axis] == 2, "%i: %s" % (axis, str(seg.shape))
-
-    # get the local coordinates of faces in a and b
-    slice_a = slice(0, 1)
-    slice_b = slice(1, 2)
-    face_a = tuple(slice(None) if dim != axis else slice_a
-                   for dim in range(3))
-    face_b = tuple(slice(None) if dim != axis else slice_b
-                   for dim in range(3))
 
     # load the local faces
     labels_a = seg[face_a].squeeze()
@@ -152,14 +124,15 @@ def _process_faces(block_id, blocking, ds, offsets, empty_blocks):
         fu.log_block_success(block_id)
         return None
 
-    assignments = [_process_face(blocking, block_id,
-                                 axis, ds, offsets,
-                                 empty_blocks)
-                   for axis in range(3)]
-    assignments = [ass for ass in assignments
-                   if ass is not None]
+    assignments = [_process_face(ds, offsets, face,
+                                 face_a, face_b, block_a, block_b)
+                   for face, face_a, face_b, block_a, block_b
+                   in vu.iterate_faces(blocking, block_id,
+                                       return_only_lower=True,
+                                       empty_blocks=empty_blocks)]
+    assignments = [ass for ass in assignments if ass is not None]
 
-    # all assignments might be None, so we need to check for taht
+    # all assignments might be None, so we need to check for that
     if assignments:
         assignments = np.unique(np.concatenate(assignments, axis=0),
                                 axis=0)
@@ -204,7 +177,7 @@ def block_faces(job_id, config_path):
         assignments = np.unique(assignments, axis=0)
         assert assignments.max() < n_labels, "%i, %i" % (int(assignments.max()), n_labels)
 
-    save_path = os.path.join(tmp_folder, 'assignments_%i.npy' % job_id)
+    save_path = os.path.join(tmp_folder, 'cc_assignments_%i.npy' % job_id)
     np.save(save_path, assignments)
     fu.log_job_success(job_id)
 

@@ -69,6 +69,7 @@ class TestThresholdedComponents(unittest.TestCase):
         self.assertEqual(res.shape, expected.shape)
 
         # from cremi_tools.viewer.volumina import view
+        # print("view for mode:", mode)
         # view([inp, res, expected], ['input', 'result', 'expected'])
 
         if check_for_equality:
@@ -99,7 +100,7 @@ class TestThresholdedComponents(unittest.TestCase):
         self._test_mode('equal', threshold=0)
 
     @unittest.skip
-    def test_first_stage(self):
+    def _test_first_stage(self):
         from cluster_tools.thresholded_components.block_components import BlockComponentsLocal
         from cluster_tools.utils.task_utils import DummyTask
         task = BlockComponentsLocal(tmp_folder=self.tmp_folder,
@@ -116,7 +117,7 @@ class TestThresholdedComponents(unittest.TestCase):
         self._check_result('greater', check_for_equality=False)
 
     @unittest.skip
-    def test_second_stage(self):
+    def _test_second_stage(self):
         from cluster_tools.thresholded_components.block_components import BlockComponentsLocal
         from cluster_tools.thresholded_components.merge_offsets import MergeOffsetsLocal
         from cluster_tools.utils.task_utils import DummyTask

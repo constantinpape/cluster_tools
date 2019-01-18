@@ -31,6 +31,7 @@ class MergeAssignmentsBase(luigi.Task):
     output_key = luigi.Parameter()
     shape = luigi.ListParameter()
     offset_path = luigi.Parameter()
+    save_prefix = luigi.Parameter(default='cc_assignments')
     # task that is required before running this task
     dependency = luigi.TaskParameter()
 
@@ -50,7 +51,8 @@ class MergeAssignmentsBase(luigi.Task):
                        'output_key': self.output_key,
                        'tmp_folder': self.tmp_folder,
                        'n_jobs': n_jobs,
-                       'offset_path': self.offset_path})
+                       'offset_path': self.offset_path,
+                       'save_prefix': self.save_prefix})
 
         # we only have a single job to find the labeling
         self.prepare_jobs(1, None, config)
@@ -96,6 +98,7 @@ def merge_assignments(job_id, config_path):
     tmp_folder = config['tmp_folder']
     n_jobs = config['n_jobs']
     offset_path = config['offset_path']
+    save_prefix = config['save_prefix']
 
     with open(offset_path) as f:
         n_labels = int(json.load(f)['n_labels'])
@@ -103,7 +106,7 @@ def merge_assignments(job_id, config_path):
 
     # load and remove assignments
     assignments = [np.load(os.path.join(tmp_folder,
-                                        'assignments_%i.npy' % block_job_id))
+                                        '%s_%i.npy' % (save_prefix, block_job_id)))
                    for block_job_id in range(n_jobs)]
     # for block_job_id in range(n_jobs):
     #     os.remove(os.path.join(tmp_folder,
