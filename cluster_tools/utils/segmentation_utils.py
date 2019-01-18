@@ -9,6 +9,11 @@ import nifty.graph.opt.multicut as nmc
 import nifty.graph.opt.lifted_multicut as nlmc
 from vigra.analysis import relabelConsecutive
 
+try:
+    from affogato.segmentation import compute_mws_segmentation
+except ImportError:
+    compute_mws_segmentation = None
+
 
 # TODO logging
 def multicut_kernighan_lin(graph, costs, warmstart=True, time_limit=None, n_threads=1):
@@ -212,3 +217,16 @@ def key_to_lifted_agglomerator(key):
                   'fusion-moves': lifted_multicut_fusion_moves}
     assert key in agglo_dict, key
     return agglo_dict[key]
+
+
+def mutex_watershed(affs, offsets, strides,
+                    randomize_strides=False, mask=None):
+    assert compute_mws_segmentation is not None, "Need affogato for mutex watershed"
+    ndim = len(offsets[0])
+    affs[:ndim] *= -1
+    affs[:ndim] += 1
+    # TODO implement with mask
+    return compute_mws_segmentation(affs, offsets,
+                                    number_of_attractive_channels=ndim,
+                                    strides=strides, # mask=mask,
+                                    randomize_strides=randomize_strides)

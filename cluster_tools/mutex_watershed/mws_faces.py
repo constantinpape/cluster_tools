@@ -7,9 +7,9 @@ import json
 import luigi
 import numpy as np
 import nifty.tools as nt
+from affogato.segmentation import compute_mws_segmentation
 
 import cluster_tools.utils.volume_utils as vu
-import cluster_tools.utils.segmentation_utils as su
 import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
@@ -18,11 +18,11 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 # Block-wise mutex watershed tasks
 #
 
-class MwsBlocksBase(luigi.Task):
-    """ MwsBlocks base class
+class MwsFacesBase(luigi.Task):
+    """ MwsFaces base class
     """
 
-    task_name = 'mws_blocks'
+    task_name = 'mws_faces'
     src_file = os.path.abspath(__file__)
 
     input_path = luigi.Parameter()
@@ -30,6 +30,7 @@ class MwsBlocksBase(luigi.Task):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     offsets = luigi.ListParameter()
+    id_offsets_path = luigi.Parameter()
     mask_path = luigi.Parameter(default='')
     mask_key = luigi.Parameter(default='')
     dependency = luigi.TaskParameter()
@@ -67,25 +68,12 @@ class MwsBlocksBase(luigi.Task):
         config.update({'input_path': self.input_path, 'input_key': self.input_key,
                        'output_path': self.output_path, 'output_key': self.output_key,
                        'block_shape': block_shape, 'offsets': self.offsets,
-                       'tmp_folder': self.tmp_folder})
+                       'tmp_folder': self.tmp_folder, 'id_offsets_path': self.id_offsets_path})
 
         # check if we have a mask and add to the config if we do
         if self.mask_path != '':
             assert self.mask_key != ''
             config.update({'mask_path': self.mask_path, 'mask_key': self.mask_key})
-
-        # get chunks
-        chunks = config.pop('chunks', None)
-        if chunks is None:
-            chunks = tuple(bs // 2 for bs in block_shape)
-        # clip chunks
-        chunks = tuple(min(ch, sh) for ch, sh in zip(chunks, shape))
-
-        # make output dataset
-        compression = config.pop('compression', 'gzip')
-        with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key,  shape=shape, dtype='uint64',
-                              compression=compression, chunks=chunks)
 
         block_list = vu.blocks_in_volume(shape, block_shape,
                                          roi_begin, roi_end)
@@ -101,74 +89,82 @@ class MwsBlocksBase(luigi.Task):
         self.check_jobs(n_jobs)
 
 
-class MwsBlocksLocal(MwsBlocksBase, LocalTask):
+class MwsFacesLocal(MwsFacesBase, LocalTask):
     """
-    MwsBlocks on local machine
-    """
-    pass
-
-
-class MwsBlocksSlurm(MwsBlocksBase, SlurmTask):
-    """
-    MwsBlocks on slurm cluster
+    MwsFaces on local machine
     """
     pass
 
 
-class MwsBlocksLSF(MwsBlocksBase, LSFTask):
+class MwsFacesSlurm(MwsFacesBase, SlurmTask):
     """
-    MwsBlocks on lsf cluster
+    MwsFaces on slurm cluster
     """
     pass
 
 
-def _mws_block(block_id, blocking,
-               ds_in, ds_out, offsets,
-               strides, randomize_strides):
+class MwsFacesLSF(MwsFacesBase, LSFTask):
+    """
+    MwsFaces on lsf cluster
+    """
+    pass
+
+
+def _mws_face(ds_in, ds_out, offsets, id_offsets,
+              strides, randomize_strides,
+              face, face_a, face_b, block_a, block_b):
+    pass
+
+
+def _mws_faces(block_id, blocking,
+               ds_in, ds_out,
+               offsets, id_offsets,
+               strides, randomize_strides,
+               empty_blocks):
     fu.log("start processing block %i" % block_id)
-    block = blocking.getBlock(block_id)
-    bb = vu.block_to_bb(block)
+    if block_id in empty_blocks:
+        fu.log_block_success(block_id)
+        return None
 
-    aff_bb = (slice(None),) + bb
-    affs = vu.normalize(ds_in[aff_bb])
+    # compute appropriate halo from offsets
+    halo = []
+    assignments = [_mws_face(ds_in, ds_out, offsets, id_offsets
+                             strides, randomize_strides,
+                             face, face_a, face_b, block_a, block_b)
+                   for face, face_a, face_b, block_a, block_b
+                   in vu.iterate_faces(blocking, block_id,
+                                       return_only_lower=True,
+                                       empty_blocks=empty_blocks,
+                                       halo=halo)]
+    assignments = [ass for ass in assignments if ass is not None]
 
-    seg = su.mutex_watershed(affs, offsets, strides=strides,
-                             randomize_strides=randomize_strides)
-    ds_out[bb] = seg
-
-    # log block success
+    # all assignments might be None, so we need to check for that
+    if assignments:
+        assignments = np.unique(np.concatenate(assignments, axis=0),
+                                axis=0)
+    else:
+        assignments = None
     fu.log_block_success(block_id)
-    return int(seg.max()) + 1
+    return assignments
 
 
-def _mws_block_with_mask(block_id, blocking,
+def _mws_faces_with_mask(block_id, blocking,
                          ds_in, ds_out,
                          mask, offsets,
                          strides, randomize_strides):
     fu.log("start processing block %i" % block_id)
-    block = blocking.getBlock(block_id)
-    bb = vu.block_to_bb(block)
-
-    aff_bb = (slice(None),) + bb
-    affs = vu.normalize(ds_in[aff_bb])
-    bb_mask = mask[bb].astype('bool')
-
-    seg = su.mutex_watershed(affs, offsets, strides=strides, mask=bb_mask,
-                             randomize_strides=randomize_strides)
-    ds_out[bb] = seg
-
-    # log block success
     fu.log_block_success(block_id)
     return int(seg.max()) + 1
 
 
-def mws_blocks(job_id, config_path):
+def mws_faces(job_id, config_path):
 
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
 
     with open(config_path, 'r') as f:
         config = json.load(f)
+
     input_path = config['input_path']
     input_key = config['input_key']
     output_path = config['output_path']
@@ -177,6 +173,7 @@ def mws_blocks(job_id, config_path):
     block_list = config['block_list']
     tmp_folder = config['tmp_folder']
     offsets = config['offsets']
+    id_offsets_path = config['id_offsets_path']
 
     strides = config['strides']
     assert len(strides) == 3
@@ -186,6 +183,12 @@ def mws_blocks(job_id, config_path):
 
     mask_path = config.get('mask_path', '')
     mask_key = config.get('mask_key', '')
+
+    with open(id_offsets_path) as f:
+        id_offsets_dict = json.load(f)
+        id_offsets = id_offsets_dict['offsets']
+        empty_blocks = id_offsets_dict['empty_blocks']
+        n_labels = id_offsets_dict['n_labels']
 
     with vu.file_reader(input_path, 'r') as f_in,\
         vu.file_reader(output_path) as f_out:
@@ -202,23 +205,30 @@ def mws_blocks(job_id, config_path):
             # in memory (and we interpolate to get to the full volume)
             # if this does not hold need to change this code!
             mask = vu.load_mask(mask_path, mask_key, shape)
-            id_offsets = [_mws_block_with_mask(block_id, blocking,
-                                               ds_in, ds_out,
-                                               mask, offsets,
-                                               strides, randomize_strides)
-                          for block_id in block_list]
-
+            assignments = [_mws_faces_with_mask(block_id, blocking,
+                                                ds_in, ds_out, mask,
+                                                offsets, id_offsets,
+                                                strides, randomize_strides,
+                                                empty_blocks)
+                           for block_id in block_list]
         else:
-            id_offsets = [_mws_block(block_id, blocking,
-                                     ds_in, ds_out,
-                                     offsets, strides,
-                                     randomize_strides) for block_id in block_list]
+            assignments = [_mws_faces(block_id, blocking,
+                                      ds_in, ds_out,
+                                      offsets, id_offsets,
+                                      strides, randomize_strides,
+                                      empty_blocks)
+                           for block_id in block_list]
 
-    offset_dict = {block_id: off for block_id, off in zip(block_list, id_offsets)}
-    save_path = os.path.join(tmp_folder, 'mws_offsets_%i.json' % job_id)
-    fu.log("saving mws offsets to %s" % save_path)
-    with open(save_path, 'w') as f:
-        json.dump(offset_dict, f)
+    # filter out empty assignments
+    assignments = [ass for ass in assignments if ass is not None]
+    if assignments:
+        assignments = np.concatenate(assignments, axis=0)
+        assignments = np.unique(assignments, axis=0)
+        assert assignments.max() < n_labels, "%i, %i" % (int(assignments.max()), n_labels)
+
+    save_path = os.path.join(tmp_folder, 'mws_assignments_%i.npy' % job_id)
+    np.save(save_path, assignments)
+    fu.log("saving mws face assignments to %s" % save_path)
     fu.log_job_success(job_id)
 
 
@@ -226,4 +236,4 @@ if __name__ == '__main__':
     path = sys.argv[1]
     assert os.path.exists(path), path
     job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
-    mws_blocks(job_id, path)
+    mws_faces(job_id, path)
