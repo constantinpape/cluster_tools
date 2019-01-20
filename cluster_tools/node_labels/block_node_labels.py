@@ -137,8 +137,8 @@ def _labels_for_block(block_id, blocking,
                                         blocking.blockShape))
     ndist.computeAndSerializeLabelOverlaps(ws, labs,
                                            out_path, chunk_id,
-                                           withIgnoreLabel=False if ignoreLabel is None else True,
-                                           ignoreLabel=0 if ignoreLabel is None else ignoreLabel)
+                                           withIgnoreLabel=False if ignore_label is None else True,
+                                           ignoreLabel=0 if ignore_label is None else ignore_label)
     fu.log_block_success(block_id)
 
 

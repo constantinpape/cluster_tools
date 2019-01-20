@@ -143,11 +143,11 @@ def merge_node_labels(job_id, config_path):
         label_end = block.end[0]
         ndist.mergeAndSerializeOverlaps(os.path.join(input_path, input_key),
                                         os.path.join(output_path, output_key),
-                                        max_overlap,
+                                        max_overlap=max_overlap,
                                         labelBegin=label_begin, labelEnd=label_end,
                                         numberOfThreads=n_threads,
-                                        ignoreLabel=ignore_label,
-                                        serialize_counts=serialize_counts)
+                                        ignoreLabel=0 if ignore_label is None else ignore_label,
+                                        serializeCount=serialize_counts)
     fu.log_job_success(job_id)
 
 

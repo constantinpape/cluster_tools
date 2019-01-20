@@ -18,7 +18,7 @@ class NodeLabelWorkflow(WorkflowBase):
     prefix = luigi.Parameter(default='')
     max_overlap = luigi.BoolParameter(default=True)
     ignore_label = luigi.IntParameter(default=None)
-    serialize_counts = luigi.BoolParameter(default=True)
+    serialize_counts = luigi.BoolParameter(default=False)
 
     def requires(self):
         label_task = getattr(label_tasks,
