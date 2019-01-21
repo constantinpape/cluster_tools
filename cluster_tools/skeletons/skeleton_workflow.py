@@ -32,11 +32,11 @@ class SkeletonWorkflow(WorkflowBase):
                         skeleton_format=self.skeleton_format)
 
         # check if we have a target scale to upsample skeletons to
-        work_scale = self.target_scale if self.work_scale is None else self.work_scale
-        if work_scale == self.target_scale_scale:
+        target_scale = self.work_scale if self.target_scale is None else self.target_scale
+        if target_scale == self.work_scale:
             return dep
         else:
-            assert self.target_scale < self.work_scale
+            assert target_scale < self.work_scale
         upsample_task = getattr(upsample_tasks,
                                 self._get_task_name('UpsampleSkeletons'))
         in_key2 = '%s/s%i' % (self.input_prefix, self.target_scale)

@@ -110,8 +110,7 @@ def skeletonize_segment(seg_mask):
     return np.where(skeletonize_3d(seg_mask) == 255)
 
 
-def _skeletonize_to_volume(seg, ids, n_threads,
-                           output_path, output_key):
+def _skeletonize_to_volume(seg, ids, output_path, output_key, n_threads):
     with futures.ProcessPoolExecutor(n_threads) as pp:
         tasks = [pp.submit(skeletonize_segment, seg == seg_id) for seg_id in ids]
         results = {seg_id: t.result() for seg_id, t in zip(ids, tasks)}
