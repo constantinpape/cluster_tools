@@ -123,7 +123,7 @@ def solve_lifted_global(job_id, config_path):
 
     with vu.file_reader(problem_path) as f:
         group = f['s%i' % scale]
-        graph_group = group['graph']
+        graph_group = group['graph'] if scale == 0 else group['graph_lmc']
         ignore_label = graph_group.attrs['ignoreLabel']
 
         ds = graph_group['edges']
@@ -133,11 +133,11 @@ def solve_lifted_global(job_id, config_path):
         n_nodes = int(uv_ids.max()) + 1
 
         if scale > 0:
-            ds = group['node_labeling']
+            ds = group['node_labeling_lmc']
             ds.n_threads = n_threads
             initial_node_labeling = ds[:]
 
-        ds = group['costs']
+        ds = group['costs'] if scale == 0 else group['costs_lmc']
         ds.n_threads = n_threads
         costs = ds[:]
         assert len(costs) == n_edges, "%i, %i" (len(costs), n_edges)

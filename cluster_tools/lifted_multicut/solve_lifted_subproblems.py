@@ -73,7 +73,7 @@ class SolveLiftedSubproblemsBase(luigi.Task):
                        'block_shape': block_shape, 'lifted_prefix': self.lifted_prefix})
 
         # make output datasets
-        out_key = 's%i/sub_results' % self.scale
+        out_key = 's%i/sub_results_lmc' % self.scale
         with vu.file_reader(self.problem_path) as f:
             out = f.require_group(out_key)
             # NOTE, gzip may fail for very small inputs, so we use raw compression for now
@@ -270,7 +270,11 @@ def solve_lifted_subproblems(job_id, config_path):
     shape = problem.attrs['shape']
 
     # load the costs
-    costs_key = 's%i/costs' % scale
+    # NOTE we use different cost identifiers for multicut and lifted multicut
+    # in order to run both in the same n5-container.
+    # However, for scale level 0 the costs come from the CostsWorkflow and
+    # hence the identifier is identical
+    costs_key = 's%i/costs_lmc' % scale if scale > 0 else 's0/costs'
     fu.log("reading costs from path in problem: %s" % costs_key)
     ds = problem[costs_key]
     # FIXME n_threads > 1 sometimes segfaults here
@@ -278,7 +282,11 @@ def solve_lifted_subproblems(job_id, config_path):
     costs = ds[:]
 
     # load the graph
-    graph_key = 's%i/graph' % scale
+    # NOTE we use different graph identifiers for multicut and lifted multicut
+    # in order to run both in the same n5-container.
+    # However, for scale level 0 the graph comes from the GraphWorkflow and
+    # hence the identifier is identical
+    graph_key = 's%i/graph_lmc' % scale if scale > 0 else 's0/graph'
     fu.log("reading graph from path in problem: %s" % graph_key)
     # FIXME n_threads > 1 sometimes segfaults here
     graph = ndist.Graph(os.path.join(problem_path, graph_key),
@@ -310,12 +318,15 @@ def solve_lifted_subproblems(job_id, config_path):
     lifted_costs = ds[:]
 
     # the output group
-    out = problem['s%i/sub_results' % scale]
+    out = problem['s%i/sub_results_lmc' % scale]
 
-    # TODO this should be a n5 varlen dataset as well and
-    # then this is just another dataset in problem path
+    # NOTE we use different sub-graph identifiers for multicut and lifted multicut
+    # in order to run both in the same n5-container.
+    # However, for scale level 0 the sub-graphs come from the GraphWorkflow and
+    # are hence identical
+    sub_graph_identifier = 'sub_graphs' if scale == 0 else 'sub_graphs_lmc'
     block_prefix = os.path.join(problem_path, 's%i' % scale,
-                                'sub_graphs', 'block_')
+                                sub_graph_identifier, 'block_')
     blocking = nt.blocking([0, 0, 0], shape, list(block_shape))
 
     fu.log("start processsing %i blocks" % len(block_list))

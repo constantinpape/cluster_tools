@@ -118,7 +118,7 @@ class ReducedLiftedSolutionWorkflow(LiftedMulticutWorkflowBase):
         write_task = getattr(write_tasks,
                              self._get_task_name('Write'))
         dep = self._hierarchical_tasks(self.dependency, self.n_scales)
-        assignment_key = 's%i/node_labeling' % self.n_scales
+        assignment_key = 's%i/node_labeling_lmc' % self.n_scales
         return write_task(tmp_folder=self.tmp_folder,
                           max_jobs=self.max_jobs,
                           config_dir=self.config_dir,

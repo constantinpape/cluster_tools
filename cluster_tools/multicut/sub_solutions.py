@@ -44,6 +44,9 @@ class SubSolutionsBase(luigi.Task):
     # this roi must be inside of the global config's roi though.
     roi_begin = luigi.ListParameter(default=None)
     roi_end = luigi.ListParameter(default=None)
+    # identifiers for the sub-result and sub-graph sub-keys
+    sub_graph_identifier = luigi.Parameter('sub_graphs')
+    sub_result_identifier = luigi.Parameter('sub_results')
     dependency = luigi.TaskParameter()
 
     def requires(self):
@@ -93,7 +96,9 @@ class SubSolutionsBase(luigi.Task):
         config.update({'problem_path': self.problem_path, 'scale': self.scale,
                        'block_shape': block_shape,
                        'ws_path': self.ws_path, 'ws_key': self.ws_key,
-                       'output_path': self.output_path, 'output_key': self.output_key})
+                       'output_path': self.output_path, 'output_key': self.output_key,
+                       'sub_graph_identifier': self.sub_graph_identifier,
+                       'sub_result_identifier': self.sub_result_identifier})
 
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
@@ -225,6 +230,9 @@ def sub_solutions(job_id, config_path):
     ws_path = config['ws_path']
     ws_key = config['ws_key']
 
+    sub_result_identifer = config.get('sub_result_identifier', 'sub_results')
+    sub_graph_identifer = config.get('sub_graph_identifier', 'sub_graphs')
+
     fu.log("reading problem from %s" % problem_path)
     problem = z5py.N5File(problem_path)
     shape = problem.attrs['shape']
@@ -243,10 +251,10 @@ def sub_solutions(job_id, config_path):
         initial_node_labeling = None
 
     # read the sub results
-    ds_results = problem['s%i/sub_results/node_result' % scale]
+    ds_results = problem['s%i/%s/node_result' % (scale, sub_result_identifier)]
     # TODO should be varlen dataset
     fu.log("reading subresults")
-    block_node_prefix = os.path.join(problem_path, 's%i' % scale, 'sub_graphs', 'block_')
+    block_node_prefix = os.path.join(problem_path, 's%i' % scale, sub_graph_identifier, 'block_')
     block_list, block_results = _read_subresults(ds_results, block_node_prefix, blocking,
                                                  block_list, n_threads, initial_node_labeling)
 

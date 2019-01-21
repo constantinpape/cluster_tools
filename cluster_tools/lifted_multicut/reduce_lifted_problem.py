@@ -50,8 +50,8 @@ class ReduceLiftedProblemBase(luigi.Task):
 
     # TODO log reduction of lifted edges
     def _log_reduction(self):
-        key1 = 's%i/graph' % self.scale
-        key2 = 's%i/graph' % (self.scale + 1,)
+        key1 = 's0/graph' if self.scale == 0 else 's%i/graph_lmc' % self.scale
+        key2 = 's%i/graph_lmc' % (self.scale + 1,)
         with vu.file_reader(self.problem_path, 'r') as f:
             n_nodes = f[key1].attrs['numberOfNodes']
             n_edges = f[key1].attrs['numberOfEdges']
@@ -126,7 +126,7 @@ class ReduceLiftedProblemLSF(ReduceLiftedProblemBase, LSFTask):
 
 def _load_cut_edges(problem_path, scale, blocking,
                     block_list, n_threads):
-    key = 's%i/sub_results/cut_edge_ids' % scale
+    key = 's%i/sub_results_lmc/cut_edge_ids' % scale
     ds = z5py.File(problem_path)[key]
 
     def load_block_res(block_id):
@@ -230,10 +230,16 @@ def _serialize_new_problem(problem_path,
     next_scale = scale + 1
     f_out = z5py.File(problem_path)
     g_out = f_out.require_group('s%i' % next_scale)
-    g_out.require_group('sub_graphs')
 
-    block_in_prefix = os.path.join(problem_path, 's%i' % scale, 'sub_graphs', 'block_')
-    block_out_prefix = os.path.join(problem_path, 's%i' % next_scale, 'sub_graphs', 'block_')
+    # NOTE we use different sub-graph identifiers for multicut and lifted multicut
+    # in order to run both in the same n5-container.
+    # However, for scale level 0 the sub-graphs come from the GraphWorkflow and
+    # are hence identical
+    sub_graph_identifier = 'sub_graphs' if scale == 0 else 'sub_graphs_lmc'
+    g_out.require_group(sub_graph_identifier)
+
+    block_in_prefix = os.path.join(problem_path, 's%i' % scale, sub_graph_identifier, 'block_')
+    block_out_prefix = os.path.join(problem_path, 's%i' % next_scale, 'sub_graphs_lmc', 'block_')
 
     factor = 2**scale
     block_shape = [factor * bs for bs in initial_block_shape]
@@ -260,12 +266,12 @@ def _serialize_new_problem(problem_path,
 
     # serialize the multicut problem for the next scale level
 
-    graph_key = 's%i/graph' % scale
+    graph_key = 's%i/graph_lmc' % scale if scale > 0 else 's0/graph'
     with vu.file_reader(problem_path, 'r') as f:
         ignore_label = f[graph_key].attrs['ignoreLabel']
 
     n_new_edges = len(new_uv_ids)
-    graph_out = g_out.require_group('graph')
+    graph_out = g_out.require_group('graph_lmc')
     graph_out.attrs['ignoreLabel'] = ignore_label
     graph_out.attrs['numberOfNodes'] = n_new_nodes
     graph_out.attrs['numberOfEdges'] = n_new_edges
@@ -284,8 +290,8 @@ def _serialize_new_problem(problem_path,
 
     # serialize the new graph, the node labeling and the new costs
     _serialize(graph_out, 'edges', new_uv_ids)
-    _serialize(g_out, 'node_labeling', new_initial_node_labeling)
-    _serialize(g_out, 'costs', new_costs, dtype='float32')
+    _serialize(g_out, 'node_labeling_lmc', new_initial_node_labeling)
+    _serialize(g_out, 'costs_lmc', new_costs, dtype='float32')
     # serialize lifted uvs and costs
     _serialize(g_out, 'lifted_nh_%s' % lifted_prefix, new_lifted_uvs)
     _serialize(g_out, 'lifted_costs_%s' % lifted_prefix, new_lifted_costs, dtype='float32')
@@ -315,7 +321,12 @@ def reduce_lifted_problem(job_id, config_path):
     # get the number of nodes and uv-ids at this scale level
     # as well as the initial node labeling
     fu.log("read problem from %s" % problem_path)
-    graph_key = 's%i/graph' % scale
+
+    # NOTE we use different graph identifiers for multicut and lifted multicut
+    # in order to run both in the same n5-container.
+    # However, for scale level 0 the graph comes from the GraphWorkflow and
+    # hence the identifier is identical
+    graph_key = 's%i/graph_lmc' % scale if scale > 0 else 's0/graph'
     with vu.file_reader(problem_path, 'r') as f:
         shape = f.attrs['shape']
 
@@ -341,7 +352,11 @@ def reduce_lifted_problem(job_id, config_path):
         n_edges = len(uv_ids)
 
         # costs
-        costs_key = 's%i/costs' % scale
+        # NOTE we use different cost identifiers for multicut and lifted multicut
+        # in order to run both in the same n5-container.
+        # However, for scale level 0 the costs come from the CostsWorkflow and
+        # hence the identifier is identical
+        costs_key = 's%i/costs_lmc' % scale if scale > 0 else 's0/costs'
         ds = f[costs_key]
         ds.n_threads = n_threads
         costs = ds[:]
@@ -362,7 +377,7 @@ def reduce_lifted_problem(job_id, config_path):
         if scale == 0:
             initial_node_labeling = None
         else:
-            ds = f['s%i/node_labeling' % scale]
+            ds = f['s%i/node_labeling_lmc' % scale]
             ds.n_threads = n_threads
             initial_node_labeling = ds[:]
 
