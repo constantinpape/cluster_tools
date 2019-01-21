@@ -21,8 +21,6 @@ from cluster_tools.utils.task_utils import DummyTask
 #
 
 
-# TODO it would make more sense to output skeletons in swc format
-# or some other format
 class SkeletonizeBase(luigi.Task):
     """ Skeletonize base class
     """
@@ -36,14 +34,19 @@ class SkeletonizeBase(luigi.Task):
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
+    skeleton_format = luigi.Parameter(default='volume')
     dependency = luigi.TaskParameter(default=DummyTask())
+
+    # TODO if format is not 'volume', we could also support more than 1 job
+    formats = ('volume',)  # TODO support swc, n5-varlen ...
 
     def requires(self):
         return self.dependency
 
     def run_impl(self):
+        assert self.skeleton_format in self.formats, self.skeleton_format
         # get the global config and init configs
-        shebang, block_shape, roi_begin, roi_end = self.global_config_values()
+        shebang, block_shape, _, _ = self.global_config_values()
         self.init(shebang)
 
         # get shape, dtype and make block config
@@ -53,9 +56,9 @@ class SkeletonizeBase(luigi.Task):
         # load the skeletonize config
         task_config = self.get_task_config()
 
+        # TODO need to adapt this once we support different output formats
         # require output dataset
-        chunks = (25, 256, 256)
-        chunks = tuple(min(sh, ch) for sh, ch in zip(shape, chunks))
+        chunks = tuple(min(bs // 2, sh) for bs, sh in zip(block_shape, shape))
         with vu.file_reader(self.output_path) as f:
             f.require_dataset(self.output_key, shape=shape, chunks=chunks,
                               compression='gzip', dtype='uint64')
@@ -63,7 +66,8 @@ class SkeletonizeBase(luigi.Task):
         # update the config with input and output paths and keys
         # as well as block shape
         task_config.update({'input_path': self.input_path, 'input_key': self.input_key,
-                            'output_path': self.output_path, 'output_key': self.output_key})
+                            'output_path': self.output_path, 'output_key': self.output_key,
+                            'skeleton_format': self.skeleton_format})
 
         # prime and run the jobs
         n_jobs = 1
@@ -101,36 +105,19 @@ class SkeletonizeLSF(SkeletonizeBase, LSFTask):
 #
 
 
-def skeletonize_multithreaded(seg, ids, n_threads):
-    # allocate output
-    skel_vol = np.zeros_like(seg, dtype='uint64')
-
-    def skeletonize_id(seg_id):
-        seg_mask = seg == seg_id
-        # FIXME: does not lift the gil
-        skel = skeletonize_3d(seg_mask)
-        # skimage transforms to uint8 and assigns maxval to skelpoints
-        skel_vol[skel == 255] = seg_id
-
-    with futures.ThreadPoolExecutor(n_threads) as tp:
-        tasks = [tp.submit(skeletonize_id, seg_id)
-                 for seg_id in ids]
-        [t.result() for t in tasks]
-    return skel_vol
-
-
 def skeletonize_segment(seg_mask):
     # skimage transforms to uint8 and assigns maxval to skelpoints
     return np.where(skeletonize_3d(seg_mask) == 255)
 
 
-def skeletonize_mp(seg, ids, n_threads):
-    # allocate output
-    skel_vol = np.zeros_like(seg, dtype='uint64')
-
+def _skeletonize_to_volume(seg, ids, n_threads,
+                           output_path, output_key):
     with futures.ProcessPoolExecutor(n_threads) as pp:
         tasks = [pp.submit(skeletonize_segment, seg == seg_id) for seg_id in ids]
         results = {seg_id: t.result() for seg_id, t in zip(ids, tasks)}
+
+    # allocate output
+    skel_vol = np.zeros_like(seg, dtype='uint64')
 
     def write_res(seg_id):
         res = results[seg_id]
@@ -139,7 +126,12 @@ def skeletonize_mp(seg, ids, n_threads):
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(write_res, seg_id) for seg_id in ids]
         [t.result() for t in tasks]
-    return skel_vol
+
+    # write the output
+    with vu.file_reader(output_path) as f_out:
+        ds_out = f_out[output_key]
+        ds_out.n_threads = n_threads
+        ds_out[:] = skel_vol
 
 
 def skeletonize(job_id, config_path):
@@ -154,6 +146,7 @@ def skeletonize(job_id, config_path):
 
     output_path = config['output_path']
     output_key = config['output_key']
+    skeleton_format = config['skeleton_format']
 
     n_threads = config.get('threads_per_job', 1)
 
@@ -171,16 +164,14 @@ def skeletonize(job_id, config_path):
         ids = ids[1:]
 
     fu.log("computing skeletons for %i ids" % len(ids))
-    # FIXME this is too slow because skeletonize 3d does not lift gil
-    # skel_vol = skeletonize_multi_threaded(seg, ids, n_threads)
-    skel_vol = skeletonize_mp(seg, ids, n_threads)
-
-    # write the output
-    with vu.file_reader(output_path) as f_out:
-        ds_out = f_out[output_key]
-        ds_out.n_threads = n_threads
-        ds_out[:] = skel_vol
-
+    fu.log("writing output to format %s" % skeleton_format)
+    if skeleton_format == 'volume':
+        _skeletonize_to_volume(seg, ids, output_path, output_key, n_threads)
+    elif skeleton_format == 'swc':
+        # TODO implement
+        _skeletonize_to_swc(seg, ids, output_path, output_key, n_threads)
+    else:
+        raise RuntimeError("Format %s not supported" % skeleton_format)
 
     # log success
     fu.log_job_success(job_id)

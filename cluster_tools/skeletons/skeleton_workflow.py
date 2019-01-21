@@ -14,6 +14,7 @@ class SkeletonWorkflow(WorkflowBase):
     output_prefix = luigi.Parameter()
     work_scale = luigi.IntParameter()
     target_scale = luigi.IntParameter(default=None)
+    skeleton_format = luigi.Parameter(default='volume')
 
     def requires(self):
         skel_task = getattr(skeleton_tasks,
@@ -27,11 +28,12 @@ class SkeletonWorkflow(WorkflowBase):
                         input_path=self.input_path,
                         input_key=in_key1,
                         output_path=self.output_path,
-                        output_key=out_key1)
+                        output_key=out_key1,
+                        skeleton_format=self.skeleton_format)
 
-        # check if we have a target scale that skeletons should get
-        # upsampled to
-        if self.target_scale is None or self.target_scale == self.work_scale:
+        # check if we have a target scale to upsample skeletons to
+        work_scale = self.target_scale if self.work_scale is None else self.work_scale
+        if work_scale == self.target_scale_scale:
             return dep
         else:
             assert self.target_scale < self.work_scale
@@ -39,16 +41,16 @@ class SkeletonWorkflow(WorkflowBase):
                                 self._get_task_name('UpsampleSkeletons'))
         in_key2 = '%s/s%i' % (self.input_prefix, self.target_scale)
         out_key2 = '%s/s%i' % (self.output_prefix, self.target_scale)
-        t2 = upsample_task(tmp_folder=self.tmp_folder,
-                           max_jobs=self.max_jobs,
-                           config_dir=self.config_dir,
-                           dependency=t1,
-                           input_path=self.input_path,
-                           input_key=in_key2,
-                           skeleton_path=self.output_path,
-                           skeleton_key=out_key1,
-                           output_path=self.output_path,
-                           output_key=out_key2)
+        dep = upsample_task(tmp_folder=self.tmp_folder,
+                            max_jobs=self.max_jobs,
+                            config_dir=self.config_dir,
+                            dependency=dep,
+                            input_path=self.input_path,
+                            input_key=in_key2,
+                            skeleton_path=self.output_path,
+                            skeleton_key=out_key1,
+                            output_path=self.output_path,
+                            output_key=out_key2)
         return t2
 
     @staticmethod
