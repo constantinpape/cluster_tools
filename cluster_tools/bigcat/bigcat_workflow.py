@@ -100,7 +100,7 @@ class BigcatWorkflow(WorkflowBase):
                         config_dir=self.config_dir, dependency=self.dependency,
                         input_path=self.raw_path, input_key=self.raw_key,
                         output_path=self.output_path, output_key=raw_out_key,
-                        prefix='bigcat_raw')
+                        prefix='bigcat_raw', dtype='uint8')
 
         # copy segmentation to output path
         seg_out_key = 'volumes/labels/fragments'
@@ -108,7 +108,7 @@ class BigcatWorkflow(WorkflowBase):
                         config_dir=self.config_dir, dependency=dep,
                         input_path=self.seg_path, input_key=self.seg_key,
                         output_path=self.output_path, output_key=seg_out_key,
-                        prefix='bigcat_seg')
+                        prefix='bigcat_seg', dtype='uint64')
 
         # make fragment -> segment assignments
         label_out_key = 'fragment_segment_lut'
