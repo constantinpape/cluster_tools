@@ -121,7 +121,8 @@ def write_n5(ds, skel_id, skel_vol):
     data = [np.array([n_points]), coords.flatten()]
 
     # make edges
-    edges = [[u, v] for v in graph.neighbors(u) for u in range(1, n_points + 1) if u < v]
+    edges = [[u, v] for u in range(1, n_points + 1) for v in graph.neighbors(u) if u < v]
+    edges = np.array(edges)
     # substract 1 to change to zero-based indexing
     edges -= 1
     # add number of edges and edges to the serialization
