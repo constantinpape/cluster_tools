@@ -45,7 +45,8 @@ class SkeletonizeBase(luigi.Task):
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'resolution': None, 'size_filter': 10})
+        config.update({'resolution': None, 'size_filter': 10,
+                       'chunk_len': 1000})
         return config
 
     def requires(self):
@@ -71,8 +72,9 @@ class SkeletonizeBase(luigi.Task):
         os.makedirs(os.path.join(self.output_path, self.output_key),
                     exist_ok=True)
         # make the blocking
-        block_len = min(self.number_of_labels, 10000)
-        block_list = vu.blocks_in_volume((number_of_labels,), (block_len,))
+        block_len = min(self.number_of_labels, config.get('chunk_len', 1000))
+        block_list = vu.blocks_in_volume((self.number_of_labels,),
+                                         (block_len,))
         n_jobs = min(len(block_list), self.max_jobs)
         # update the config
         config.update({'number_of_labels': self.number_of_labels,
@@ -81,13 +83,14 @@ class SkeletonizeBase(luigi.Task):
 
     def _prepare_format_n5(self, config):
         # make the blocking
-        block_len = min(self.number_of_labels, 10000)
-        block_list = vu.blocks_in_volume((number_of_labels,), (block_len,))
+        block_len = min(self.number_of_labels, config.get('chunk_len', 1000))
+        block_list = vu.blocks_in_volume((self.number_of_labels,),
+                                         (block_len,))
         n_jobs = min(len(block_list), self.max_jobs)
         # require output dataset
-        with vu.file_reader(self.output_pat) as f:
-            f.require_dataset(self.output_key, shape=(number_of_labels,), chunks=(1,),
-                              compression='gzip', dtype='uint64')
+        with vu.file_reader(self.output_path) as f:
+            f.require_dataset(self.output_key, shape=(self.number_of_labels,),
+                              chunks=(1,), compression='gzip', dtype='uint64')
         # update the config
         config.update({'number_of_labels': self.number_of_labels,
                        'block_len': block_len})
@@ -110,9 +113,9 @@ class SkeletonizeBase(luigi.Task):
         if self.skeleton_format == 'volume':
             n_jobs, block_list = self._prepare_format_volume(block_shape)
         elif self.skeleton_format == 'swc':
-            n_jobs, block_list = self._prepare_format_swc(config)
+            n_jobs, block_list = self._prepare_format_swc(task_config)
         elif self.skeleton_format == 'n5':
-            n_jobs, block_list = self._prepare_format_n5(config)
+            n_jobs, block_list = self._prepare_format_n5(task_config)
 
         # prime and run the jobs
         self.prepare_jobs(n_jobs, block_list, task_config)
@@ -170,12 +173,13 @@ def skeletonize_segment(seg_mask):
     return np.where(skeletonize_3d(seg_mask) == 255)
 
 
-def _skeletonize_to_volume(seg, ids, output_path, output_key, config):
+def _skeletonize_to_volume(seg, output_path, output_key, config):
 
     size_filter = config.get('size_filter', 10)
     n_threads = config.get('threads_per_job', 1)
     ids = _get_ids(seg, size_filter)
 
+    fu.log("computing skeletons for %i ids" % len(ids))
     with futures.ProcessPoolExecutor(n_threads) as pp:
         tasks = [pp.submit(skeletonize_segment, seg == seg_id) for seg_id in ids]
         results = {seg_id: t.result() for seg_id, t in zip(ids, tasks)}
@@ -216,7 +220,7 @@ def _skeletonize_to_swc(seg, output_path, output_key, config):
     block_list = config['block_list']
     block_len = config['block_len']
     n_labels = config['number_of_labels']
-    blocking = nt.blocking([0,], [n_labels,] [block_len,])
+    blocking = nt.blocking([0], [n_labels], [block_len])
 
     resolution = config.get('resolution', None)
 
@@ -226,6 +230,9 @@ def _skeletonize_to_swc(seg, output_path, output_key, config):
         fu.log("start processing block %i" % block_id)
         block = blocking.getBlock(block_id)
         id_begin, id_end = block.begin[0], block.end[0]
+        # we don't compute the skeleton for id 0, which is reserved for the ignore label
+        id_begin = 1 if id_begin == 0 else id_begin
+
         for node_id in range(id_begin, id_end):
             out_path = os.path.join(output_folder, '%i.swc' % node_id)
             _skeletonize_id_to_swc(seg, node_id, size_filter, out_path, resolution)
@@ -250,7 +257,7 @@ def _skeletonize_to_n5(seg, output_path, output_key, config):
     block_list = config['block_list']
     block_len = config['block_len']
     n_labels = config['number_of_labels']
-    blocking = nt.blocking([0,], [n_labels,] [block_len,])
+    blocking = nt.blocking([0], [n_labels], [block_len])
 
     ds = vu.file_reader(output_path)[output_key]
     size_filter = config.get('size_filter', 10)
@@ -258,6 +265,9 @@ def _skeletonize_to_n5(seg, output_path, output_key, config):
         fu.log("start processing block %i" % block_id)
         block = blocking.getBlock(block_id)
         id_begin, id_end = block.begin[0], block.end[0]
+        # we don't compute the skeleton for id 0, which is reserved for the ignore label
+        id_begin = 1 if id_begin == 0 else id_begin
+
         for node_id in range(id_begin, id_end):
             _skeletonize_id_to_n5(seg, node_id, size_filter, ds)
         fu.log_block_success(block_id)
@@ -287,7 +297,6 @@ def skeletonize(job_id, config_path):
         ds_in.n_threads = n_threads
         seg = ds_in[:]
 
-    fu.log("computing skeletons for %i ids" % len(ids))
     fu.log("writing output in format %s" % skeleton_format)
     if skeleton_format == 'volume':
         _skeletonize_to_volume(seg, output_path, output_key, config)

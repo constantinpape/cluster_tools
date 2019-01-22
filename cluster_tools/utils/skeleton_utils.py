@@ -37,10 +37,15 @@ def write_swc(output_path, skel_vol, resolution=None, invert_coords=False):
         invert_coords [bool]: whether to invert the coordinates
             This may be useful because swc expects xyz, but input is zyx (default: False)
     """
+    # extract the skeleton graph
     # NOTE looks like skan function names are about to change in 0.8:
     # csr.numba_csgraph -> csr.csr_to_nbgraph
-    # extract the skeleton graph
-    pix_graph, coords, degrees = csr.skeleton_to_csgraph(skel_vol)
+
+    # this may fail for small skeletons with a value-error
+    try:
+        pix_graph, coords, degrees = csr.skeleton_to_csgraph(skel_vol)
+    except ValueError:
+        return
     graph = csr.numba_csgraph(pix_graph)
 
     # map coords to resolution and invert if necessary
@@ -61,15 +66,18 @@ def write_swc(output_path, skel_vol, resolution=None, invert_coords=False):
             #      coordinates
             #      radius (hard-coded to 0.0)
             #      parent id
-            ngbs = graph.neighbors(node)
+            ngbs = graph.neighbors(node_id)
+
             # only a single neighbor -> terminal node and no parent
-            if len(ngbs) == 1:
+            # also, for some reasons ngbs can be empty
+            if len(ngbs) in (0, 1):
                 parent = -1
             # two neighbors -> path node
             # more than two neighbors -> junction
             else:
                 # TODO can we just assume that we get consistent output if we set parent to min ???
                 parent = np.min(ngbs)
+            coord = coords[node_id]
             line = '%i 0 %f %f %f 0.0 %i \n' % (node_id, coord[0], coord[1], coord[2], parent)
             f.write(line)
 
@@ -111,7 +119,12 @@ def write_n5(ds, skel_id, skel_vol):
     # NOTE looks like skan function names are about to change in 0.8:
     # csr.numba_csgraph -> csr.csr_to_nbgraph
     # extract the skeleton graph
-    pix_graph, coords, degrees = csr.skeleton_to_csgraph(skel_vol)
+
+    # this may fail for small skeletons with a value-error
+    try:
+        pix_graph, coords, degrees = csr.skeleton_to_csgraph(skel_vol)
+    except ValueError:
+        return
     graph = csr.numba_csgraph(pix_graph)
 
     # skan-indexing is 1 based, so we need to get rid of first coordinate row
@@ -130,7 +143,7 @@ def write_n5(ds, skel_id, skel_vol):
     data.extend([np.array([n_edges]), edges.flatten()])
 
     data = np.concatenate(data, axis=0)
-    ds.write_chunk(skel_id, data.astype('uint64'), True)
+    ds.write_chunk((skel_id,), data.astype('uint64'), True)
 
 
 #

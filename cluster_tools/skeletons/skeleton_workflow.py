@@ -3,6 +3,7 @@ import json
 import luigi
 
 from ..cluster_tasks import WorkflowBase
+from ..utils import volume_utils as vu
 from . import skeletonize as skeleton_tasks
 from . import upsample_skeletons as upsample_tasks
 
