@@ -23,7 +23,7 @@ class SkeletonWorkflow(WorkflowBase):
                 max_id = f[in_key].attrs['maxId']
             except KeyError:
                 try:
-                    max_id = f[input_prefix].attrs['maxId']
+                    max_id = f[self.input_prefix].attrs['maxId']
                 except KeyError:
                     raise KeyError("Could not find maxId attribute in %s in keys %s or %s" % (self.input_path,
                                                                                               in_key, self.input_prefix))
