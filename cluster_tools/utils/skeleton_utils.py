@@ -1,5 +1,5 @@
 import os
-import csv
+# import csv
 import numpy as np
 from skan import csr
 
@@ -10,7 +10,7 @@ from skan import csr
 # swc parser
 #
 
-def read_swc():
+def read_swc(input_path, return_radius=False, return_type=False):
     """ Read skeleton stored in .swc
 
     For details on the swc format for skeletons, see
@@ -18,9 +18,42 @@ def read_swc():
     This function expects the swc catmaid flavor.
 
     Arguments:
-        TODO
+        input_path [str]: path to swc file
+        retun_radius [bool]: return radius measurements (default: False)
+        retun_type [bool]: return type variable (default: False)
     """
-    pass
+    ids, coords, parents = [], [], []
+    radii, types = [], []
+    # open file and get outputs
+    with open(input_path, 'r') as f:
+        for line in f:
+            line = line.rstrip()
+            # skip headers or break
+            if line.startswith('#') or line == '':
+                continue
+
+            # parse this line
+            values = line.split()
+            # extract coordinate, node-id and parent-id
+            coords.append([float(val) for val in values[2:5]])
+            ids.append(int(values[0]))
+            parents.append(int(values[-1]))
+
+            # extract radius
+            if return_radius:
+                radii.append(float(values[5]))
+
+            # extract type
+            if return_type:
+                types.append(int(values[1]))
+
+    if return_radius:
+        return ids, coords, parents, radii
+    if return_type:
+        return ids, coords, parents, types
+    if return_radius and return_type:
+        return ids, coords, parents, radii, types
+    return ids, coords, parents
 
 
 def write_swc(output_path, skel_vol, resolution=None, invert_coords=False):
@@ -43,7 +76,7 @@ def write_swc(output_path, skel_vol, resolution=None, invert_coords=False):
 
     # this may fail for small skeletons with a value-error
     try:
-        pix_graph, coords, degrees = csr.skeleton_to_csgraph(skel_vol)
+        pix_graph, coords, _ = csr.skeleton_to_csgraph(skel_vol)
     except ValueError:
         return
     graph = csr.numba_csgraph(pix_graph)
@@ -87,18 +120,38 @@ def write_swc(output_path, skel_vol, resolution=None, invert_coords=False):
 #
 
 
-def read_n5():
+def read_n5(ds, skel_id):
     """ Read skeleton stored in custom n5-based format
 
     The skeleton data is stored via varlen chunks: each chunk contains
     the data for one skeleton and stores:
-    [n_skel_points, coord_z_0, coord_y_0, coord_x_0, ..., coord_z_n, coord_y_n, coord_x_n,
-     n_edges, edge_0_u, edge_0_v, ..., edge_n_u, edge_n_v]
+    (n_skel_points, coord_z_0, coord_y_0, coord_x_0, ..., coord_z_n, coord_y_n, coord_x_n,
+     n_edges, edge_0_u, edge_0_v, ..., edge_n_u, edge_n_v)
 
     Arguments:
-        TODO
+        ds [z5py.Dataset]: input dataset
+        skel_id [int]: id of the object corresponding to the skeleton
     """
-    pass
+    # read data from chunk
+    data = ds.read_chunk((skel_id,))
+
+    # check if the chunk is empty
+    if data is None:
+        return None, None
+
+    # read number of points and coordinates
+    n_points = data[0]
+    offset = 1
+    coord_len = int(3 * n_points)
+    coords = data[offset:offset+coord_len].reshape((n_points, 3))
+    offset += coord_len
+    # read number of edges and edges
+    n_edges = data[offset]
+    offset += 1
+    edge_len = int(2 * n_edges)
+    assert len(data) == offset + edge_len, "%i, %i" % (len(data), offset + edge_len)
+    edges = data[offset:offset+edge_len].reshape((n_edges, 2))
+    return coords, edges
 
 
 def write_n5(ds, skel_id, skel_vol):
@@ -110,11 +163,9 @@ def write_n5(ds, skel_id, skel_vol):
      n_edges, edge_0_u, edge_0_v, ..., edge_n_u, edge_n_v]
 
     Arguments:
-        output_path [str]: output_path for swc file
+        ds [z5py.Dataset]: output dataset
+        skel_id [int]: id of the object corresponding to the skeleton
         skel_vol [np.ndarray]: binary volume containing the skeleton
-        resolution [list or float]: pixel resolution (default: None)
-        invert_coords [bool]: whether to invert the coordinates
-            This may be useful because swc expects xyz, but input is zyx (default: False)
     """
     # NOTE looks like skan function names are about to change in 0.8:
     # csr.numba_csgraph -> csr.csr_to_nbgraph
@@ -122,7 +173,7 @@ def write_n5(ds, skel_id, skel_vol):
 
     # this may fail for small skeletons with a value-error
     try:
-        pix_graph, coords, degrees = csr.skeleton_to_csgraph(skel_vol)
+        pix_graph, coords, _ = csr.skeleton_to_csgraph(skel_vol)
     except ValueError:
         return
     graph = csr.numba_csgraph(pix_graph)
