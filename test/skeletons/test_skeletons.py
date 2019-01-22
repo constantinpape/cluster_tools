@@ -50,7 +50,7 @@ class TestSkeletons(unittest.TestCase):
         with open(os.path.join(self.config_folder, 'global.config'), 'w') as f:
             json.dump(global_config, f)
 
-    def _tearDown(self):
+    def tearDown(self):
         try:
             rmtree(self.tmp_folder)
         except OSError:
@@ -102,7 +102,10 @@ class TestSkeletons(unittest.TestCase):
             # compute the expected result
             mask = seg == seg_id
             skel_vol = skeletonize_3d(mask)
-            pix_graph, coords_exp, _ = csr.skeleton_to_csgraph(skel_vol)
+            try:
+                pix_graph, coords_exp, _ = csr.skeleton_to_csgraph(skel_vol)
+            except ValueError:
+                continue
 
             # check coordinates
             coords_exp = coords_exp[1:].astype('uint64')
@@ -112,7 +115,8 @@ class TestSkeletons(unittest.TestCase):
             # check edges
             graph = csr.numba_csgraph(pix_graph)
             n_points = len(coords)
-            edges_exp = [[u, v] for u in range(1, n_points + 1) for v in graph.neighbors(u) if u < v]
+            edges_exp = [[u, v] for u in range(1, n_points + 1)
+                         for v in graph.neighbors(u) if u < v]
             edges_exp = np.array(edges_exp)
             edges_exp -= 1
             self.assertEqual(edges.shape, edges_exp.shape)
@@ -126,7 +130,6 @@ class TestSkeletons(unittest.TestCase):
             json.dump(config, f)
 
         self._run_skel_wf(format_='swc', max_jobs=8)
-
         # check output for correctness
         seg, ids = self.ids_and_seg()
         out_folder = os.path.join(self.output_path, self.output_prefix, 's0')
@@ -139,7 +142,10 @@ class TestSkeletons(unittest.TestCase):
             # compute the expected result
             mask = seg == seg_id
             skel_vol = skeletonize_3d(mask)
-            pix_graph, coords_exp, _ = csr.skeleton_to_csgraph(skel_vol)
+            try:
+                pix_graph, coords_exp, _ = csr.skeleton_to_csgraph(skel_vol)
+            except ValueError:
+                continue
 
             # check coordinates
             coords_exp = coords_exp[1:]

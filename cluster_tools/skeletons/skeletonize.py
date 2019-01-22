@@ -247,9 +247,12 @@ def _skeletonize_id_to_n5(seg, node_id, size_filter, ds):
     mask = seg == node_id
     if np.sum(mask) <= size_filter:
         return
+    # get the bounding box of the segment
+    # (extended by 1, because otherwise there might be some artifacts in coordinates)
     coords = np.where(mask)
-    min_coords = [np.min(coord) for coord in coords]
-    max_coords = [np.max(coord) for coord in coords]
+    min_coords = [max(np.min(coord) - 1, 0) for coord in coords]
+    max_coords = [min(np.max(coord) + 1, sh - 1)
+                  for coord, sh in zip(coords, mask.shape)]
     bb = tuple(slice(minc, maxc + 1)
                for minc, maxc in zip(min_coords, max_coords))
     skel_vol = skeletonize_3d(mask[bb])
