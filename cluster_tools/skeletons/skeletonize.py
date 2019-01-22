@@ -247,9 +247,15 @@ def _skeletonize_id_to_n5(seg, node_id, size_filter, ds):
     mask = seg == node_id
     if np.sum(mask) <= size_filter:
         return
-    skel_vol = skeletonize_3d(mask)
+    coords = np.where(mask)
+    min_coords = [np.min(coord) for coord in coords]
+    max_coords = [np.max(coord) for coord in coords]
+    bb = tuple(slice(minc, maxc + 1)
+               for minc, maxc in zip(min_coords, max_coords))
+    skel_vol = skeletonize_3d(mask[bb])
     # write skeleton as swc
-    su.write_n5(ds, node_id, skel_vol)
+    su.write_n5(ds, node_id, skel_vol,
+                coordinate_offset=min_coords)
 
 
 # not parallelized for now

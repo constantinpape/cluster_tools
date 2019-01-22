@@ -154,7 +154,7 @@ def read_n5(ds, skel_id):
     return coords, edges
 
 
-def write_n5(ds, skel_id, skel_vol):
+def write_n5(ds, skel_id, skel_vol, coordinate_offset=None):
     """ Write skeleton to custom n5-based format
 
     The skeleton data is stored via varlen chunks: each chunk contains
@@ -166,6 +166,7 @@ def write_n5(ds, skel_id, skel_vol):
         ds [z5py.Dataset]: output dataset
         skel_id [int]: id of the object corresponding to the skeleton
         skel_vol [np.ndarray]: binary volume containing the skeleton
+        coordinate_offset [listlike]: offset to coordinate (default: None)
     """
     # NOTE looks like skan function names are about to change in 0.8:
     # csr.numba_csgraph -> csr.csr_to_nbgraph
@@ -180,6 +181,11 @@ def write_n5(ds, skel_id, skel_vol):
 
     # skan-indexing is 1 based, so we need to get rid of first coordinate row
     coords = coords[1:]
+    # check if we have offset and add up if we do
+    if coordinate_offset is not None:
+        assert len(coordinate_offset) == 3
+        coords += coordinate_offset
+
     # make serialization for number of points and coordinates
     n_points = coords.shape[0]
     data = [np.array([n_points]), coords.flatten()]
