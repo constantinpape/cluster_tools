@@ -242,11 +242,37 @@ def load_mask(mask_path, mask_key, shape):
     return mask
 
 
+def get_face(blocking, block_id, ngb_id, axis, halo=[1, 1, 1]):
+    # get the two block coordinates
+    block_a = blocking.getBlock(block_id)
+    block_b = blocking.getBlock(ngb_id)
+    ndim = len(block_a.shape)
+    assert all(beg_a == beg_b for dim, beg_a, beg_b
+               in zip(range(ndim), block_a.begin, block_b.begin) if dim != axis),\
+        "begin_a: %s, begin_b: %s, axis: %i" % (str(block_a.begin), str(block_b.begin), axis)
+    assert all(end_a == end_b for dim, end_a, end_b
+               in zip(range(ndim), block_a.end, block_b.end) if dim != axis)
+    assert block_a.begin[axis] < block_b.begin[axis]
+
+    # compute the bounding box corresponiding to the face between the two blocks
+    face = tuple(slice(beg, end) if dim != axis else slice(end - ha, end + ha)
+                 for dim, beg, end, ha in zip(range(ndim), block_a.begin, block_a.end, halo))
+    # get the local coordinates of faces in a and b
+    slice_a = slice(0, halo[axis])
+    slice_b = slice(halo[axis], 2 * halo[axis])
+
+    face_a = tuple(slice(None) if dim != axis else slice_a
+                   for dim in range(ndim))
+    face_b = tuple(slice(None) if dim != axis else slice_b
+                   for dim in range(ndim))
+    return face, face_a, face_b
+
+
 def iterate_faces(blocking, block_id, halo=[1, 1, 1], return_only_lower=True,
                   empty_blocks=None):
 
     ndim = len(blocking.blockShape)
-    assert len(halo) == ndim
+    assert len(halo) == ndim, str(halo)
     directions = (False,) if return_only_lower else (False, True)
     # iterate over the axes and directions
     for axis in range(ndim):
@@ -258,24 +284,6 @@ def iterate_faces(blocking, block_id, halo=[1, 1, 1], return_only_lower=True,
             if empty_blocks is not None:
                 if ngb_id in empty_blocks:
                     continue
-            # get the two block coordinates
-            block_a = blocking.getBlock(block_id)
-            block_b = blocking.getBlock(ngb_id)
-            assert all(beg_a == beg_b for dim, beg_a, beg_b
-                       in zip(range(ndim), block_a.begin, block_b.begin) if dim != axis)
-            assert all(end_a == end_b for dim, end_a, end_b
-                       in zip(range(ndim), block_a.end, block_b.end) if dim != axis)
-            assert block_a.begin[axis] < block_b.begin[axis]
-
-            # compute the bounding box corresponiding to the face between the two blocks
-            face = tuple(slice(beg, end) if dim != axis else slice(end - ha, end + ha)
-                         for dim, beg, end, ha in zip(range(ndim), block_a.begin, block_a.end, halo))
-            # get the local coordinates of faces in a and b
-            slice_a = slice(0, 1)
-            slice_b = slice(1, 2)
-
-            face_a = tuple(slice(None) if dim != axis else slice_a
-                           for dim in range(ndim))
-            face_b = tuple(slice(None) if dim != axis else slice_b
-                           for dim in range(ndim))
+            face, face_a, face_b = get_face(blocking, block_id, ngb_id,
+                                            axis, halo)
             yield face, face_a, face_b, block_id, ngb_id

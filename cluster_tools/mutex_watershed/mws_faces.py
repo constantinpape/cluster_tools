@@ -7,10 +7,10 @@ import json
 import luigi
 import numpy as np
 import nifty.tools as nt
-from affogato.segmentation import compute_mws_segmentation
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
+import cluster_tools.utils.segmentation_utils as su
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
@@ -110,14 +110,92 @@ class MwsFacesLSF(MwsFacesBase, LSFTask):
     pass
 
 
-def _mws_face(ds_in, ds_out, offsets, id_offsets,
-              strides, randomize_strides,
+def _mws_face(ds_in, ds_seg, offsets, id_offsets,
+              strides, randomize_strides, blocking,
               face, face_a, face_b, block_a, block_b):
-    pass
+    # threshold for merging regions # TODO expose as parameter
+    merge_threshold = .95
+
+    # load the affinities and segmentation for this face
+    affs = ds_in[(slice(None),) + face]
+    seg = ds_seg[face]
+
+    # re-run mws from affs for the face
+    face_seg = su.mutex_watershed(affs, offsets, strides=strides,
+                                  randomize_strides=randomize_strides)
+    assert face_seg.shape == seg.shape
+
+    # offset the two parts of the existing segmentation
+    id_off_a = id_offsets[block_a]
+    id_off_b = id_offsets[block_b]
+    seg[face_a] += id_off_a
+    seg[face_b] += id_off_b
+
+    # get the tightended face and ids directly touching it
+    axis = np.where([fa != fb for fa, fb in zip(face_a, face_b)])[0]
+    assert len(axis) == 1, str(axis)
+    axis = axis[0]
+    face_a = tuple(fa if dim != axis else slice(fa.stop - 1, fa.stop)
+                   for dim, fa in enumerate(face_a))
+    face_b = tuple(fb if dim != axis else slice(fb.start, fb.start + 1)
+                   for dim, fb in enumerate(face_b))
+
+    ids_a = seg[face_a].flatten()
+    ids_b = seg[face_b].flatten()
+    assert ids_a.shape == ids_b.shape
+
+    # check if touching ids should be merged according to overlap criterion
+    merge_candidates = np.concatenate((ids_a[:, None], ids_b[:, None]), axis=1)
+    merge_candidates = np.unique(merge_candidates, axis=0)
+
+    assignments = []
+    # pre-compute sizes
+    _, face_seg_sizes = np.unique(face_seg, return_counts=True)
+
+    for merge_candidate in merge_candidates:
+        # get the area covered by both ids in the previous segmentation
+        id_mask = np.in1d(seg, merge_candidate).reshape(seg.shape)
+        # check ids of this area in new face segmentation
+        face_ids, id_sizes = np.unique(face_seg[id_mask], return_counts=True)
+        # if we find only a single new id, merge
+        if len(face_ids) == 1:
+            assignments.append(merge_candidate)
+            continue
+
+        id_a, id_b = merge_candidate
+        # or if one of the ids covers more than merge threshold
+        # (hard-coded at 95 % for now), merge as well
+
+        # find the complete area and the new id with maximum overlap
+        area = float(sum(id_sizes))
+        max_arg = np.argmax(id_sizes)
+        max_ol_id = face_ids[max_arg]
+
+        # compute ratios
+        # 1.) ratio of id_mask size vs. size of max_ol_id
+        ratio_1 = face_seg_sizes[max_ol_id] / area if face_seg_sizes[max_ol_id] < area else\
+            area / face_seg_sizes[max_ol_id]
+        # 2.) ratio restricted to face_a
+        size_a = np.sum(seg[face_a] == id_a)
+        size_1 = float(np.sum(face_seg[face_a] == max_ol_id))
+        ratio_2 = size_1 / size_a if size_1 < size_a else size_a / size_1
+        # 3.) ratio restricted to face_b
+        size_b = np.sum(seg[face_b] == id_b)
+        size_2 = float(np.sum(face_seg[face_b] == max_ol_id))
+        ratio_3 = size_2 / size_b if size_2 < size_b else size_b / size_2
+
+        if all(ratio > merge_threshold for ratio in (ratio_1, ratio_2, ratio_3)):
+            assignments.append(merge_candidate)
+
+    if assignments:
+        assignments = np.array(assignments)
+    else:
+        assignments = None
+    return assignments
 
 
 def _mws_faces(block_id, blocking,
-               ds_in, ds_out,
+               ds_in, ds_seg,
                offsets, id_offsets,
                strides, randomize_strides,
                empty_blocks):
@@ -126,10 +204,11 @@ def _mws_faces(block_id, blocking,
         fu.log_block_success(block_id)
         return None
 
-    # compute appropriate halo from offsets
-    halo = []
-    assignments = [_mws_face(ds_in, ds_out, offsets, id_offsets
-                             strides, randomize_strides,
+    # compute halo from offsets:
+    # max offset + 1 in each direction
+    halo = np.max(np.abs(offsets), axis=0) + 1
+    assignments = [_mws_face(ds_in, ds_seg, offsets, id_offsets,
+                             strides, randomize_strides, blocking,
                              face, face_a, face_b, block_a, block_b)
                    for face, face_a, face_b, block_a, block_b
                    in vu.iterate_faces(blocking, block_id,
@@ -149,7 +228,7 @@ def _mws_faces(block_id, blocking,
 
 
 def _mws_faces_with_mask(block_id, blocking,
-                         ds_in, ds_out,
+                         ds_in, ds_seg,
                          mask, offsets,
                          strides, randomize_strides):
     fu.log("start processing block %i" % block_id)
@@ -194,7 +273,7 @@ def mws_faces(job_id, config_path):
         vu.file_reader(output_path) as f_out:
 
         ds_in = f_in[input_key]
-        ds_out = f_out[output_key]
+        ds_seg = f_out[output_key]
 
         shape = ds_in.shape[1:]
         blocking = nt.blocking([0, 0, 0], list(shape), block_shape)
@@ -206,14 +285,14 @@ def mws_faces(job_id, config_path):
             # if this does not hold need to change this code!
             mask = vu.load_mask(mask_path, mask_key, shape)
             assignments = [_mws_faces_with_mask(block_id, blocking,
-                                                ds_in, ds_out, mask,
+                                                ds_in, ds_seg, mask,
                                                 offsets, id_offsets,
                                                 strides, randomize_strides,
                                                 empty_blocks)
                            for block_id in block_list]
         else:
             assignments = [_mws_faces(block_id, blocking,
-                                      ds_in, ds_out,
+                                      ds_in, ds_seg,
                                       offsets, id_offsets,
                                       strides, randomize_strides,
                                       empty_blocks)

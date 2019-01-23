@@ -20,7 +20,8 @@ except ImportError:
 
 # TODO tests with mask
 class TestMws(unittest.TestCase):
-    input_path = '/g/kreshuk/pape/Work/data/cluster_tools_test_data/test_data.n5'
+    # input_path = '/g/kreshuk/pape/Work/data/cluster_tools_test_data/test_data.n5'
+    input_path = '/home/cpape/Work/data/cluster_tools_test_data/test_data.n5'
     input_key = 'volumes/full_affinities'
     tmp_folder = './tmp'
     output_path = './tmp/mws.n5'
@@ -46,12 +47,13 @@ class TestMws(unittest.TestCase):
         self._mkdir(self.config_folder)
         config = MwsWorkflow.get_config()
         global_config = config['global']
-        global_config['shebang'] = '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python'
+        # global_config['shebang'] = '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python'
+        global_config['shebang'] = '#! /home/cpape/Work/software/conda/miniconda3/envs/main/bin/python'
         global_config['block_shape'] = [10, 256, 256]
         with open(os.path.join(self.config_folder, 'global.config'), 'w') as f:
             json.dump(global_config, f)
 
-    def tearDown(self):
+    def _tearDown(self):
         try:
             rmtree(self.tmp_folder)
         except OSError:
@@ -72,9 +74,16 @@ class TestMws(unittest.TestCase):
 
     def test_mws(self):
         max_jobs = 8
+        strides = [1, 10, 10]
+
         config = MwsWorkflow.get_config()['mws_blocks']
-        config['strides'] = [1, 10, 10]
+        config['strides'] = strides
         with open(os.path.join(self.config_folder, 'mws_blocks.config'), 'w') as f:
+            json.dump(config, f)
+
+        config = MwsWorkflow.get_config()['mws_faces']
+        config['strides'] = strides
+        with open(os.path.join(self.config_folder, 'mws_faces.config'), 'w') as f:
             json.dump(config, f)
 
         task = MwsWorkflow(tmp_folder=self.tmp_folder, config_dir=self.config_folder,

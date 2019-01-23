@@ -18,6 +18,7 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 # Block-wise mutex watershed tasks
 #
 
+# TODO add size-filter
 class MwsBlocksBase(luigi.Task):
     """ MwsBlocks base class
     """
@@ -38,7 +39,8 @@ class MwsBlocksBase(luigi.Task):
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'strides': [1, 1, 1], 'randomize_strides': False})
+        config.update({'strides': [1, 1, 1], 'randomize_strides': False,
+                       'size_filter': 25})
         return config
 
     def clean_up_for_retry(self, block_list):

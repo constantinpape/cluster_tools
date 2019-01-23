@@ -226,7 +226,9 @@ def mutex_watershed(affs, offsets, strides,
     affs[:ndim] *= -1
     affs[:ndim] += 1
     # TODO implement with mask
-    return compute_mws_segmentation(affs, offsets,
-                                    number_of_attractive_channels=ndim,
-                                    strides=strides, # mask=mask,
-                                    randomize_strides=randomize_strides)
+    seg = compute_mws_segmentation(affs, offsets,
+                                   number_of_attractive_channels=ndim,
+                                   strides=strides, # mask=mask,
+                                   randomize_strides=randomize_strides)
+    relabelConsecutive(seg, out=seg, start_label=1, keep_zeros=False)
+    return seg
