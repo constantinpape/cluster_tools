@@ -33,7 +33,10 @@ class MwsBlocksBase(luigi.Task):
     offsets = luigi.ListParameter()
     mask_path = luigi.Parameter(default='')
     mask_key = luigi.Parameter(default='')
+    halo = luigi.ListParameter()
+    serialize_overlap = luigi.BoolParameter(default=False)
     dependency = luigi.TaskParameter()
+
 
     @staticmethod
     def default_task_config():
@@ -69,7 +72,8 @@ class MwsBlocksBase(luigi.Task):
         config.update({'input_path': self.input_path, 'input_key': self.input_key,
                        'output_path': self.output_path, 'output_key': self.output_key,
                        'block_shape': block_shape, 'offsets': self.offsets,
-                       'tmp_folder': self.tmp_folder})
+                       'tmp_folder': self.tmp_folder, 'halo': self.halo,
+                       'serialize_overlap': self.serialize_overlap})
 
         # check if we have a mask and add to the config if we do
         if self.mask_path != '':
@@ -124,19 +128,46 @@ class MwsBlocksLSF(MwsBlocksBase, LSFTask):
     pass
 
 
+def _serialize_overlap(seg, blocking, block_id, halo, tmp_folder):
+    shape = seg.shape
+    for _, face_a, face_b, _, ngb_id in vu.iterate_faces(blocking, block_id,
+                                                         return_only_lower=False):
+        assert ngb_id != block_id
+        to_lower = ngb_id < block_id
+        axis = vu.faces_to_ovlp_axis(face_a, face_b)
+        ovlp_slice = slice(0, 2 * halo[axis]) if to_lower else\
+            slice(shape[axis] - 2 * halo[axis], shape[axis])
+        face = tuple(slice(1, sh - 1) if dim != axis else ovlp_slice
+                     for dim, sh in enumerate(shape))
+        ovlp = seg[face]
+        if np.sum(ovlp > 0) > 0:
+            save_path = os.path.join(tmp_folder,
+                                     'mws_overlaps/ovlp_%i_%i.npy' % (block_id, ngb_id))
+            np.save(save_path, ovlp)
+
+
 def _mws_block(block_id, blocking,
                ds_in, ds_out, offsets,
-               strides, randomize_strides):
+               strides, randomize_strides,
+               halo, serialize_overlap,
+               tmp_folder):
     fu.log("start processing block %i" % block_id)
-    block = blocking.getBlock(block_id)
-    bb = vu.block_to_bb(block)
 
-    aff_bb = (slice(None),) + bb
+    block = blocking.getBlockWithHalo(block_id, halo)
+    in_bb = vu.block_to_bb(block.outerBlock)
+
+    aff_bb = (slice(None),) + in_bb
     affs = vu.normalize(ds_in[aff_bb])
 
     seg = su.mutex_watershed(affs, offsets, strides=strides,
                              randomize_strides=randomize_strides)
-    ds_out[bb] = seg
+
+    out_bb = vu.block_to_bb(block.innerBlock)
+    local_bb = vu.block_to_bb(block.innerBlockLocal)
+    ds_out[out_bb] = seg[local_bb]
+
+    if serialize_overlap:
+        _serialize_overlap(seg, blocking, block_id, halo, tmp_folder)
 
     # log block success
     fu.log_block_success(block_id)
@@ -146,18 +177,27 @@ def _mws_block(block_id, blocking,
 def _mws_block_with_mask(block_id, blocking,
                          ds_in, ds_out,
                          mask, offsets,
-                         strides, randomize_strides):
+                         strides, randomize_strides,
+                         halo, serialize_overlap,
+                         tmp_folder):
     fu.log("start processing block %i" % block_id)
-    block = blocking.getBlock(block_id)
-    bb = vu.block_to_bb(block)
 
-    aff_bb = (slice(None),) + bb
+    block = blocking.getBlockWithHalo(block_id, halo)
+    in_bb = vu.block_to_bb(block.outerBlock)
+
+    aff_bb = (slice(None),) + in_bb
     affs = vu.normalize(ds_in[aff_bb])
-    bb_mask = mask[bb].astype('bool')
+    bb_mask = mask[in_bb].astype('bool')
 
     seg = su.mutex_watershed(affs, offsets, strides=strides, mask=bb_mask,
                              randomize_strides=randomize_strides)
-    ds_out[bb] = seg
+
+    out_bb = vu.block_to_bb(block.innerBlock)
+    local_bb = vu.block_to_bb(block.innerBlockLocal)
+    ds_out[out_bb] = seg[local_bb]
+
+    if serialize_overlap:
+        _serialize_overlap(seg, blocking, block_id, halo, tmp_folder)
 
     # log block success
     fu.log_block_success(block_id)
@@ -186,6 +226,9 @@ def mws_blocks(job_id, config_path):
     randomize_strides = config['randomize_strides']
     assert isinstance(randomize_strides, bool)
 
+    halo = config['halo']
+    serialize_overlap = config['serialize_overlap']
+
     mask_path = config.get('mask_path', '')
     mask_key = config.get('mask_key', '')
 
@@ -207,14 +250,16 @@ def mws_blocks(job_id, config_path):
             id_offsets = [_mws_block_with_mask(block_id, blocking,
                                                ds_in, ds_out,
                                                mask, offsets,
-                                               strides, randomize_strides)
+                                               strides, randomize_strides,
+                                               halo, serialize_overlap, tmp_folder)
                           for block_id in block_list]
 
         else:
             id_offsets = [_mws_block(block_id, blocking,
                                      ds_in, ds_out,
-                                     offsets, strides,
-                                     randomize_strides) for block_id in block_list]
+                                     offsets, strides, randomize_strides,
+                                     halo, serialize_overlap, tmp_folder)
+                          for block_id in block_list]
 
     offset_dict = {block_id: off for block_id, off in zip(block_list, id_offsets)}
     save_path = os.path.join(tmp_folder, 'mws_offsets_%i.json' % job_id)

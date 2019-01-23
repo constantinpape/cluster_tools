@@ -1,5 +1,6 @@
 import os
 import json
+import numpy as np
 import luigi
 
 from ..cluster_tasks import WorkflowBase
@@ -7,6 +8,7 @@ from ..utils import volume_utils as vu
 from ..utils import segmentation_utils as su
 from ..thresholded_components import merge_offsets as offset_tasks
 from ..thresholded_components import merge_assignments as merge_tasks
+from .. import stitching as stitch_tasks
 from .. import write as write_tasks
 
 from .import mws_blocks as block_tasks
@@ -19,13 +21,46 @@ class MwsWorkflow(WorkflowBase):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     offsets = luigi.ListParameter()
+    stitch_by_overlap = luigi.BoolParameter(default=True)
+    overlap_threshold = luigi.FloatParameter(default=.9)
+    halo = luigi.ListParameter(default=None)
     mask_path = luigi.Parameter(default='')
     mask_key = luigi.Parameter(default='')
 
-    def requires(self):
+    def _stitch_by_overlap(self, dep, id_offset_path, halo):
+        # merge block faces via max overlap
+        shape = vu.get_shape(self.input_path, self.input_key)[1:]
+        os.makedirs(os.path.join(self.tmp_folder, 'mws_overlaps'), exist_ok=True)
+        ovlp_prefix = 'mws_overlaps/ovlp'
+        stitch_task = getattr(stitch_tasks, self._get_task_name('StitchFaces'))
+        dep = stitch_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                          config_dir=self.config_dir, dependency=dep,
+                          shape=shape, overlap_prefix=ovlp_prefix,
+                          save_prefix='mws_assignments', offsets_path=id_offset_path,
+                          overlap_threshold=self.overlap_threshold, halo=halo)
+        return dep
 
+    # FIXME this does not work properly yet
+    def _stitch_by_mws(self, dep, id_offset_path):
+        # merge block faces via mutex ws
+        face_task = getattr(face_tasks, self._get_task_name('MwsFaces'))
+        dep = face_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                        config_dir=self.config_dir, dependency=dep,
+                        input_path=self.input_path, input_key=self.input_key,
+                        output_path=self.output_path, output_key=self.output_key,
+                        mask_path=self.mask_path, mask_key=self.mask_key,
+                        offsets=self.offsets, id_offsets_path=id_offset_path)
+        return dep
+
+    def requires(self):
         # make sure we have affogato
         assert su.compute_mws_segmentation is not None, "Need affogato for mutex watershed"
+
+        if self.halo is None:
+            halo = np.max(np.abs(self.offsets), axis=0) + 1
+            halo = halo.tolist()
+        else:
+            halo = self.halo
 
         block_task = getattr(block_tasks, self._get_task_name('MwsBlocks'))
         dep = block_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
@@ -33,7 +68,8 @@ class MwsWorkflow(WorkflowBase):
                          input_path=self.input_path, input_key=self.input_key,
                          output_path=self.output_path, output_key=self.output_key,
                          mask_path=self.mask_path, mask_key=self.mask_key,
-                         offsets=self.offsets)
+                         offsets=self.offsets, halo=halo,
+                         serialize_overlap=self.stitch_by_overlap)
 
         # merge id-offsets
         with vu.file_reader(self.input_path, 'r') as f:
@@ -47,15 +83,11 @@ class MwsWorkflow(WorkflowBase):
                           shape=shape, save_path=id_offset_path,
                           save_prefix='mws_offsets')
 
-        # merge block faces via mutex ws
-        face_task = getattr(face_tasks, self._get_task_name('MwsFaces'))
-        dep = face_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
-                        config_dir=self.config_dir, dependency=dep,
-                        input_path=self.input_path, input_key=self.input_key,
-                        output_path=self.output_path, output_key=self.output_key,
-                        mask_path=self.mask_path, mask_key=self.mask_key,
-                        offsets=self.offsets, id_offsets_path=id_offset_path)
-        # get assignments
+        # get assignments either by re-running mws on the overlaps
+        # or by stitching via biggest overlap
+        dep = self._stitch_by_overlap(dep, id_offset_path, halo) if self.stitch_by_overlap else\
+            self._stitch_by_mws(dep, id_offset_path)
+
         merge_task = getattr(merge_tasks,
                              self._get_task_name('MergeAssignments'))
         assignment_key = os.path.join(self.tmp_folder, 'assignments_mws')

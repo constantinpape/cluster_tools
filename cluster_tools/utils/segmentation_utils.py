@@ -225,10 +225,11 @@ def mutex_watershed(affs, offsets, strides,
     ndim = len(offsets[0])
     affs[:ndim] *= -1
     affs[:ndim] += 1
-    # TODO implement with mask
+    # from cremi_tools.viewer.volumina import view
+    # view([affs.transpose((1, 2, 3, 0)), mask.astype('uint32')])
     seg = compute_mws_segmentation(affs, offsets,
                                    number_of_attractive_channels=ndim,
-                                   strides=strides, # mask=mask,
+                                   strides=strides, mask=mask,
                                    randomize_strides=randomize_strides)
-    relabelConsecutive(seg, out=seg, start_label=1, keep_zeros=False)
+    relabelConsecutive(seg, out=seg, start_label=1, keep_zeros=mask is not None)
     return seg

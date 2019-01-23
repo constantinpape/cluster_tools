@@ -7,15 +7,15 @@ from shutil import rmtree
 
 import luigi
 import z5py
-
-from affogato.segmentation import compute_mws_segmentation
-from cremi_tools.viewer.volumina import view
+from sklearn.metrics import adjusted_rand_score
 
 try:
     from cluster_tools.mutex_watershed import MwsWorkflow
+    from cluster_tools.utils import segmentation_utils as su
 except ImportError:
     sys.path.append('../..')
     from cluster_tools.mutex_watershed import MwsWorkflow
+    from cluster_tools.utils import segmentation_utils as su
 
 
 # TODO tests with mask
@@ -34,6 +34,7 @@ class TestMws(unittest.TestCase):
                     [0, -9, -9], [0, 9, -9], [0, -9, -4],
                     [0, -4, -9], [0, 4, -9], [0, 9, -4],
                     [0, -27, 0], [0, 0, -27]]
+    strides = [1, 10, 10]
 
     @staticmethod
     def _mkdir(dir_):
@@ -53,7 +54,7 @@ class TestMws(unittest.TestCase):
         with open(os.path.join(self.config_folder, 'global.config'), 'w') as f:
             json.dump(global_config, f)
 
-    def _tearDown(self):
+    def tearDown(self):
         try:
             rmtree(self.tmp_folder)
         except OSError:
@@ -64,33 +65,38 @@ class TestMws(unittest.TestCase):
             shape = f[self.input_key].shape[1:]
             affs = f[self.input_key][:3]
 
-        # TODO load affs and compute expected mws
         with z5py.File(self.output_path) as f:
-            res = f[self.output_key][:].astype('uint32')
-
-        view([affs.transpose((1, 2, 3, 0)), res])
+            res = f[self.output_key][:]
         self.assertEqual(res.shape, shape)
-        # TODO compare to expected mws
+
+        # load affs and compare
+        with z5py.File(self.input_path) as f:
+            ds = f[self.input_key]
+            ds.n_threads = 8
+            affs = ds[:]
+
+        exp = su.mutex_watershed(affs, self.isbi_offsets, self.strides)
+
+        score = adjusted_rand_score(exp.ravel(), res.ravel())
+        self.assertLess(1. - score, .15)
+
+        # from cremi_tools.viewer.volumina import view
+        # view([affs.transpose((1, 2, 3, 0)), res, exp],
+        #      ['affs', 'result', 'expected'])
 
     def test_mws(self):
         max_jobs = 8
-        strides = [1, 10, 10]
 
         config = MwsWorkflow.get_config()['mws_blocks']
-        config['strides'] = strides
+        config['strides'] = self.strides
         with open(os.path.join(self.config_folder, 'mws_blocks.config'), 'w') as f:
-            json.dump(config, f)
-
-        config = MwsWorkflow.get_config()['mws_faces']
-        config['strides'] = strides
-        with open(os.path.join(self.config_folder, 'mws_faces.config'), 'w') as f:
             json.dump(config, f)
 
         task = MwsWorkflow(tmp_folder=self.tmp_folder, config_dir=self.config_folder,
                            max_jobs=max_jobs, target=self.target,
                            input_path=self.input_path, input_key=self.input_key,
                            output_path=self.output_path, output_key=self.output_key,
-                           offsets=self.isbi_offsets)
+                           offsets=self.isbi_offsets, overlap_threshold=.75)
         ret = luigi.build([task], local_scheduler=True)
         self.assertTrue(ret)
         self._check_result()

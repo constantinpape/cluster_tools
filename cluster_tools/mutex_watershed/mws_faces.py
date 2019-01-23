@@ -120,11 +120,6 @@ def _mws_face(ds_in, ds_seg, offsets, id_offsets,
     affs = ds_in[(slice(None),) + face]
     seg = ds_seg[face]
 
-    # re-run mws from affs for the face
-    # face_seg = su.mutex_watershed(affs, offsets, strides=strides,
-    #                               randomize_strides=randomize_strides)
-    # assert face_seg.shape == seg.shape
-
     # offset the two parts of the existing segmentation
     id_off_a = id_offsets[block_a]
     id_off_b = id_offsets[block_b]
@@ -132,9 +127,7 @@ def _mws_face(ds_in, ds_seg, offsets, id_offsets,
     seg[face_b] += id_off_b
 
     # get the tightended face and ids directly touching it
-    axis = np.where([fa != fb for fa, fb in zip(face_a, face_b)])[0]
-    assert len(axis) == 1, str(axis)
-    axis = axis[0]
+    axis = vu.faces_to_ovlp_axis(face_a, face_b)
     face_a = tuple(fa if dim != axis else slice(fa.stop - 1, fa.stop)
                    for dim, fa in enumerate(face_a))
     face_b = tuple(fb if dim != axis else slice(fb.start, fb.start + 1)
@@ -163,40 +156,8 @@ def _mws_face(ds_in, ds_seg, offsets, id_offsets,
              continue
         area = float(sum(new_sizes))
         ratios = [nsize / area for nsize in new_sizes]
-        if any(ratio > merge_threshold):
+        if any(ratio > merge_threshold for ratio in ratios):
              assignments.append(merge_candidate)
-
-        # # check ids of this area in new face segmentation
-        # face_ids, id_sizes = np.unique(face_seg[id_mask], return_counts=True)
-        # # if we find only a single new id, merge
-        # if len(face_ids) == 1:
-        #     assignments.append(merge_candidate)
-        #     continue
-
-        # id_a, id_b = merge_candidate
-        # # or if one of the ids covers more than merge threshold
-        # # (hard-coded at 95 % for now), merge as well
-
-        # # find the complete area and the new id with maximum overlap
-        # area = float(sum(id_sizes))
-        # max_arg = np.argmax(id_sizes)
-        # max_ol_id = face_ids[max_arg]
-
-        # # compute ratios
-        # # 1.) ratio of id_mask size vs. size of max_ol_id
-        # ratio_1 = face_seg_sizes[max_ol_id] / area if face_seg_sizes[max_ol_id] < area else\
-        #     area / face_seg_sizes[max_ol_id]
-        # # 2.) ratio restricted to face_a
-        # size_a = np.sum(seg[face_a] == id_a)
-        # size_1 = float(np.sum(face_seg[face_a] == max_ol_id))
-        # ratio_2 = size_1 / size_a if size_1 < size_a else size_a / size_1
-        # # 3.) ratio restricted to face_b
-        # size_b = np.sum(seg[face_b] == id_b)
-        # size_2 = float(np.sum(face_seg[face_b] == max_ol_id))
-        # ratio_3 = size_2 / size_b if size_2 < size_b else size_b / size_2
-
-        # if all(ratio > merge_threshold for ratio in (ratio_1, ratio_2, ratio_3)):
-        #     assignments.append(merge_candidate)
 
     if assignments:
         assignments = np.array(assignments)
