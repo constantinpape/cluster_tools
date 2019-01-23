@@ -247,12 +247,17 @@ def get_face(blocking, block_id, ngb_id, axis, halo=[1, 1, 1]):
     block_a = blocking.getBlock(block_id)
     block_b = blocking.getBlock(ngb_id)
     ndim = len(block_a.shape)
+
+    # validate exhaustively, because a lot of errors may happen here ...
+    # validate the non-overlapping axes
     assert all(beg_a == beg_b for dim, beg_a, beg_b
                in zip(range(ndim), block_a.begin, block_b.begin) if dim != axis),\
         "begin_a: %s, begin_b: %s, axis: %i" % (str(block_a.begin), str(block_b.begin), axis)
     assert all(end_a == end_b for dim, end_a, end_b
                in zip(range(ndim), block_a.end, block_b.end) if dim != axis)
-    assert block_a.begin[axis] < block_b.begin[axis]
+    # validate the overlapping axis
+    assert block_a.begin[axis] != block_b.begin[axis]
+    assert block_a.end[axis] != block_b.end[axis]
 
     # compute the bounding box corresponiding to the face between the two blocks
     face = tuple(slice(beg, end) if dim != axis else slice(end - ha, end + ha)
@@ -287,3 +292,9 @@ def iterate_faces(blocking, block_id, halo=[1, 1, 1], return_only_lower=True,
             face, face_a, face_b = get_face(blocking, block_id, ngb_id,
                                             axis, halo)
             yield face, face_a, face_b, block_id, ngb_id
+
+
+def faces_to_ovlp_axis(face_a, face_b):
+    axis = np.where([fa != fb for fa, fb in zip(face_a, face_b)])[0]
+    assert len(axis) == 1, str(axis)
+    return axis[0]

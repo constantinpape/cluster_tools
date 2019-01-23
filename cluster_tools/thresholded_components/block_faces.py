@@ -15,7 +15,7 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
 #
-# Find Labeling Tasks
+# Block Face Tasks
 #
 
 class BlockFacesBase(luigi.Task):
@@ -41,11 +41,6 @@ class BlockFacesBase(luigi.Task):
 
         # get shape and make block config
         shape = vu.get_shape(self.input_path, self.input_key)
-
-        block_list = vu.blocks_in_volume(shape, block_shape,
-                                         roi_begin, roi_end)
-        n_jobs = min(len(block_list), self.max_jobs)
-
         config = self.get_task_config()
         config.update({'input_path': self.input_path,
                        'input_key': self.input_key,
