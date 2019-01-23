@@ -7,6 +7,7 @@ import fileinput
 from concurrent import futures
 from subprocess import call, check_output, CalledProcessError
 from datetime import datetime, timedelta
+from multiprocessing import cpu_count
 
 import numpy as np
 import luigi
@@ -446,14 +447,12 @@ class SlurmTask(BaseClusterTask):
 
 class LocalTask(BaseClusterTask):
     """
-    Task for running tasks locally for debugging /
-    test purposes
+    Task for running tasks locally via sub-processes
     """
-    # don't want to start to many local jobs, because
+    # don't want to start too many local jobs, because
     # this is usually a sign that forgot to set the target
     # to slurm or lsf
-    # TODO could also set this from cpu count
-    max_local_jobs = 12
+    max_local_jobs = cpu_count()
 
     def prepare_jobs(self, n_jobs, block_list, config,
                      job_prefix=None, consecutive_blocks=False):
@@ -473,11 +472,13 @@ class LocalTask(BaseClusterTask):
         err_file = os.path.join(self.tmp_folder, 'error_logs',
                                 '%s_%i.err' % (job_name, job_id))
         with open(log_file, 'w') as f_out, open(err_file, 'w') as f_err:
+            assert os.path.exists(script_path), script_path
             call([script_path, config_file], stdout=f_out, stderr=f_err)
 
     def submit_jobs(self, n_jobs, job_prefix=None):
-        assert n_jobs < self.max_local_jobs,\
-            "Trying to submit %i local jobs, did you forget to set the target to slurm or lsf?" % n_jobs
+        assert n_jobs <= self.max_local_jobs,\
+            "Trying to submit %i local jobs but limit is %i. Did you forget to set the target to slurm or lsf?" % (n_jobs,
+                                                                                                                   self.max_local_jobs)
         with futures.ProcessPoolExecutor(n_jobs) as pp:
             tasks = [pp.submit(self._submit, job_id, job_prefix) for job_id in range(n_jobs)]
             [t.result() for t in tasks]
