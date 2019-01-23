@@ -114,16 +114,16 @@ def _mws_face(ds_in, ds_seg, offsets, id_offsets,
               strides, randomize_strides, blocking,
               face, face_a, face_b, block_a, block_b):
     # threshold for merging regions # TODO expose as parameter
-    merge_threshold = .95
+    merge_threshold = .98
 
     # load the affinities and segmentation for this face
     affs = ds_in[(slice(None),) + face]
     seg = ds_seg[face]
 
     # re-run mws from affs for the face
-    face_seg = su.mutex_watershed(affs, offsets, strides=strides,
-                                  randomize_strides=randomize_strides)
-    assert face_seg.shape == seg.shape
+    # face_seg = su.mutex_watershed(affs, offsets, strides=strides,
+    #                               randomize_strides=randomize_strides)
+    # assert face_seg.shape == seg.shape
 
     # offset the two parts of the existing segmentation
     id_off_a = id_offsets[block_a]
@@ -149,43 +149,54 @@ def _mws_face(ds_in, ds_seg, offsets, id_offsets,
     merge_candidates = np.unique(merge_candidates, axis=0)
 
     assignments = []
-    # pre-compute sizes
-    _, face_seg_sizes = np.unique(face_seg, return_counts=True)
-
     for merge_candidate in merge_candidates:
-        # get the area covered by both ids in the previous segmentation
         id_mask = np.in1d(seg, merge_candidate).reshape(seg.shape)
-        # check ids of this area in new face segmentation
-        face_ids, id_sizes = np.unique(face_seg[id_mask], return_counts=True)
-        # if we find only a single new id, merge
-        if len(face_ids) == 1:
-            assignments.append(merge_candidate)
-            continue
+        # compute the mws segmentation restricted to the two candidate ids
+        # NOTE need to copy here, because mws inverts some affinities internally
+        candidate_seg = su.mutex_watershed(affs.copy(), offsets, strides,
+                                           randomize_strides, mask=id_mask)
+        # if we have only a single new segment, or a segment that covers more
+        # than the merge_threshold, merge the two candidate ids
+        new_ids, new_sizes = np.unique(candidate_seg[id_mask], return_counts=True)
+        if len(new_ids) == 1:
+             assignments.append(merge_candidate)
+             continue
+        area = float(sum(new_sizes))
+        ratios = [nsize / area for nsize in new_sizes]
+        if any(ratio > merge_threshold):
+             assignments.append(merge_candidate)
 
-        id_a, id_b = merge_candidate
-        # or if one of the ids covers more than merge threshold
-        # (hard-coded at 95 % for now), merge as well
+        # # check ids of this area in new face segmentation
+        # face_ids, id_sizes = np.unique(face_seg[id_mask], return_counts=True)
+        # # if we find only a single new id, merge
+        # if len(face_ids) == 1:
+        #     assignments.append(merge_candidate)
+        #     continue
 
-        # find the complete area and the new id with maximum overlap
-        area = float(sum(id_sizes))
-        max_arg = np.argmax(id_sizes)
-        max_ol_id = face_ids[max_arg]
+        # id_a, id_b = merge_candidate
+        # # or if one of the ids covers more than merge threshold
+        # # (hard-coded at 95 % for now), merge as well
 
-        # compute ratios
-        # 1.) ratio of id_mask size vs. size of max_ol_id
-        ratio_1 = face_seg_sizes[max_ol_id] / area if face_seg_sizes[max_ol_id] < area else\
-            area / face_seg_sizes[max_ol_id]
-        # 2.) ratio restricted to face_a
-        size_a = np.sum(seg[face_a] == id_a)
-        size_1 = float(np.sum(face_seg[face_a] == max_ol_id))
-        ratio_2 = size_1 / size_a if size_1 < size_a else size_a / size_1
-        # 3.) ratio restricted to face_b
-        size_b = np.sum(seg[face_b] == id_b)
-        size_2 = float(np.sum(face_seg[face_b] == max_ol_id))
-        ratio_3 = size_2 / size_b if size_2 < size_b else size_b / size_2
+        # # find the complete area and the new id with maximum overlap
+        # area = float(sum(id_sizes))
+        # max_arg = np.argmax(id_sizes)
+        # max_ol_id = face_ids[max_arg]
 
-        if all(ratio > merge_threshold for ratio in (ratio_1, ratio_2, ratio_3)):
-            assignments.append(merge_candidate)
+        # # compute ratios
+        # # 1.) ratio of id_mask size vs. size of max_ol_id
+        # ratio_1 = face_seg_sizes[max_ol_id] / area if face_seg_sizes[max_ol_id] < area else\
+        #     area / face_seg_sizes[max_ol_id]
+        # # 2.) ratio restricted to face_a
+        # size_a = np.sum(seg[face_a] == id_a)
+        # size_1 = float(np.sum(face_seg[face_a] == max_ol_id))
+        # ratio_2 = size_1 / size_a if size_1 < size_a else size_a / size_1
+        # # 3.) ratio restricted to face_b
+        # size_b = np.sum(seg[face_b] == id_b)
+        # size_2 = float(np.sum(face_seg[face_b] == max_ol_id))
+        # ratio_3 = size_2 / size_b if size_2 < size_b else size_b / size_2
+
+        # if all(ratio > merge_threshold for ratio in (ratio_1, ratio_2, ratio_3)):
+        #     assignments.append(merge_candidate)
 
     if assignments:
         assignments = np.array(assignments)
