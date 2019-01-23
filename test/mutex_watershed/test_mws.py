@@ -18,11 +18,11 @@ except ImportError:
     from cluster_tools.utils import segmentation_utils as su
 
 
-# TODO tests with mask
 class TestMws(unittest.TestCase):
     # input_path = '/g/kreshuk/pape/Work/data/cluster_tools_test_data/test_data.n5'
     input_path = '/home/cpape/Work/data/cluster_tools_test_data/test_data.n5'
     input_key = 'volumes/full_affinities'
+    mask_key = 'volumes/mask'
     tmp_folder = './tmp'
     output_path = './tmp/mws.n5'
     output_key = 'data'
@@ -75,14 +75,25 @@ class TestMws(unittest.TestCase):
             ds.n_threads = 8
             affs = ds[:]
 
-        exp = su.mutex_watershed(affs, self.isbi_offsets, self.strides)
+        if with_mask:
+            with z5py.File(self.input_path) as f:
+                mask = f[self.mask_key][:]
+            self.assertTrue(np.allclose(res[np.logical_not(mask)], 0))
+            exp = su.mutex_watershed(affs, self.isbi_offsets, self.strides,
+                                     mask=mask)
+            self.assertTrue(np.allclose(exp[np.logical_not(mask)], 0))
+            score = adjusted_rand_score(exp.ravel(), res.ravel())
+            # score is much better with mask, so most of the differences seem
+            # to be due to boundary artifacts
+            self.assertLess(1. - score, .01)
+        else:
+            exp = su.mutex_watershed(affs, self.isbi_offsets, self.strides)
+            score = adjusted_rand_score(exp.ravel(), res.ravel())
+            self.assertLess(1. - score, .175)
 
-        score = adjusted_rand_score(exp.ravel(), res.ravel())
-        self.assertLess(1. - score, .15)
-
-        # from cremi_tools.viewer.volumina import view
-        # view([affs.transpose((1, 2, 3, 0)), res, exp],
-        #      ['affs', 'result', 'expected'])
+        from cremi_tools.viewer.volumina import view
+        view([affs.transpose((1, 2, 3, 0)), res, exp, mask.astype('uint32')],
+             ['affs', 'result', 'expected', 'mask'])
 
     def test_mws(self):
         max_jobs = 8
@@ -99,7 +110,25 @@ class TestMws(unittest.TestCase):
                            offsets=self.isbi_offsets, overlap_threshold=.75)
         ret = luigi.build([task], local_scheduler=True)
         self.assertTrue(ret)
-        self._check_result()
+        self._check_result(with_mask=False)
+
+    def test_mws_with_mask(self):
+        max_jobs = 8
+
+        config = MwsWorkflow.get_config()['mws_blocks']
+        config['strides'] = self.strides
+        with open(os.path.join(self.config_folder, 'mws_blocks.config'), 'w') as f:
+            json.dump(config, f)
+
+        task = MwsWorkflow(tmp_folder=self.tmp_folder, config_dir=self.config_folder,
+                           max_jobs=max_jobs, target=self.target,
+                           input_path=self.input_path, input_key=self.input_key,
+                           output_path=self.output_path, output_key=self.output_key,
+                           mask_path=self.input_path, mask_key=self.mask_key,
+                           offsets=self.isbi_offsets, overlap_threshold=.75)
+        ret = luigi.build([task], local_scheduler=True)
+        self.assertTrue(ret)
+        self._check_result(with_mask=True)
 
 
 def add_full_offsets():
@@ -111,6 +140,18 @@ def add_full_offsets():
                     n_threads=8)
 
 
+def make_fake_mask():
+    input_path = '/home/cpape/Work/data/cluster_tools_test_data/test_data.n5'
+    with z5py.File(input_path) as f:
+        shape = f['volumes/raw'].shape
+        mask = np.zeros(shape, dtype='uint8')
+        central_bb = np.s_[2:-2, 32:-32, 32:-32]
+        mask[central_bb] = 1
+        f.create_dataset('volumes/mask', data=mask, compression='gzip',
+                         chunks=(10, 256, 256))
+
+
 if __name__ == '__main__':
     # add_full_offsets()
+    # make_fake_mask()
     unittest.main()

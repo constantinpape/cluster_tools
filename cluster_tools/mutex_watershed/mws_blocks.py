@@ -242,10 +242,6 @@ def mws_blocks(job_id, config_path):
         blocking = nt.blocking([0, 0, 0], list(shape), block_shape)
 
         if mask_path != '':
-            assert False, "TODO"
-            # note that the mask is usually small enough to keep it
-            # in memory (and we interpolate to get to the full volume)
-            # if this does not hold need to change this code!
             mask = vu.load_mask(mask_path, mask_key, shape)
             id_offsets = [_mws_block_with_mask(block_id, blocking,
                                                ds_in, ds_out,
