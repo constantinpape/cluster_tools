@@ -307,6 +307,7 @@ def skeletonize(job_id, config_path):
         seg = ds_in[:]
 
     fu.log("writing output in format %s" % skeleton_format)
+    fu.log("to %s:%s" % (output_path, output_key))
     if skeleton_format == 'volume':
         _skeletonize_to_volume(seg, output_path, output_key, config)
     elif skeleton_format == 'swc':
