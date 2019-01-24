@@ -365,12 +365,12 @@ def reduce_lifted_problem(job_id, config_path):
         # lifted edges
         nh_key = 's%i/lifted_nh_%s' % (scale, lifted_prefix)
         ds = f[nh_key]
-        ds.n_threads = 8
+        ds.n_threads = n_threads
         lifted_uvs = ds[:]
 
         lifted_costs_key = 's%i/lifted_costs_%s' % (scale, lifted_prefix)
         ds = f[lifted_costs_key]
-        ds.n_threads = 8
+        ds.n_threads = n_threads
         lifted_costs = ds[:]
 
         # read initial node labeling
