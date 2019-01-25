@@ -277,8 +277,7 @@ def solve_lifted_subproblems(job_id, config_path):
     costs_key = 's%i/costs_lmc' % scale if scale > 0 else 's0/costs'
     fu.log("reading costs from path in problem: %s" % costs_key)
     ds = problem[costs_key]
-    # FIXME n_threads > 1 sometimes segfaults here
-    # ds.n_threads = n_threads
+    ds.n_threads = n_threads
     costs = ds[:]
 
     # load the graph
@@ -288,10 +287,8 @@ def solve_lifted_subproblems(job_id, config_path):
     # hence the identifier is identical
     graph_key = 's%i/graph_lmc' % scale if scale > 0 else 's0/graph'
     fu.log("reading graph from path in problem: %s" % graph_key)
-    # FIXME n_threads > 1 sometimes segfaults here
     graph = ndist.Graph(os.path.join(problem_path, graph_key),
-                        numberOfThreads=1)
-                        # numberOfThreads=n_threads)
+                        numberOfThreads=n_threads)
     uv_ids = graph.uvIds()
     # check if the problem has an ignore-label
     ignore_label = problem[graph_key].attrs['ignoreLabel']
@@ -307,14 +304,12 @@ def solve_lifted_subproblems(job_id, config_path):
     lifted_costs_key = 's%i/lifted_costs_%s' % (scale, lifted_prefix)
     ds = problem[nh_key]
     fu.log("reading lifted uvs")
-    # FIXME n_threads > 1 sometimes segfaults here
-    # ds.n_threads = n_threads
+    ds.n_threads = n_threads
     lifted_uvs = ds[:]
 
     fu.log("reading lifted costs")
     ds = problem[lifted_costs_key]
-    # FIXME n_threads > 1 sometimes segfaults here
-    # ds.n_threads = n_threads
+    ds.n_threads = n_threads
     lifted_costs = ds[:]
 
     # the output group
