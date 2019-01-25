@@ -108,7 +108,9 @@ def apply_filter(input_, filter_name, sigma, apply_in_2d=False):
 def normalize(input_):
     input_ = input_.astype('float32')
     input_ -= input_.min()
-    input_ /= input_.max()
+    max_ = input_.max()
+    if max_ > 0:
+        input_ /= max_
     return input_
 
 

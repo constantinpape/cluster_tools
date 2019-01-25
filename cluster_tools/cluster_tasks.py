@@ -12,7 +12,7 @@ from multiprocessing import cpu_count
 import numpy as np
 import luigi
 
-from .utils.parse_utils import parse_blocks_task, parse_jobs_task
+from .utils.parse_utils import parse_blocks_task, parse_job, parse_job_lsf
 from .utils.task_utils import DummyTask
 
 
@@ -100,13 +100,22 @@ class BaseClusterTask(luigi.Task):
         """
         self._write_script_file(shebang)
 
+    @staticmethod
+    def parse_jobs(log_prefix, max_jobs):
+        passed_jobs = []
+        for job_id in range(max_jobs):
+            path = log_prefix + '%i.log' % job_id
+            if parse_job(path, job_id):
+                passed_jobs.append(job_id)
+        return passed_jobs
+
     def check_jobs(self, n_jobs, job_prefix=None):
         """ Check for jobs that ran successfully
         """
         job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name,
                                                                         job_prefix)
         log_prefix = os.path.join(self.tmp_folder, 'logs', '%s_' % job_name)
-        success_list = parse_jobs_task(log_prefix, n_jobs)
+        success_list = self.parse_jobs(log_prefix, n_jobs)
 
         if len(success_list) == n_jobs:
             self._write_log("%s finished successfully" % self.task_name)
@@ -493,7 +502,6 @@ class LSFTask(BaseClusterTask):
     Task for cluster with LSF scheduling system
     (tested on Janelia cluster)
     """
-
     def prepare_jobs(self, n_jobs, block_list, config,
                      job_prefix=None, consecutive_blocks=False):
         # write the job configs
@@ -534,6 +542,16 @@ class LSFTask(BaseClusterTask):
             n_running = int(n_running.strip('\n'))
             if n_running == 0:
                 break
+
+    # need to override this for lsf
+    @staticmethod
+    def parse_jobs(log_prefix, max_jobs):
+        passed_jobs = []
+        for job_id in range(max_jobs):
+            path = log_prefix + '%i.log' % job_id
+            if parse_job_lsf(path, job_id):
+                passed_jobs.append(job_id)
+        return passed_jobs
 
     # TODO I think LSF appends to the output and logfile
     # so we need to clean them up here in order to have clean logs
