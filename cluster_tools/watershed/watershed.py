@@ -42,7 +42,8 @@ class WatershedBase(luigi.Task):
                        'apply_ws_2d': True, 'sigma_seeds': 2., 'size_filter': 25,
                        'sigma_weights': 2., 'halo': [0, 0, 0],
                        'two_pass': False, 'channel_begin': 0, 'channel_end': None,
-                       'agglomerate_channels': 'mean', 'alpha': 0.8})
+                       'agglomerate_channels': 'mean', 'alpha': 0.8,
+                       'invert_input': False})
         return config
 
     def clean_up_for_retry(self, block_list):
@@ -353,6 +354,9 @@ def _read_data(ds_in, input_bb, config):
         input_ = getattr(np, agglomerate)(input_, axis=0)
     else:
         input_ = vu.normalize(ds_in[input_bb])
+    # check if we need to invert the input
+    if config.get('invert_input', False):
+        input_ = 1. - input_
     return input_
 
 
