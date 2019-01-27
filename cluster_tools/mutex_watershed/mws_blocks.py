@@ -130,15 +130,16 @@ class MwsBlocksLSF(MwsBlocksBase, LSFTask):
 
 def _serialize_overlap(seg, blocking, block_id, halo, tmp_folder):
     shape = seg.shape
+    halo_left, halo_right = halo
     for _, face_a, face_b, _, ngb_id in vu.iterate_faces(blocking, block_id,
                                                          return_only_lower=False):
         assert ngb_id != block_id
         to_lower = ngb_id < block_id
         axis = vu.faces_to_ovlp_axis(face_a, face_b)
-        ovlp_slice = slice(0, 2 * halo[axis]) if to_lower else\
-            slice(shape[axis] - 2 * halo[axis], shape[axis])
-        face = tuple(slice(1, sh - 1) if dim != axis else ovlp_slice
-                     for dim, sh in enumerate(shape))
+        ovlp_slice = slice(0, 2 * halo_left[axis]) if to_lower else\
+            slice(shape[axis] - 2 * halo_right[axis], shape[axis])
+        face = tuple(slice(hal, sh - har) if dim != axis else ovlp_slice
+                     for dim, sh, hal, har in zip(range(3), shape, halo_left, halo_right))
         ovlp = seg[face]
         if np.sum(ovlp > 0) > 0:
             save_path = os.path.join(tmp_folder,
@@ -167,7 +168,12 @@ def _mws_block(block_id, blocking,
     ds_out[out_bb] = seg[local_bb]
 
     if serialize_overlap:
-        _serialize_overlap(seg, blocking, block_id, halo, tmp_folder)
+        # we need the actual halo here, which also might be different at both sides
+        halo_left = tuple(ib - ob for ib, ob
+                          in zip(block.innerBlock.begin, block.outerBlock.begin))
+        halo_right = tuple(oe - ie for oe, ie
+                           in zip(block.outerBlock.end, block.innerBlock.end))
+        _serialize_overlap(seg, blocking, block_id, (halo_left, halo_right), tmp_folder)
 
     # log block success
     fu.log_block_success(block_id)
@@ -197,7 +203,12 @@ def _mws_block_with_mask(block_id, blocking,
     ds_out[out_bb] = seg[local_bb]
 
     if serialize_overlap:
-        _serialize_overlap(seg, blocking, block_id, halo, tmp_folder)
+        # we need the actual halo here, which also might be different at both sides
+        halo_left = tuple(ib - ob for ib, ob
+                          in zip(block.innerBlock.begin, block.outerBlock.begin))
+        halo_right = tuple(oe - ie for oe, ie
+                           in zip(block.outerBlock.end, block.innerBlock.end))
+        _serialize_overlap(seg, blocking, block_id, (halo_left, halo_right), tmp_folder)
 
     # log block success
     fu.log_block_success(block_id)

@@ -105,9 +105,7 @@ def _stitch_face(offsets, overlap_prefix, block_a, block_b,
     assert ovlp_a.shape == ovlp_b.shape, "%s, %s" % (str(ovlp_a.shape), str(ovlp_b.shape))
 
     # find the block face and the ids on the block face
-    axis = np.where([fa != fb for fa, fb in zip(face_a, face_b)])[0]
-    assert len(axis) == 1, str(axis)
-    axis = axis[0]
+    axis = vu.faces_to_ovlp_axis(face_a, face_b)
     face = tuple(slice(None) if dim != axis else
                  slice(fa.stop - 1, fa.stop + 1) for dim, fa in enumerate(face_a))
 
