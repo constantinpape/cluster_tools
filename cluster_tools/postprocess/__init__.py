@@ -1,1 +1,2 @@
 from .postprocess_workflow import SizeFilterWorkflow
+from .postprocess_workflow import FilterLabelsWorkflow

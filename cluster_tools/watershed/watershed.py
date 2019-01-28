@@ -43,7 +43,7 @@ class WatershedBase(luigi.Task):
                        'sigma_weights': 2., 'halo': [0, 0, 0],
                        'two_pass': False, 'channel_begin': 0, 'channel_end': None,
                        'agglomerate_channels': 'mean', 'alpha': 0.8,
-                       'invert_input': False})
+                       'invert_inputs': False})
         return config
 
     def clean_up_for_retry(self, block_list):
@@ -355,7 +355,7 @@ def _read_data(ds_in, input_bb, config):
     else:
         input_ = vu.normalize(ds_in[input_bb])
     # check if we need to invert the input
-    if config.get('invert_input', False):
+    if config.get('inverts_input', False):
         input_ = 1. - input_
     return input_
 
