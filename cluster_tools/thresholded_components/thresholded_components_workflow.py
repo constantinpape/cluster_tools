@@ -4,7 +4,7 @@ import luigi
 
 from ..utils import volume_utils as vu
 from ..cluster_tasks import WorkflowBase
-from ..filter_labels import FilterLabelsWorkflow
+from ..postprocess import FilterLabelsWorkflow
 from ..watershed import watershed_from_seeds as ws_tasks
 
 from .. import write as write_tasks
