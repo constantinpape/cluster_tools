@@ -31,10 +31,8 @@ class BigcatLabelAssignment(luigi.Task):
         lut[0, :] = node_ids
         max_node_id = len(assignments)
         lut[1, :] = assignments + max_node_id
-        next_id = int(lut.max()) + 1
 
         with h5py.File(self.output_path) as f:
-            f.attrs['next_id'] = next_id
             ds = f.require_dataset('fragment_segment_lut', shape=lut.shape,
                                    compression='gzip', maxshape=(2, None),
                                    dtype='uint64')
@@ -64,6 +62,16 @@ class BigcatMetadata(luigi.Task):
         assert len(self.resolution) == len(offset) == 3
 
         with h5py.File(self.input_path) as f:
+            if 'fragment_segment_lut' in f:
+                lut = f['fragment_segment_lut'][:]
+                next_id = int(lut.max()) + 1
+            else:
+                seg = f[self.seg_key][:]
+                next_id = int(seg.max()) + 1
+
+        with h5py.File(self.input_path) as f:
+            f.attrs['next_id'] = next_id
+
             ds = f[self.raw_key]
             ds.attrs['resolution'] = self.resolution
             ds.attrs['offset'] = 3 * [0]
@@ -86,10 +94,10 @@ class BigcatWorkflow(WorkflowBase):
     raw_key = luigi.Parameter()
     seg_path = luigi.Parameter()
     seg_key = luigi.Parameter()
-    assignment_path = luigi.Parameter()
-    assignment_key = luigi.Parameter()
     output_path = luigi.Parameter()
     resolution = luigi.ListParameter()
+    assignment_path = luigi.Parameter(default='')
+    assignment_key = luigi.Parameter(default='')
     offset = luigi.ListParameter(default=None)
 
     def requires(self):
@@ -110,11 +118,14 @@ class BigcatWorkflow(WorkflowBase):
                         output_path=self.output_path, output_key=seg_out_key,
                         prefix='bigcat_seg', dtype='uint64')
 
+        # if we have assignments,
         # make fragment -> segment assignments
-        label_out_key = 'fragment_segment_lut'
-        dep = BigcatLabelAssignment(tmp_folder=self.tmp_folder, dependency=dep,
-                                    input_path=self.assignment_path, input_key=self.assignment_key,
-                                    output_path=self.output_path, output_key=label_out_key)
+        if self.assignment_path != '':
+            assert self.assignment_key != ''
+            label_out_key = 'fragment_segment_lut'
+            dep = BigcatLabelAssignment(tmp_folder=self.tmp_folder, dependency=dep,
+                                        input_path=self.assignment_path, input_key=self.assignment_key,
+                                        output_path=self.output_path, output_key=label_out_key)
 
         # write additional meta data
         dep = BigcatMetadata(tmp_folder=self.tmp_folder, dependency=dep,
