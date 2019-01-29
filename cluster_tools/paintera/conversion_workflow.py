@@ -319,27 +319,27 @@ class ConversionWorkflow(WorkflowBase):
     def requires(self):
         # first, we make the labels at label_out_key
         # (as label-multi-set if specified)
-        t1 = self._make_labels(self.dependency)
+        dep = self._make_labels(self.dependency)
         # next, align the scales of labels and raw data
-        t2, scale_factors = self._align_scales(t1)
+        dep, scale_factors = self._align_scales(dep)
         downsampling_factors = [[1, 1, 1]] + scale_factors[self.label_scale+1:]
 
         # # next, compute the mapping of unique labels to blocks
-        t3 = self._uniques_in_blocks(t2, downsampling_factors)
+        dep = self._uniques_in_blocks(dep, downsampling_factors)
         # # next, compute the inverse mapping
-        t4 = self._label_block_mapping(t3, downsampling_factors)
+        dep = self._label_block_mapping(dep, downsampling_factors)
         # # next, compute the fragment-segment-assignment
-        t5, max_id = self._fragment_segment_assignment(t4)
+        dep, max_id = self._fragment_segment_assignment(dep)
 
         # finally, write metadata
-        t6 = WritePainteraMetadata(tmp_folder=self.tmp_folder, path=self.path,
-                                   raw_key=self.raw_key,
-                                   label_group=self.label_out_key, scale_factors=scale_factors,
-                                   label_scale=self.label_scale,
-                                   is_label_multiset=self.use_label_multiset,
-                                   resolution=self.resolution, offset=self.offset,
-                                   max_id=max_id, dependency=t5)
-        return t6
+        dep = WritePainteraMetadata(tmp_folder=self.tmp_folder, path=self.path,
+                                    raw_key=self.raw_key,
+                                    label_group=self.label_out_key, scale_factors=scale_factors,
+                                    label_scale=self.label_scale,
+                                    is_label_multiset=self.use_label_multiset,
+                                    resolution=self.resolution, offset=self.offset,
+                                    max_id=max_id, dependency=dep)
+        return dep
 
     @staticmethod
     def get_config():
