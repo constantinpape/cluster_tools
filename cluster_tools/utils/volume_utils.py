@@ -165,13 +165,11 @@ def make_checkerboard_block_lists(blocking, roi_begin=None, roi_end=None):
 class InterpolatedVolume(object):
     def __init__(self, volume, output_shape, spline_order=0):
         assert len(output_shape) == volume.ndim == 3, "Only 3d supported"
-        assert all(osh > vsh for osh, vsh in zip(output_shape, volume.shape)),\
-            "Can only interpolate to larger shapes, got %s %s" % (str(output_shape), str(volume.shape))
         self.volume = volume
         self.shape = output_shape
         self.dtype = volume.dtype
-
         self.scale = [sh / float(fsh) for sh, fsh in zip(self.volume.shape, self.shape)]
+
         if np.dtype(self.dtype) == np.bool:
             self.min, self.max = 0, 1
         else:
@@ -211,9 +209,9 @@ class InterpolatedVolume(object):
         index_ = tuple(slice(int(floor(ind.start * sc)),
                              int(ceil(ind.stop * sc))) for ind, sc in zip(index, self.scale))
         # vigra can't deal with singleton dimension
-        small_shape = tuple(idx.stop - idx.start for idx in index_)
+        data_shape = tuple(idx.stop - idx.start for idx in index_)
         index_ = tuple(slice(idx.start, idx.stop) if sh > 1 else
-                       slice(idx.start, idx.stop + 1) for idx, sh in zip(index_, small_shape))
+                       slice(idx.start, idx.stop + 1) for idx, sh in zip(index_, data_shape))
         data = self.volume[index_]
 
         # speed ups for empty blocks and masks
