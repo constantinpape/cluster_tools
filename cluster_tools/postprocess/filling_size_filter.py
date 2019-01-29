@@ -190,11 +190,11 @@ def filling_size_filter(job_id, config_path):
     # copy the 'maxId' attribute if present
     if job_id == 0:
         with vu.file_reader(input_path, 'r') as f:
-            attrs = f[input_key].attrs
+            attrs = ds[input_key].attrs
             max_id = attrs.get('maxId', None)
         if max_id is not None:
             with vu.file_reader(output_path) as f:
-                f[output_key].attrs['maxId'] = max_id
+                f[output_path].attrs['maxId'] = max_id
 
     fu.log_job_success(job_id)
 
