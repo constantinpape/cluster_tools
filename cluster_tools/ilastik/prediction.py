@@ -49,7 +49,7 @@ class PredictionBase(luigi.Task):
                        'output_path': self.output_path, 'halo': self.halo,
                        'ilastik_project': self.ilastik_project,
                        'ilastik_folder': self.ilastik_folder,
-                       'block_shape': block_shape})
+                       'block_shape': block_shape, 'tmp_folder': self.tmp_folder})
         # if the output key is not None, we have a z5 file and
         # need to require the dataset
         if self.output_key is not None:
@@ -91,11 +91,12 @@ class PredictionLSF(PredictionBase, LSFTask):
     pass
 
 
-def _predict_block_impl(block, input_path, input_key,
+def _predict_block_impl(block_id, block, input_path, input_key,
                         output_prefix, ilastik_folder, ilastik_project):
     # assemble the ilastik headless command
     input_str = '%s/%s' % (input_path, input_key)
     output_str = '%s_block%i.h5' % (output_prefix, block_id)
+    fu.log("Serializing block %i to %s" % (block_id, output_str))
 
     start, stop = block.begin, block.end
     # ilastik always wants 5d coordinates, for now we only support 3d
@@ -109,7 +110,9 @@ def _predict_block_impl(block, input_path, input_key,
     subregion_str = '[%s, %s]' % (start, stop)
     fu.log("Subregion: %s" % subregion_str)
 
-    cmd = ['./run_ilastik.sh', '--headless',
+    ilastik_exe = os.path.join(ilastik_folder, 'run_ilastik.sh')
+    assert os.path.exists(ilastik_exe), ilastik_exe
+    cmd = [ilastik_exe, '--headless',
            '--project=%s' % ilastik_project,
            '--output_format=compressed hdf5',
            '--raw_data=%s' % input_str,
@@ -122,8 +125,6 @@ def _predict_block_impl(block, input_path, input_key,
     fu.log("Calling ilastik with command %s" % cmd_str)
 
     # switch to the ilastik folder and call ilastik command
-    cwd = os.getcwd()
-    os.chdir(ilastik_folder)
     try:
         # err = subprocess.check_call(cmd, stderr=subprocess.STDOUT)
         # subprocess.check_call(cmd, stderr=subprocess.STDOUT)
@@ -133,7 +134,6 @@ def _predict_block_impl(block, input_path, input_key,
         fu.log("with %s" % str(e.returncode))
         # fu.log("error message: %s" % e.output)
         raise e
-    os.chdir(cwd)
 
 
 def _predict_block(block_id, blocking,
@@ -142,7 +142,7 @@ def _predict_block(block_id, blocking,
                    ilastik_folder, ilastik_project):
     fu.log("Start processing block %i" % block_id)
     block = blocking.getBlockWithHalo(block_id, halo).outerBlock
-    _predict_block_impl(block, input_path, input_key,
+    _predict_block_impl(block_id, block, input_path, input_key,
                         output_prefix, ilastik_folder, ilastik_project)
     fu.log_block_success(block_id)
 
@@ -152,7 +152,7 @@ def _predict_and_serialize_block(block_id, blocking, input_path, input_key,
                                  ilastik_folder, ilastik_project, ds):
     fu.log("Start processing block %i" % block_id)
     block = blocking.getBlockWithHalo(block_id, halo)
-    _predict_block_impl(block.outerBlock, input_path, input_key,
+    _predict_block_impl(block_id, block.outerBlock, input_path, input_key,
                         output_prefix, ilastik_folder, ilastik_project)
     bb = vu.block_to_bb(block.innerBlock)
     inner_bb = vu.block_to_bb(block.innerBlockLocal)
@@ -165,7 +165,7 @@ def _predict_and_serialize_block(block_id, blocking, input_path, input_key,
             inner_bb = (slice(None),) + inner_bb
     pred = pred[inner_bb]
     ds[bb] = pred
-    os.remove(path)
+    # os.remove(path)
     fu.log_block_success(block_id)
 
 
@@ -183,6 +183,8 @@ def prediction(job_id, config_path):
     halo = config['halo']
     ilastik_project = config['ilastik_project']
     ilastik_folder = config['ilastik_folder']
+    tmp_folder = config['tmp_folder']
+
     n_threads = config.get('threads_per_job', 1)
     mem_in_gb = config.get('mem_limit', 1)
     mem_in_mb = mem_in_gb * 1000
@@ -205,7 +207,7 @@ def prediction(job_id, config_path):
 
     blocking = nt.blocking([0, 0, 0], shape, block_shape)
 
-    output_prefix = os.path.splitext(output_path)[0]
+    output_prefix = os.path.join(tmp_folder, 'ilpred')
     if output_key is None:
         fu.log("predicting blocks with temporary serialization")
         for block_id in block_list:
