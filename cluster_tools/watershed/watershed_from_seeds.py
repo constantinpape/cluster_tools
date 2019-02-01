@@ -11,6 +11,7 @@ import nifty.tools as nt
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
+from cluster_tools.utils.task_utils import DummyTask
 
 
 #
@@ -33,7 +34,7 @@ class WatershedFromSeedsBase(luigi.Task):
     output_key = luigi.Parameter()
     mask_path = luigi.Parameter(default='')
     mask_key = luigi.Parameter(default='')
-    dependency = luigi.TaskParameter()
+    dependency = luigi.TaskParameter(default=DummyTask())
 
     def requires(self):
         return self.dependency

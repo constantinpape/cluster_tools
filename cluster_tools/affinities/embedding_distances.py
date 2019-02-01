@@ -12,6 +12,7 @@ from affogato.affinities import compute_embedding_distances
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
+from cluster_tools.utils.task_utils import DummyTask
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
@@ -36,6 +37,7 @@ class EmbeddingDistancesBase(luigi.Task):
                                            [0, 0, -1]])
     threshold = luigi.FloatParameter(default=None)
     threshold_mode = luigi.Parameter(default='greater')
+    dependency = luigi.TaskParameter(default=DummyTask())
 
     threshold_modes = ('greater', 'less', 'equal')
 
@@ -129,7 +131,7 @@ class EmbeddingDistancesLSF(EmbeddingDistancesBase, LSFTask):
 def _embedding_distances_block(block_id, blocking,
                                input_datasets, ds, offsets):
     fu.log("start processing block %i" % block_id)
-    halo = np.maximum()  # TODO
+    halo = np.max(np.abs(offsets), axis=0)
 
     block = blocking.getBlockWithHalo(block_id, halo.tolist())
     outer_bb = vu.block_to_bb(block.outerBlock)
@@ -138,6 +140,7 @@ def _embedding_distances_block(block_id, blocking,
 
     bshape = tuple(ob.stop - ob.start for ob in outer_bb)
     # TODO support multi-channel input data
+    n_inchannels = len(input_datasets)
     in_shape = (n_inchannels,) + bshape
     in_data = np.zeros(in_shape, dtype='float32')
 
@@ -175,7 +178,7 @@ def embedding_distances(job_id, config_path):
 
     input_datasets = []
     for path in sorted(path_dict):
-        input_datasets.appned(vu.file_reader(path, 'r')[path_dict[path]])
+        input_datasets.append(vu.file_reader(path, 'r')[path_dict[path]])
 
     with vu.file_reader(output_path) as f:
 
@@ -183,7 +186,7 @@ def embedding_distances(job_id, config_path):
 
         shape = ds.shape[1:]
         blocking = nt.blocking([0, 0, 0], list(shape), block_shape)
-        [embedding_distances(block_id, blocking, input_datasets, ds, offsets)
+        [_embedding_distances_block(block_id, blocking, input_datasets, ds, offsets)
          for block_id in block_list]
 
     fu.log_job_success(job_id)
