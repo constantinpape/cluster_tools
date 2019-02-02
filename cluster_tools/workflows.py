@@ -128,22 +128,18 @@ class MulticutSegmentationWorkflow(WorkflowBase):
         return dep
 
     def _multicut_tasks(self, dep):
-        # hard-coded keys
-        mc_wf = MulticutWorkflow(tmp_folder=self.tmp_folder,
-                                 max_jobs=self.max_jobs_multicut,
-                                 config_dir=self.config_dir,
-                                 target=self.target,
-                                 dependency=dep,
-                                 problem_path=self.problem_path,
-                                 n_scales=self.n_scales,
-                                 assignment_path=self.output_path,
-                                 assignment_key=self.node_labels_key)
-        return mc_wf
+        dep = MulticutWorkflow(tmp_folder=self.tmp_folder,
+                               max_jobs=self.max_jobs_multicut,
+                               config_dir=self.config_dir,
+                               target=self.target,
+                               dependency=dep,
+                               problem_path=self.problem_path,
+                               n_scales=self.n_scales,
+                               assignment_path=self.output_path,
+                               assignment_key=self.node_labels_key)
+        return dep
 
-    def requires(self):
-        dep = self._watershed_tasks()
-        dep = self._problem_tasks(dep)
-        dep = self._multicut_tasks(dep)
+    def _write_tasks(self, dep, identifier):
         write_task = getattr(write_tasks, self._get_task_name('Write'))
         dep = write_task(tmp_folder=self.tmp_folder,
                          max_jobs=self.max_jobs,
@@ -155,7 +151,15 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                          output_key=self.output_key,
                          assignment_path=self.output_path,
                          assignment_key=self.node_labels_key,
-                         identifier='multicut')
+                         identifier=identifier)
+        return dep
+
+    def requires(self):
+        dep = self._watershed_tasks()
+        dep = self._problem_tasks(dep)
+        dep = self._multicut_tasks(dep)
+        if self.output_key != '':
+            dep = self._write_tasks(dep, 'multicut')
         return dep
 
     @staticmethod
@@ -197,36 +201,25 @@ class LiftedMulticutSegmentationWorkflow(MulticutSegmentationWorkflow):
         return dep
 
     def _lifted_multicut_tasks(self, dep):
-        # hard-coded keys
-        mc_wf = LiftedMulticutWorkflow(tmp_folder=self.tmp_folder,
-                                       max_jobs=self.max_jobs_multicut,
-                                       config_dir=self.config_dir,
-                                       target=self.target,
-                                       dependency=dep,
-                                       problem_path=self.problem_path,
-                                       n_scales=self.n_scales,
-                                       assignment_path=self.output_path,
-                                       assignment_key=self.node_labels_key,
-                                       lifted_prefix=self.lifted_prefix)
-        return mc_wf
+        dep = LiftedMulticutWorkflow(tmp_folder=self.tmp_folder,
+                                     max_jobs=self.max_jobs_multicut,
+                                     config_dir=self.config_dir,
+                                     target=self.target,
+                                     dependency=dep,
+                                     problem_path=self.problem_path,
+                                     n_scales=self.n_scales,
+                                     assignment_path=self.output_path,
+                                     assignment_key=self.node_labels_key,
+                                     lifted_prefix=self.lifted_prefix)
+        return dep
 
     def requires(self):
         dep = self._watershed_tasks()
         dep = self._problem_tasks(dep)
         dep = self._lifted_problem_tasks(dep)
         dep = self._lifted_multicut_tasks(dep)
-        write_task = getattr(write_tasks, self._get_task_name('Write'))
-        dep = write_task(tmp_folder=self.tmp_folder,
-                         max_jobs=self.max_jobs,
-                         config_dir=self.config_dir,
-                         dependency=dep,
-                         input_path=self.ws_path,
-                         input_key=self.ws_key,
-                         output_path=self.output_path,
-                         output_key=self.output_key,
-                         assignment_path=self.output_path,
-                         assignment_key=self.node_labels_key,
-                         identifier='lifted_multicut')
+        if self.output_key != '':
+            dep = self._write_tasks(dep, 'lifted_multicut')
         return dep
 
     @staticmethod
