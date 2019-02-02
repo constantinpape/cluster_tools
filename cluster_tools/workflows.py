@@ -29,7 +29,6 @@ class MulticutSegmentationWorkflow(WorkflowBase):
     # where to save the multicut problems
     problem_path = luigi.Parameter()
     # where to save the node labels
-    node_labels_path = luigi.Parameter()
     node_labels_key = luigi.Parameter()
     # where to save the resulting segmentation
     output_path = luigi.Parameter()
@@ -137,7 +136,7 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                                  dependency=dep,
                                  problem_path=self.problem_path,
                                  n_scales=self.n_scales,
-                                 assignment_path=self.node_labels_path,
+                                 assignment_path=self.output_path,
                                  assignment_key=self.node_labels_key)
         return mc_wf
 
@@ -154,7 +153,7 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                          input_key=self.ws_key,
                          output_path=self.output_path,
                          output_key=self.output_key,
-                         assignment_path=self.node_labels_path,
+                         assignment_path=self.output_path,
                          assignment_key=self.node_labels_key,
                          identifier='multicut')
         return dep
@@ -206,7 +205,7 @@ class LiftedMulticutSegmentationWorkflow(MulticutSegmentationWorkflow):
                                        dependency=dep,
                                        problem_path=self.problem_path,
                                        n_scales=self.n_scales,
-                                       assignment_path=self.node_labels_path,
+                                       assignment_path=self.output_path,
                                        assignment_key=self.node_labels_key,
                                        lifted_prefix=self.lifted_prefix)
         return mc_wf
@@ -225,7 +224,7 @@ class LiftedMulticutSegmentationWorkflow(MulticutSegmentationWorkflow):
                          input_key=self.ws_key,
                          output_path=self.output_path,
                          output_key=self.output_key,
-                         assignment_path=self.node_labels_path,
+                         assignment_path=self.output_path,
                          assignment_key=self.node_labels_key,
                          identifier='lifted_multicut')
         return dep

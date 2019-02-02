@@ -71,7 +71,6 @@ class TestMulticutWorkflow(unittest.TestCase):
                                                         ws_path=self.input_path,
                                                         ws_key=self.ws_key,
                                                         problem_path=mc_path,
-                                                        node_labels_path=mc_path,
                                                         node_labels_key='node_labels',
                                                         output_path=mc_path,
                                                         output_key='volumes/multicut',
