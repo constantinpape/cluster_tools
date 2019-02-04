@@ -35,11 +35,6 @@ class MergeEdgeFeaturesBase(luigi.Task):
     def requires(self):
         return self.dependency
 
-    def clean_up_for_retry(self, block_list):
-        # TODO does this work with the mixin pattern?
-        super().clean_up_for_retry(block_list)
-        # TODO remove any output of failed blocks because it might be corrupted
-
     def _read_num_features(self, block_ids):
         n_feats = None
         with vu.file_reader(self.output_path) as f:
@@ -97,11 +92,7 @@ class MergeEdgeFeaturesBase(luigi.Task):
                        'edge_chunk_size': chunk_size, 'block_ids': block_ids,
                        'n_edges': n_edges})
 
-        if self.n_retries == 0:
-            edge_block_list = vu.blocks_in_volume([n_edges], [chunk_size])
-        else:
-            edge_block_list = self.block_list
-            self.clean_up_for_retry(edge_block_list)
+        edge_block_list = vu.blocks_in_volume([n_edges], [chunk_size])
 
         n_jobs = min(len(edge_block_list), self.max_jobs)
         # prime and run the jobs
