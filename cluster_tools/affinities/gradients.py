@@ -8,7 +8,6 @@ import pickle
 import luigi
 import numpy as np
 import nifty.tools as nt
-from affogato.affinities import compute_embedding_distances
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -17,28 +16,22 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
 #
-# Block-wise embedding distance tasks
+# Block-wise gradient computation tasks
 #
 
-class EmbeddingDistancesBase(luigi.Task):
-    """ EmbeddingDistances base class
+class GradientsBase(luigi.Task):
+    """ Gradients base class
     """
 
-    task_name = 'embedding_distances'
+    task_name = 'gradients'
     src_file = os.path.abspath(__file__)
-    allow_retry = False
+    allow_retry = True
 
     path_dict = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
-    offsets = luigi.ListParameter(default=[[-1, 0, 0],
-                                           [0, -1, 0],
-                                           [0, 0, -1]])
-    threshold = luigi.FloatParameter(default=None)
-    threshold_mode = luigi.Parameter(default='greater')
+    average_gradient = luigi.BoolParameter(default=True)
     dependency = luigi.TaskParameter(default=DummyTask())
-
-    threshold_modes = ('greater', 'less', 'equal')
 
     def requires(self):
         return self.dependency
@@ -66,25 +59,25 @@ class EmbeddingDistancesBase(luigi.Task):
     def run_impl(self):
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
-
         shape = self._validate_paths()
-        if self.threshold is not None:
-            assert self.threshold_mode in self.threshold_modes
 
         config = self.get_task_config()
         config.update({'path_dict': self.path_dict,
                        'output_path': self.output_path,
                        'output_key': self.output_key,
-                       'offsets': self.offsets,
                        'block_shape': block_shape,
-                       'threshold': self.threshold,
-                       'threshold_mode': self.threshold_mode})
+                       'average_gradient': self.average_gradient})
 
-        n_channels = len(self.offsets)
+        # TODO need to adapt to multi-channel
         chunks = tuple(min(bs // 2, sh) for bs, sh in zip(block_shape, shape))
 
-        out_shape = (n_channels,) + shape
-        out_chunks = (1,) + chunks
+        if self.average_gradient:
+            out_shape = shape
+            out_chunks = chunks
+        else:
+            n_channels = len(path_dict)
+            out_shape = (n_channels,) + shape
+            out_chunks = (1,) + chunks
 
         # make output dataset
         compression = config.pop('compression', 'gzip')
@@ -106,55 +99,74 @@ class EmbeddingDistancesBase(luigi.Task):
         self.check_jobs(n_jobs)
 
 
-class EmbeddingDistancesLocal(EmbeddingDistancesBase, LocalTask):
+class GradientsLocal(GradientsBase, LocalTask):
     """
-    EmbeddingDistances on local machine
-    """
-    pass
-
-
-class EmbeddingDistancesSlurm(EmbeddingDistancesBase, SlurmTask):
-    """
-    EmbeddingDistances on slurm cluster
+    Gradients on local machine
     """
     pass
 
 
-class EmbeddingDistancesLSF(EmbeddingDistancesBase, LSFTask):
+class GradientsSlurm(GradientsBase, SlurmTask):
     """
-    EmbeddingDistances on lsf cluster
+    Gradients on slurm cluster
     """
     pass
 
 
-def _embedding_distances_block(block_id, blocking,
-                               input_datasets, ds, offsets):
+class GradientsLSF(GradientsBase, LSFTask):
+    """
+    Gradients on lsf cluster
+    """
+    pass
+
+
+#
+# Implementation
+#
+
+
+def _compute_average_gradients(input_datasets, outer_bb, out_data):
+    for chan, inds in enumerate(input_datasets):
+        data = inds[outer_bb]
+        out_data = (np.gradient(data) + out_data * chan) / (chan + 1)
+
+
+def _compute_average_gradients(input_datasets, outer_bb, out_data):
+    for chan, inds in enumerate(input_datasets):
+        data = inds[outer_bb]
+        out_data[chan] = np.gradient(data)
+
+
+def _gradients_block(block_id, blocking,
+                     input_datasets, ds, halo,
+                     average_gradient):
     fu.log("start processing block %i" % block_id)
-    halo = np.max(np.abs(offsets), axis=0)
 
-    block = blocking.getBlockWithHalo(block_id, halo.tolist())
+    block = blocking.getBlockWithHalo(block_id, halo)
     outer_bb = vu.block_to_bb(block.outerBlock)
-    inner_bb = (slice(None),) + vu.block_to_bb(block.innerBlock)
-    local_bb = (slice(None),) + vu.block_to_bb(block.innerBlockLocal)
+    inner_bb = vu.block_to_bb(block.innerBlock)
+    local_bb = vu.block_to_bb(block.innerBlockLocal)
 
     bshape = tuple(ob.stop - ob.start for ob in outer_bb)
-    # TODO support multi-channel input data
-    n_inchannels = len(input_datasets)
-    in_shape = (n_inchannels,) + bshape
-    in_data = np.zeros(in_shape, dtype='float32')
+    if average_gradient:
+        n_channels = len(input_datasets)
+        shape = (n_channels,) + bshape
+        inner_bb = (slice(None),) + inner_bb
+        local_bb = (slice(None),) + local_bb
+    else:
+        shape = bshape
+    out_data = np.zeros(shape, dtype='float32')
 
-    for chan, inds in enumerate(input_datasets):
-        in_data[chan] = inds[outer_bb]
+    if average_gradient:
+        _compute_average_gradients(input_datasets, outer_bb, out_data)
+    else:
+        _compute_all_gradients(input_datasets, outer_bb, out_data)
 
-    # TODO support thresholding the embedding before distance caclulation
-    distance = compute_embedding_distances(in_data, offsets)
-    ds[inner_bb] = distance[local_bb]
-
+    ds[inner_bb] = out_data[local_bb]
     fu.log_block_success(block_id)
 
 
-def embedding_distances(job_id, config_path):
-
+def gradients(job_id, config_path):
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
 
@@ -165,12 +177,7 @@ def embedding_distances(job_id, config_path):
     output_key = config['output_key']
     block_list = config['block_list']
     block_shape = config['block_shape']
-    offsets = config['offsets']
-
-    # TODO support thresholding
-    threshold = config['threshold']
-    threshold_mode = config['threshold_mode']
-    assert threshold is None
+    average_gradient = config['average_gradient']
 
     with open(path_dict) as f:
         path_dict = json.load(f)
@@ -179,15 +186,15 @@ def embedding_distances(job_id, config_path):
     for path in sorted(path_dict):
         input_datasets.append(vu.file_reader(path, 'r')[path_dict[path]])
 
+    # 5 pix should be enough halo to make gradient computation correct
+    halo = 3 * [5]
     with vu.file_reader(output_path) as f:
-
         ds = f[output_key]
-
-        shape = ds.shape[1:]
+        shape = ds.shape if average_gradient else ds.shape[1:]
         blocking = nt.blocking([0, 0, 0], list(shape), block_shape)
-        [_embedding_distances_block(block_id, blocking, input_datasets, ds, offsets)
+        [_gradients_block(block_id, blocking, input_datasets,
+                          ds, halo, average_gradient)
          for block_id in block_list]
-
     fu.log_job_success(job_id)
 
 
@@ -195,4 +202,4 @@ if __name__ == '__main__':
     path = sys.argv[1]
     assert os.path.exists(path), path
     job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
-    embedding_distances(job_id, path)
+    gradients(job_id, path)
