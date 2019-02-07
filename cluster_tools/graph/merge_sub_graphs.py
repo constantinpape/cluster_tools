@@ -25,7 +25,7 @@ class MergeSubGraphsBase(luigi.Task):
     src_file = os.path.abspath(__file__)
 
     # input volumes and graph
-    graph_path = luigi.Parameter()
+    output_path = luigi.Parameter()
     scale = luigi.IntParameter()
     output_key = luigi.Parameter(default='')
     merge_complete_graph = luigi.BoolParameter(default=False)
@@ -41,7 +41,7 @@ class MergeSubGraphsBase(luigi.Task):
 
     def _run_scale(self, config, block_shape, roi_begin, roi_end):
         # make graph file and write shape as attribute
-        with vu.file_reader(self.graph_path) as f:
+        with vu.file_reader(self.output_path) as f:
             shape = f.attrs['shape']
 
         factor = 2**self.scale
@@ -62,7 +62,7 @@ class MergeSubGraphsBase(luigi.Task):
         self.check_jobs(n_jobs)
 
     def _run_last_scale(self, config, block_shape, roi_begin, roi_end):
-        with vu.file_reader(self.graph_path) as f:
+        with vu.file_reader(self.output_path) as f:
             shape = f.attrs['shape']
 
         factor = 2**self.scale
@@ -91,7 +91,7 @@ class MergeSubGraphsBase(luigi.Task):
 
         # update the config with input and graph paths and keys
         # as well as block shape
-        config.update({'graph_path': self.graph_path, 'block_shape': block_shape,
+        config.update({'output_path': self.output_path, 'block_shape': block_shape,
                        'scale': self.scale, 'merge_complete_graph': self.merge_complete_graph,
                        'output_key': self.output_key})
 
@@ -130,19 +130,24 @@ class MergeSubGraphsLSF(MergeSubGraphsBase, LSFTask):
 #
 
 
-def _merge_graph(graph_path, output_key, scale,
-                 block_list, blocking, shape, n_threads):
-    block_prefix = 's%i/sub_graphs/block_' % scale
-    ndist.mergeSubgraphs(graph_path,
-                         blockPrefix=block_prefix,
-                         blockIds=block_list,
+def _merge_graph(output_path, output_key, scale,
+                 block_list, blocking, shape, n_threads,
+                 ignore_label):
+    node_ds_path = os.path.join(output_path, 's%i' % scale, 'sub_graphs', 'nodes')
+    edge_ds_path = os.path.join(output_path, 's%i' % scale, 'sub_graphs', 'edges')
+
+    ndist.mergeSubgraphs(output_path, node_ds_path, edge_ds_path,
+                         chunkIds=block_list,
                          outKey=output_key,
-                         numberOfThreads=n_threads)
-    with vu.file_reader(graph_path) as f:
+                         numberOfThreads=n_threads,
+                         ignoreLabel=ignore_label)
+    with vu.file_reader(output_path) as f:
         f[output_key].attrs['shape'] = shape
 
 
-def _merge_subblocks(block_id, blocking, previous_blocking, graph_path, scale):
+# TODO adapt this to new graph scheme
+def _merge_subblocks(block_id, blocking, previous_blocking, output_path, scale, ignore_label):
+    assert False, "Not implemented"
     fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
     input_key = 'sub_graphs/s%i/block_' % (scale - 1,)
@@ -150,10 +155,10 @@ def _merge_subblocks(block_id, blocking, previous_blocking, graph_path, scale):
     block_list = previous_blocking.getBlockIdsInBoundingBox(roiBegin=block.begin,
                                                             roiEnd=block.end,
                                                             blockHalo=[0, 0, 0])
-    ndist.mergeSubgraphs(graph_path,
-                         blockPrefix=input_key,
+    ndist.mergeSubgraphs(output_path,
                          blockIds=block_list.tolist(),
-                         outKey=output_key)
+                         outKey=output_key,
+                         ignoreLabel=ignore_label)
     # log block success
     fu.log_block_success(block_id)
 
@@ -168,12 +173,13 @@ def merge_sub_graphs(job_id, config_path):
         config = json.load(f)
     scale = config['scale']
     initial_block_shape = config['block_shape']
-    graph_path = config['graph_path']
+    output_path = config['output_path']
     merge_complete_graph = config['merge_complete_graph']
     block_list = config['block_list']
 
-    with vu.file_reader(graph_path) as f:
+    with vu.file_reader(output_path) as f:
         shape = f.attrs['shape']
+        ignore_label = f.attrs['ignoreLabel']
     factor = 2**scale
     block_shape = [factor * bs for bs in initial_block_shape]
     blocking = nt.blocking(roiBegin=[0, 0, 0],
@@ -185,8 +191,9 @@ def merge_sub_graphs(job_id, config_path):
         n_threads = config['threads_per_job']
         output_key = config.get('output_key', '')
         assert output_key != ''
-        _merge_graph(graph_path, output_key, scale,
-                     block_list, blocking, shape, n_threads)
+        _merge_graph(output_path, output_key, scale,
+                     block_list, blocking, shape, n_threads,
+                     ignore_label)
 
     else:
         fu.log("merging subgraphs at scale %i" % scale)
@@ -196,7 +203,7 @@ def merge_sub_graphs(job_id, config_path):
                                         roiEnd=list(shape),
                                         blockShape=previous_block_shape)
         for block_id in block_list:
-            _merge_subblocks(block_id, blocking, previous_blocking, graph_path, scale)
+            _merge_subblocks(block_id, blocking, previous_blocking, output_path, scale, ignore_label)
 
     fu.log_job_success(job_id)
 

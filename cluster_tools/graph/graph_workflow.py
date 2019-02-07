@@ -11,7 +11,7 @@ from . import map_edge_ids as map_tasks
 class GraphWorkflow(WorkflowBase):
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
-    graph_path = luigi.Parameter()
+    output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     n_scales = luigi.IntParameter(default=1)
 
@@ -31,7 +31,8 @@ class GraphWorkflow(WorkflowBase):
                           config_dir=self.config_dir,
                           input_path=self.input_path,
                           input_key=self.input_key,
-                          graph_path=self.graph_path,
+                          output_path=self.output_path,
+                          output_key='s0/sub_graphs',
                           dependency=self.dependency)
         merge_task = getattr(merge_tasks,
                              self._get_task_name('MergeSubGraphs'))
@@ -40,7 +41,7 @@ class GraphWorkflow(WorkflowBase):
             t2 = merge_task(tmp_folder=self.tmp_folder,
                             max_jobs=self.max_jobs,
                             config_dir=self.config_dir,
-                            graph_path=self.graph_path,
+                            output_path=self.output_path,
                             scale=scale,
                             merge_complete_graph=False,
                             dependency=t_prev)
@@ -49,7 +50,7 @@ class GraphWorkflow(WorkflowBase):
         t3 = merge_task(tmp_folder=self.tmp_folder,
                         max_jobs=self.max_jobs,
                         config_dir=self.config_dir,
-                        graph_path=self.graph_path,
+                        output_path=self.output_path,
                         output_key=self.output_key,
                         scale=self.n_scales - 1,
                         merge_complete_graph=True,
@@ -63,7 +64,7 @@ class GraphWorkflow(WorkflowBase):
             t4 = map_task(tmp_folder=self.tmp_folder,
                           max_jobs=self.max_jobs,
                           config_dir=self.config_dir,
-                          graph_path=self.graph_path,
+                          output_path=self.output_path,
                           input_key=self.output_key,
                           scale=self.n_scales - 1,
                           dependency=t_prev)

@@ -28,7 +28,8 @@ class InitialSubGraphsBase(luigi.Task):
     # input volumes and graph
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
-    graph_path = luigi.Parameter()
+    output_path = luigi.Parameter()
+    output_key = luigi.Parameter()
     #
     dependency = luigi.TaskParameter()
 
@@ -57,12 +58,19 @@ class InitialSubGraphsBase(luigi.Task):
         # update the config with input and graph paths and keys
         # as well as block shape
         config.update({'input_path': self.input_path, 'input_key': self.input_key,
-                       'graph_path': self.graph_path, 'block_shape': block_shape})
+                       'output_path': self.output_path, 'output_key': self.output_key,
+                       'block_shape': block_shape})
 
         # make graph file and write shape as attribute
         shape = vu.get_shape(self.input_path, self.input_key)
-        with vu.file_reader(self.graph_path) as f:
+        with vu.file_reader(self.output_path) as f:
             f.attrs['shape'] = shape
+            f.attrs['ignoreLabel'] = config['ignore_label']
+            # require output datasets
+            f.require_dataset(self.output_key + '/nodes', shape=shape, chunks=tuple(block_shape),
+                              compression='gzip', dtype='uint64')
+            f.require_dataset(self.output_key + '/edges', shape=shape, chunks=tuple(block_shape),
+                              compression='gzip', dtype='uint64')
 
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
@@ -103,19 +111,18 @@ class InitialSubGraphsLSF(InitialSubGraphsBase, LSFTask):
 #
 
 
-def _graph_block(block_id, blocking, input_path, input_key, graph_path,
+def _graph_block(block_id, blocking, input_path, input_key,
+                 output_path, output_key,
                  ignore_label):
     fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
-    # we only need the halo into one direction,
-    # hence we use the outer-block only for the end coordinate
+    chunk_id = tuple(beg // bs for beg, bs in zip(block.begin, blocking.blockShape))
 
-    block_key = 's0/sub_graphs/block_%i' % block_id
     ndist.computeMergeableRegionGraph(input_path, input_key,
-                                      block.begin, block.end,
-                                      graph_path, block_key,
-                                      ignore_label,
-                                      increaseRoi=True)
+                                      chunk_id,
+                                      os.path.join(output_path, output_key + '/nodes'),
+                                      os.path.join(output_path, output_key + '/edges'),
+                                      ignore_label, increaseRoi=True)
     # log block success
     fu.log_block_success(block_id)
 
@@ -132,7 +139,8 @@ def initial_sub_graphs(job_id, config_path):
     input_key = config['input_key']
     block_shape = config['block_shape']
     block_list = config['block_list']
-    graph_path = config['graph_path']
+    output_path = config['output_path']
+    output_key = config['output_key']
     ignore_label = config.get('ignore_label', True)
 
     shape = vu.get_shape(input_path, input_key)
@@ -141,8 +149,8 @@ def initial_sub_graphs(job_id, config_path):
                            blockShape=list(block_shape))
 
     for block_id in block_list:
-        _graph_block(block_id, blocking, input_path, input_key, graph_path,
-                     ignore_label)
+        _graph_block(block_id, blocking, input_path, input_key,
+                     output_path, output_key, ignore_label)
     fu.log_job_success(job_id)
 
 
