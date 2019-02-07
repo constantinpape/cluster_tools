@@ -72,11 +72,13 @@ class MergeEdgeFeaturesBase(luigi.Task):
         # chunk size = 64**3
         chunk_size = min(262144, n_edges)
 
+        # TODO we need to adapt this to the new varlen storage
+        # best to store the number of features in some attribute
         # get the number of features from sub-feature block
-        n_features = self._read_num_features(range(block_ids) if isinstance(block_ids, int)
-                                             else block_ids)
+        # n_features = self._read_num_features(range(block_ids) if isinstance(block_ids, int)
+        #                                      else block_ids)
+        n_features = 10
 
-        # TODO use float32 features to save some memory
         # require the output dataset
         with vu.file_reader(self.output_path) as f:
             f.require_dataset(self.output_key, dtype='float64', shape=(n_edges, n_features),
@@ -84,9 +86,9 @@ class MergeEdgeFeaturesBase(luigi.Task):
 
         # update the task config
         # TODO make scale we extract features at accessible
-        feat_block_prefix = os.path.join(self.output_path, 'blocks', 'block_')
+        feat_block_prefix = os.path.join(self.output_path, 's0', 'sub_features')
         config.update({'graph_block_prefix': os.path.join(self.graph_path, 's0',
-                                                          'sub_graphs', 'block_'),
+                                                          'sub_graphs', 'edge_ids'),
                        'feature_block_prefix': feat_block_prefix,
                        'output_path': self.output_path, 'output_key': self.output_key,
                        'edge_chunk_size': chunk_size, 'block_ids': block_ids,

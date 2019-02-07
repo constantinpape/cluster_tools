@@ -55,9 +55,17 @@ class BlockEdgeFeaturesBase(luigi.Task):
         # load the task config
         config = self.get_task_config()
 
-        # require output group
+        with vu.file_reader(self.graph_path) as f:
+            ignore_label = f.attrs['ignoreLabel']
+            shape = f.attrs['shape']
+
+        # require output dataset
         with vu.file_reader(self.output_path) as f:
-            f.require_group('blocks')
+            f.require_dataset('s0/sub_features', shape=tuple(shape), chunks=tuple(block_shape),
+                              compression='gzip', dtype='float64')
+
+        sub_graph_group = os.path.join(self.graph_path, 's0', 'sub_graphs', 'edges')
+        assert os.path.exists(sub_graph_group), sub_graph_group
 
         # TODO make the scale at which we extract features accessible
         # update the config with input and output paths and keys
@@ -65,14 +73,10 @@ class BlockEdgeFeaturesBase(luigi.Task):
         config.update({'input_path': self.input_path, 'input_key': self.input_key,
                        'labels_path': self.labels_path, 'labels_key': self.labels_key,
                        'output_path': self.output_path, 'block_shape': block_shape,
-                       'graph_block_prefix': os.path.join(self.graph_path, 's0',
-                                                          'sub_graphs', 'block_')})
+                       'sub_graph_group': sub_graph_group,
+                       'ignore_label': ignore_label})
 
         if self.n_retries == 0:
-            # get shape and make block config
-            shape = vu.get_shape(self.input_path, self.input_key)
-            if len(shape) == 4:
-                shape = shape[1:]
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
         else:
             block_list = self.block_list
@@ -114,32 +118,35 @@ class BlockEdgeFeaturesLSF(BlockEdgeFeaturesBase, LSFTask):
 def _accumulate(input_path, input_key,
                 labels_path, labels_key,
                 output_path, block_list,
-                graph_block_prefix, offsets):
+                sub_graph_group, offsets,
+                ignore_label):
 
     fu.log("accumulate features without applying filters")
     with vu.file_reader(input_path, 'r') as f:
         dtype = f[input_key].dtype
         input_dim = f[input_key].ndim
-    out_prefix = os.path.join(output_path, 'blocks')
+    out_prefix = os.path.join(output_path, 's0', 'sub_features')
     if offsets is None:
         assert input_dim == 3, str(input_dim)
         fu.log('accumulate boundary map for type %s' % str(dtype))
         boundary_function = ndist.extractBlockFeaturesFromBoundaryMaps_uint8 if dtype == 'uint8' else \
             ndist.extractBlockFeaturesFromBoundaryMaps_float32
-        boundary_function(graph_block_prefix,
+        boundary_function(sub_graph_group,
                           input_path, input_key,
                           labels_path, labels_key,
                           block_list, out_prefix,
-                          increaseRoi=True)
+                          increaseRoi=True,
+                          ignoreLabel=ignore_label)
     else:
         assert input_dim == 4, str(input_dim)
         fu.log('accumulate affinity map for type %s' % str(dtype))
         affinity_function = ndist.extractBlockFeaturesFromAffinityMaps_uint8 if dtype == 'uint8' else \
             ndist.extractBlockFeaturesFromAffinityMaps_float32
-        affinity_function(graph_block_prefix,
+        affinity_function(sub_graph_group,
                           input_path, input_key,
                           labels_path, labels_key,
-                          block_list, out_prefix, offsets)
+                          block_list, out_prefix, offsets,
+                          ignoreLabel=ignore_label)
 
 
 def _accumulate_filter(input_, graph, labels, bb_local,
@@ -165,7 +172,7 @@ def _accumulate_filter(input_, graph, labels, bb_local,
 
 def _accumulate_block(block_id, blocking,
                       ds_in, ds_labels,
-                      out_prefix, graph_block_prefix,
+                      out_prefix, sub_graph_group,
                       filters, sigmas, halo, ignore_label,
                       apply_in_2d, channel_agglomeration):
 
@@ -234,12 +241,15 @@ def _accumulate_block(block_id, blocking,
     fu.log_block_success(block_id)
 
 
+# TODO implement
 def _accumulate_with_filters(input_path, input_key,
                              labels_path, labels_key,
-                             output_path, graph_block_prefix,
+                             output_path, sub_graph_group,
                              block_list, block_shape,
                              filters, sigmas, halo,
-                             apply_in_2d, channel_agglomeration):
+                             apply_in_2d, channel_agglomeration,
+                             ignore_label):
+    assert False, "Not implemented yet"
 
     fu.log("accumulate features with applying filters:")
     # TODO log filter and sigma values
@@ -255,17 +265,13 @@ def _accumulate_with_filters(input_path, input_key,
     blocking = nt.blocking([0, 0, 0], list(shape),
                            list(block_shape))
 
-    # determine if we have an ignore label
-    with z5py.File(graph_block_prefix + str(block_list[0])) as f:
-        ignore_label = f.attrs['ignoreLabel']
-
     with vu.file_reader(input_path) as f, vu.file_reader(labels_path) as f_l:
         ds_in = f[input_key]
         ds_labels = f_l[labels_key]
         for block_id in block_list:
             _accumulate_block(block_id, blocking,
                               ds_in, ds_labels,
-                              out_prefix, graph_block_prefix,
+                              out_prefix, sub_graph_group,
                               filters, sigmas, halo, ignore_label,
                               apply_in_2d, channel_agglomeration)
 
@@ -286,7 +292,8 @@ def block_edge_features(job_id, config_path):
     labels_key = config['labels_key']
     output_path = config['output_path']
     block_shape = config['block_shape']
-    graph_block_prefix = config['graph_block_prefix']
+    sub_graph_group = config['sub_graph_group']
+    ignore_label = config['ignore_label']
 
     # offsets for accumulation of affinity maps
     offsets = config.get('offsets', None)
@@ -301,16 +308,18 @@ def block_edge_features(job_id, config_path):
         _accumulate(input_path, input_key,
                     labels_path, labels_key,
                     output_path, block_list,
-                    graph_block_prefix, offsets)
+                    sub_graph_group, offsets,
+                    ignore_label)
     else:
         assert offsets is None, "Filters and offsets are not supported"
         assert sigmas is not None, "Need sigma values"
         _accumulate_with_filters(input_path, input_key,
                                  labels_path, labels_key,
-                                 output_path, graph_block_prefix,
+                                 output_path, sub_graph_group,
                                  block_list, block_shape,
                                  filters, sigmas, halo,
-                                 apply_in_2d, channel_agglomeration)
+                                 apply_in_2d, channel_agglomeration,
+                                 ignore_label)
 
     fu.log_job_success(job_id)
 
