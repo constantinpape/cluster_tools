@@ -86,7 +86,7 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                             dependency=dep,
                             input_path=self.ws_path,
                             input_key=self.ws_key,
-                            graph_path=self.problem_path,
+                            output_path=self.problem_path,
                             output_key=self.graph_key,
                             n_scales=1)
         if self.sanity_checks:

@@ -125,16 +125,17 @@ class SolveSubproblemsLSF(SolveSubproblemsBase, LSFTask):
 #
 
 
-def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
+def _solve_block_problem(block_id, graph, uv_ids, ds_nodes,
                          costs, agglomerator, ignore_label,
                          blocking, out, time_limit):
     fu.log("Start processing block %i" % block_id)
 
     # load the nodes in this sub-block and map them
     # to our current node-labeling
-    block_path = block_prefix + str(block_id)
-    assert os.path.exists(block_path), block_path
-    nodes = ndist.loadNodes(block_path)
+    block = blocking.getBlock(block_id)
+    chunk_id = tuple(beg // bs for beg, bs in zip(block.begin, blocking.blockShape))
+    nodes = ds_nodes.read_chunk(chunk_id)
+
     # if we have an ignore label, remove zero from the nodes
     # (nodes are sorted, so it will always be at pos 0)
     if ignore_label and nodes[0] == 0:
@@ -155,7 +156,7 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
     if len(inner_edges) == 0:
         if len(nodes) > 1:
             assert removed_ignore_label,\
-			    "Can only have trivial sub-graphs for more than one node if we removed ignore label"
+                "Can only have trivial sub-graphs for more than one node if we removed ignore label"
         cut_edge_ids = outer_edges
         sub_result = None
         fu.log("Block %i: has no inner edges" % block_id)
@@ -256,16 +257,13 @@ def solve_subproblems(job_id, config_path):
 
     # the output group
     out = problem['s%i/sub_results' % scale]
+    # the varlen dataset holding the nodes per block
+    ds_nodes = z5py.File(problem_path)['s%i/sub_graphs/nodes' % scale]
 
-    # TODO this should be a n5 varlen dataset as well and
-    # then this is just another dataset in problem path
-    block_prefix = os.path.join(problem_path, 's%i' % scale,
-                                'sub_graphs', 'block_')
     blocking = nt.blocking([0, 0, 0], shape, list(block_shape))
-
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(_solve_block_problem,
-                           block_id, graph, uv_ids, block_prefix,
+                           block_id, graph, uv_ids, ds_nodes,
                            costs, agglomerator, ignore_label,
                            blocking, out, time_limit)
                  for block_id in block_list]
