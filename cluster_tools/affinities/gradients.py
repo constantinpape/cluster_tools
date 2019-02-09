@@ -125,16 +125,28 @@ class GradientsLSF(GradientsBase, LSFTask):
 #
 
 
-def _compute_average_gradients(input_datasets, outer_bb, out_data):
+# np.gradient returns a list of len 3 corresponding to the gradient
+# along each direction. I am not sure if we want to average
+# along that as done here, or keep the dimension information
+def _compute_average_gradients(input_datasets, shape, outer_bb):
+    out_data = np.zeros(shape, dtype='float32')
     for chan, inds in enumerate(input_datasets):
-        data = inds[outer_bb]
-        out_data = (np.gradient(data) + out_data * chan) / (chan + 1)
+        x = inds[outer_bb]
+        x = np.array(np.gradient(x))
+        x = np.mean(x, axis=0)
+        assert x.shape == out_data.shape
+        out_data = (x + out_data * chan) / (chan + 1)
+    return out_data
 
 
-def _compute_average_gradients(input_datasets, outer_bb, out_data):
+def _compute_all_gradients(input_datasets, shape, outer_bb):
+    out_data = np.zeros(shape, dtype='float32')
     for chan, inds in enumerate(input_datasets):
-        data = inds[outer_bb]
-        out_data[chan] = np.gradient(data)
+        x = inds[outer_bb]
+        x = np.array(np.gradient(data))
+        x = np.mean(x, axis=0)
+        out_data[chan] = x
+    return out_data
 
 
 def _gradients_block(block_id, blocking,
@@ -149,18 +161,15 @@ def _gradients_block(block_id, blocking,
 
     bshape = tuple(ob.stop - ob.start for ob in outer_bb)
     if average_gradient:
+        out_shape = bshape
+        out_data = _compute_average_gradients(input_datasets, out_shape, outer_bb)
+    else:
         n_channels = len(input_datasets)
-        shape = (n_channels,) + bshape
+        out_shape = (n_channels,) + bshape
+        out_data = _compute_all_gradients(input_datasets, out_shape, outer_bb)
+
         inner_bb = (slice(None),) + inner_bb
         local_bb = (slice(None),) + local_bb
-    else:
-        shape = bshape
-    out_data = np.zeros(shape, dtype='float32')
-
-    if average_gradient:
-        _compute_average_gradients(input_datasets, outer_bb, out_data)
-    else:
-        _compute_all_gradients(input_datasets, outer_bb, out_data)
 
     ds[inner_bb] = out_data[local_bb]
     fu.log_block_success(block_id)

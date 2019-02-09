@@ -34,11 +34,13 @@ class EmbeddingDistancesBase(luigi.Task):
     offsets = luigi.ListParameter(default=[[-1, 0, 0],
                                            [0, -1, 0],
                                            [0, 0, -1]])
+    norm = luigi.Parameter(default='l2')
     threshold = luigi.FloatParameter(default=None)
     threshold_mode = luigi.Parameter(default='greater')
     dependency = luigi.TaskParameter(default=DummyTask())
 
     threshold_modes = ('greater', 'less', 'equal')
+    norms = ('l2', 'cosine')
 
     def requires(self):
         return self.dependency
@@ -67,16 +69,18 @@ class EmbeddingDistancesBase(luigi.Task):
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 
-        shape = self._validate_paths()
+        assert self.norm in self.norms
         if self.threshold is not None:
             assert self.threshold_mode in self.threshold_modes
 
+        shape = self._validate_paths()
         config = self.get_task_config()
         config.update({'path_dict': self.path_dict,
                        'output_path': self.output_path,
                        'output_key': self.output_key,
                        'offsets': self.offsets,
                        'block_shape': block_shape,
+                       'norm': self.norm,
                        'threshold': self.threshold,
                        'threshold_mode': self.threshold_mode})
 
@@ -128,7 +132,8 @@ class EmbeddingDistancesLSF(EmbeddingDistancesBase, LSFTask):
 
 
 def _embedding_distances_block(block_id, blocking,
-                               input_datasets, ds, offsets):
+                               input_datasets, ds, offsets,
+                               norm):
     fu.log("start processing block %i" % block_id)
     halo = np.max(np.abs(offsets), axis=0)
 
@@ -147,7 +152,7 @@ def _embedding_distances_block(block_id, blocking,
         in_data[chan] = inds[outer_bb]
 
     # TODO support thresholding the embedding before distance caclulation
-    distance = compute_embedding_distances(in_data, offsets)
+    distance = compute_embedding_distances(in_data, offsets, norm)
     ds[inner_bb] = distance[local_bb]
 
     fu.log_block_success(block_id)
@@ -166,6 +171,7 @@ def embedding_distances(job_id, config_path):
     block_list = config['block_list']
     block_shape = config['block_shape']
     offsets = config['offsets']
+    norm = config['norm']
 
     # TODO support thresholding
     threshold = config['threshold']
@@ -185,7 +191,7 @@ def embedding_distances(job_id, config_path):
 
         shape = ds.shape[1:]
         blocking = nt.blocking([0, 0, 0], list(shape), block_shape)
-        [_embedding_distances_block(block_id, blocking, input_datasets, ds, offsets)
+        [_embedding_distances_block(block_id, blocking, input_datasets, ds, offsets, norm)
          for block_id in block_list]
 
     fu.log_job_success(job_id)
