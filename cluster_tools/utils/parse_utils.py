@@ -100,8 +100,8 @@ def parse_job_lsf(log_file, job_id):
     with open(log_file, 'r') as f:
         for ll in f:
             ll = ll.rstrip()
-            # '---------------' or empty line mark the begin of lsf log
-            if ll.startswith('---------------') or ll == '':
+            # '---------------' marks the begin of lsf log
+            if ll.startswith('---------------'):
                 return False
             try:
                 # get rid of the datetime prefix and check

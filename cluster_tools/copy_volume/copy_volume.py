@@ -90,7 +90,7 @@ class CopyVolumeBase(luigi.Task):
             out_shape = shape
 
         compression = task_config.pop('compression', 'gzip')
-        dtype = ds_dtype if self.dtype is None else self.dtype
+        dtype = str(ds_dtype) if self.dtype is None else self.dtype
 
         chunks = task_config.pop('chunks', None)
         if chunks is None:
