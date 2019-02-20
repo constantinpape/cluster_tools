@@ -91,7 +91,7 @@ class WriteDownscalingMetadata(luigi.Task):
             dsc = f.require_dataset('s00/subdivisions', shape=chunks.shape, dtype=chunks.dtype)
             dsc[:] = chunks
 
-    # write bdv xml, from:
+    # write bdv xml, based on:
     # https://github.com/tlambert03/imarispy/blob/master/imarispy/bdv.py#L136
     def _write_bdv_xml(self):
         # TODO we have hardcoded the number of
@@ -166,6 +166,7 @@ class WriteDownscalingMetadata(luigi.Task):
     def _bdv_metadata(self):
         effective_scale = [1, 1, 1]
 
+        # FIXME we can move this in the main loop !
         # get the scale and chunks for the initial (0th) scale
         scales = [deepcopy(effective_scale)]
         with file_reader(self.output_path, 'r') as f:
