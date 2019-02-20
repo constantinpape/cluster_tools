@@ -121,8 +121,12 @@ def _predict_block_impl(block_id, block, input_path, input_key,
     subregion_str = '[%s, %s]' % (start, stop)
     fu.log("Subregion: %s" % subregion_str)
 
+    # look for run_ilastik.sh or ilastik.py
     ilastik_exe = os.path.join(ilastik_folder, 'run_ilastik.sh')
+    if not os.path.exists(ilastik_exe):
+        ilastik_exe = os.path.join(ilastik_folder, 'ilastik.py')
     assert os.path.exists(ilastik_exe), ilastik_exe
+
     cmd = [ilastik_exe, '--headless',
            '--project=%s' % ilastik_project,
            '--output_format=compressed hdf5',
@@ -160,21 +164,33 @@ def _predict_block(block_id, blocking,
 
 def _predict_and_serialize_block(block_id, blocking, input_path, input_key,
                                  output_prefix, halo,
-                                 ilastik_folder, ilastik_project, ds):
+                                 ilastik_folder, ilastik_project, ds_out):
     fu.log("Start processing block %i" % block_id)
     block = blocking.getBlockWithHalo(block_id, halo)
+
+    # check if the input block is empty (only need to check channel 0)
+    with vu.file_reader(input_path) as f:
+        bb = vu.block_to_bb(block.innerBlock)
+        ds_in = f[input_key]
+        if ds_in.ndim == 4:
+            (slice(0, 1),) + bb
+        inp_ = ds_in[bb]
+        if np.sum(inp_) == 0:
+            fu.log_block_success(block_id)
+            return
+
     _predict_block_impl(block_id, block.outerBlock, input_path, input_key,
                         output_prefix, ilastik_folder, ilastik_project)
     bb = vu.block_to_bb(block.innerBlock)
     inner_bb = vu.block_to_bb(block.innerBlockLocal)
     path = '%s_block%i.h5' % (output_prefix, block_id)
 
+    n_channels = ds_out.shape[0]
     with vu.file_reader(path, 'r') as f:
         pred = f['exported_data'][:].squeeze()
         assert pred.ndim in (3, 4), '%i' % pred.ndim
 
         if pred.ndim == 4:
-            n_channels = ds.shape[0]
             bb = (slice(None),) + bb
             inner_bb = (slice(None),) + inner_bb
             # check if we need to transpose
@@ -182,10 +198,10 @@ def _predict_and_serialize_block(block_id, blocking, input_path, input_key,
                 pred = pred.transpose((3, 0, 1, 2))
             else:
                 assert pred.shape[0] == n_channels,\
-                    "Expected first axis to be channel axis, but got shape %s" % str(pred.shape)
+                    "Expected first axis to be channel axis with %i channels, but got shape %s" % (n_channels, str(pred.shape))
 
     pred = pred[inner_bb]
-    ds[bb] = pred
+    ds_out[bb] = pred
     # os.remove(path)
     fu.log_block_success(block_id)
 
