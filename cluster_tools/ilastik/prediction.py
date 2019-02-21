@@ -168,16 +168,16 @@ def _predict_and_serialize_block(block_id, blocking, input_path, input_key,
     fu.log("Start processing block %i" % block_id)
     block = blocking.getBlockWithHalo(block_id, halo)
 
-    # check if the input block is empty (only need to check channel 0)
-    with vu.file_reader(input_path) as f:
-        bb = vu.block_to_bb(block.innerBlock)
-        ds_in = f[input_key]
-        if ds_in.ndim == 4:
-            (slice(0, 1),) + bb
-        inp_ = ds_in[bb]
-        if np.sum(inp_) == 0:
-            fu.log_block_success(block_id)
-            return
+    # # check if the input block is empty (only need to check channel 0)
+    # with vu.file_reader(input_path) as f:
+    #     bb = vu.block_to_bb(block.innerBlock)
+    #     ds_in = f[input_key]
+    #     if ds_in.ndim == 4:
+    #         (slice(0, 1),) + bb
+    #     inp_ = ds_in[bb]
+    #     if np.sum(inp_) == 0:
+    #         fu.log_block_success(block_id)
+    #         return
 
     _predict_block_impl(block_id, block.outerBlock, input_path, input_key,
                         output_prefix, ilastik_folder, ilastik_project)
