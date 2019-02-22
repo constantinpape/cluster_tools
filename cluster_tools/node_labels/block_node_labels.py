@@ -119,7 +119,7 @@ def _labels_for_block(block_id, blocking,
 
     # check if watershed block is empty
     if ws.sum() == 0:
-        fu.log("watershed of block %i is empty" % block_id)
+        fu.log("block %i is empty" % block_id)
         fu.log_block_success(block_id)
         return
 
@@ -177,7 +177,6 @@ def block_node_labels(job_id, config_path):
     # -> interpolated
     if all(lsh < sh for lsh, sh in zip(lab_shape, shape)):
         labels = vu.InterpolatedVolume(ds_labels, shape, spline_order=0)
-        f_lab.close()
     else:
         assert lab_shape == shape
         labels = ds_labels
@@ -208,6 +207,7 @@ def block_node_labels(job_id, config_path):
             ds_out = f[output_key]
             ds_out.attrs['maxId'] = max_id
 
+    f_lab.close()
     fu.log_job_success(job_id)
 
 

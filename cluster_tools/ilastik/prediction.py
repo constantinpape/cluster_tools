@@ -41,6 +41,10 @@ class PredictionBase(luigi.Task):
         # load the task config
         config = self.get_task_config()
         shape = vu.get_shape(self.input_path, self.input_key)
+        # FIXME we should be able to specify xyzc vs cyzx
+        if len(shape) == 4:
+            shape = shape[1:]
+        assert len(shape) == 3
         block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
 
         # update the config with input and output paths and keys
@@ -54,7 +58,6 @@ class PredictionBase(luigi.Task):
         # need to require the dataset
         if self.output_key is not None:
             config.update({'output_key': self.output_key})
-            shape = vu.get_shape(self.input_path, self.input_key)
             chunks = tuple(bs // 2 for bs in block_shape)
             if self.n_channels > 1:
                 shape = (self.n_channels,) + shape
@@ -101,17 +104,29 @@ def _predict_block_impl(block_id, block, input_path, input_key,
     start, stop = block.begin, block.end
     # ilastik always wants 5d coordinates, for now we only support 3d
     assert len(start) == len(stop) == 3, "Only support 3d data"
+
+    # FIXME is there a way to read axis order from ilastik
     # FIXME ilastik docu advice is to give tcxyz, but this does not work!!!
     # currently the only working option is xyzc
+    # FIXME specify axis order properly
     start = [str(st) for st in start] + ['None']
     stop = [str(st) for st in stop] + ['None']
+
+    # start = ['None'] + [str(st) for st in start]
+    # stop = ['None'] + [str(st) for st in stop]
+
     start = '(%s)' % ','.join(start)
     stop = '(%s)' % ','.join(stop)
+
     subregion_str = '[%s, %s]' % (start, stop)
     fu.log("Subregion: %s" % subregion_str)
 
+    # look for run_ilastik.sh or ilastik.py
     ilastik_exe = os.path.join(ilastik_folder, 'run_ilastik.sh')
+    if not os.path.exists(ilastik_exe):
+        ilastik_exe = os.path.join(ilastik_folder, 'ilastik.py')
     assert os.path.exists(ilastik_exe), ilastik_exe
+
     cmd = [ilastik_exe, '--headless',
            '--project=%s' % ilastik_project,
            '--output_format=compressed hdf5',
@@ -149,22 +164,44 @@ def _predict_block(block_id, blocking,
 
 def _predict_and_serialize_block(block_id, blocking, input_path, input_key,
                                  output_prefix, halo,
-                                 ilastik_folder, ilastik_project, ds):
+                                 ilastik_folder, ilastik_project, ds_out):
     fu.log("Start processing block %i" % block_id)
     block = blocking.getBlockWithHalo(block_id, halo)
+
+    # # check if the input block is empty (only need to check channel 0)
+    # with vu.file_reader(input_path) as f:
+    #     bb = vu.block_to_bb(block.innerBlock)
+    #     ds_in = f[input_key]
+    #     if ds_in.ndim == 4:
+    #         (slice(0, 1),) + bb
+    #     inp_ = ds_in[bb]
+    #     if np.sum(inp_) == 0:
+    #         fu.log_block_success(block_id)
+    #         return
+
     _predict_block_impl(block_id, block.outerBlock, input_path, input_key,
                         output_prefix, ilastik_folder, ilastik_project)
     bb = vu.block_to_bb(block.innerBlock)
     inner_bb = vu.block_to_bb(block.innerBlockLocal)
     path = '%s_block%i.h5' % (output_prefix, block_id)
+
+    n_channels = ds_out.shape[0]
     with vu.file_reader(path, 'r') as f:
-        pred = f['exported_data'][:]
-        if pred.ndim == 4 and pred.shape[-1] > 0:
-            pred = pred.transpose((3, 0, 1, 2))
+        pred = f['exported_data'][:].squeeze()
+        assert pred.ndim in (3, 4), '%i' % pred.ndim
+
+        if pred.ndim == 4:
             bb = (slice(None),) + bb
             inner_bb = (slice(None),) + inner_bb
+            # check if we need to transpose
+            if pred.shape[-1] == n_channels:
+                pred = pred.transpose((3, 0, 1, 2))
+            else:
+                assert pred.shape[0] == n_channels,\
+                    "Expected first axis to be channel axis with %i channels, but got shape %s" % (n_channels, str(pred.shape))
+
     pred = pred[inner_bb]
-    ds[bb] = pred
+    ds_out[bb] = pred
     # os.remove(path)
     fu.log_block_success(block_id)
 
@@ -204,6 +241,8 @@ def prediction(job_id, config_path):
     block_list = config['block_list']
 
     shape = vu.get_shape(input_path, input_key)
+    if len(shape) == 4:
+        shape = shape[1:]
 
     blocking = nt.blocking([0, 0, 0], shape, block_shape)
 
