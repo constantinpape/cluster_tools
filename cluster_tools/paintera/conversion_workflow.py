@@ -297,7 +297,7 @@ class ConversionWorkflow(WorkflowBase):
                 segment_ids, counts = np.unique(assignments,
                                                 return_counts=True)
                 seg_ids_to_counts = {seg_id: count for seg_id, count in zip(segment_ids, counts)}
-                fragment_ids_to_counts =  nt.takeDict(seg_ids_to_counts, assignments)
+                fragment_ids_to_counts = nt.takeDict(seg_ids_to_counts, assignments)
                 fragment_ids = np.arange(n_fragments, dtype='uint64')
 
                 non_triv_fragments = fragment_ids[fragment_ids_to_counts > 1]
@@ -309,6 +309,12 @@ class ConversionWorkflow(WorkflowBase):
 
                 # TODO do we need to assign a special value to ignore label (0) ?
                 frag_to_seg = np.vstack((non_triv_fragments, non_triv_segments))
+
+                # fragment_ids = np.arange(n_fragments, dtype='uint64')
+                # assignments += n_fragments
+                # frag_to_seg = np.vstack((fragment_ids, assignments))
+
+                # max_id = int(frag_to_seg.max())
 
                 out_key = os.path.join(self.label_out_key, 'fragment-segment-assignment')
                 chunks = (1, frag_to_seg.shape[1])

@@ -157,6 +157,10 @@ def _apply_dt(input_, config):
     threshold = config.get('threshold', .5)
     threshd = (input_ > threshold).astype('uint32')
 
+    # we need to check if any values were above the threshold
+    if(np.sum(threshd) == 0):
+        return None
+
     pixel_pitch = config.get('pixel_pitch', None)
     apply_2d = config.get('apply_dt_2d', True)
     if apply_2d:
@@ -378,6 +382,10 @@ def _ws_block(blocking, block_id, ds_in, ds_out, config, pass_):
 
     # apply distance transform
     dt = _apply_dt(input_, config)
+    # check if input was valid
+    if dt is None:
+        fu.log_block_success(block_id)
+        return
 
     # get offset to make new seeds unique between blocks
     # (we need to relabel later to make processing efficient !)
@@ -423,6 +431,10 @@ def _ws_block_masked(blocking, block_id,
 
     # apply distance transform
     dt = _apply_dt(input_, config)
+    # check if input was valid
+    if dt is None:
+        fu.log_block_success(block_id)
+        return
 
     # get offset to make new seeds unique between blocks
     # (we need to relabel later to make processing efficient !)
