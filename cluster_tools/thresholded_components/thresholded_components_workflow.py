@@ -24,7 +24,7 @@ class ThresholdedComponentsWorkflow(WorkflowBase):
     threshold_mode = luigi.Parameter(default='greater')
     mask_path = luigi.Parameter(default='')
     mask_key = luigi.Parameter(default='')
-    channel = luigi.IntParameter(default=None)
+    channel = luigi.Parameter(default=None)
 
     def requires(self):
         block_task = getattr(block_tasks,

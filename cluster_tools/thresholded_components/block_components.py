@@ -37,7 +37,7 @@ class BlockComponentsBase(luigi.Task):
     threshold_mode = luigi.Parameter(default='greater')
     mask_path = luigi.Parameter(default='')
     mask_key = luigi.Parameter(default='')
-    channel = luigi.IntParameter(default=None)
+    channel = luigi.Parameter(default=None)
 
     threshold_modes = ('greater', 'less', 'equal')
 
@@ -80,8 +80,13 @@ class BlockComponentsBase(luigi.Task):
             assert len(shape) == 3, str(len(shape))
         else:
             # if channel is specified, we need 4d input
+            assert isinstance(self.channel, (int, tuple, list))
             assert len(shape) == 4, str(len(shape))
-            assert shape[0] > self.channel, "%i, %i" % (shape[0], self.channel)
+            if isinstance(self.channel, int):
+                assert shape[0] > self.channel, "%i, %i" % (shape[0], self.channel)
+            else:
+                assert all(isinstance(chan, int) for chan in self.channel)
+                assert shape[0] > max(self.channel), "%i, %i" % (shape[0], max(self.channel))
             shape = shape[1:]
             config.update({'channel': self.channel})
 
@@ -136,8 +141,15 @@ def _cc_block(block_id, blocking,
     block = blocking.getBlock(block_id)
 
     bb = vu.block_to_bb(block)
-    bb_inp = bb if channel is None else (slice(channel, channel + 1),) + bb
-    input_ = ds_in[bb_inp].squeeze()
+    if channel is None:
+        input_ = input_[bb]
+    else:
+        block_shape = tuple(b.stop - b.start for b in bb)
+        input_ = np.zeros(block_shape, dtype=ds_in.dtype)
+        channel_ = [channel] if isinstance(channel, int) else channel
+        for chan in channel_:
+            bb_inp = (slice(chan, chan + 1),) + bb
+            input_ += ds_in[bb_inp].squeeze()
 
     if threshold_mode == 'greater':
         input_ = input_ > threshold
@@ -172,8 +184,16 @@ def _cc_block_with_mask(block_id, blocking,
         fu.log_block_success(block_id)
         return 0
 
-    bb_inp = bb if channel is None else (slice(channel, channel + 1),) + bb
-    input_ = ds_in[bb_inp].squeeze()
+    bb = vu.block_to_bb(block)
+    if channel is None:
+        input_ = input_[bb]
+    else:
+        block_shape = tuple(b.stop - b.start for b in bb)
+        input_ = np.zeros(block_shape, dtype=ds_in.dtype)
+        channel_ = [channel] if isinstance(channel, int) else channel
+        for chan in channel_:
+            bb_inp = (slice(chan, chan + 1),) + bb
+            input_ += ds_in[bb_inp].squeeze()
 
     if threshold_mode == 'greater':
         input_ = input_ > threshold
