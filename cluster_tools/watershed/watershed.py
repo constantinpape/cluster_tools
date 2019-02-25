@@ -204,13 +204,18 @@ def _make_seeds(dt, config):
     else:
         seeds = max_fu(dt, marker=np.nan, allowAtBorder=True, allowPlateaus=Ttrue)
 
+    # check if we have just one plateau
+    seeds = np.isnan(seeds)
+    if np.sum(seeds) == seeds.size:
+        return np.ones_like(seeds, dtype='uint32')
+
     # find seeds via connected components after max-suppression if enabled)
     if apply_nonmax_suppression:
-        seeds = np.array(np.where(np.isnan(seeds))).transpose()
+        seeds = np.array(np.where(seeds)).transpose()
         seeds = nonMaximumDistanceSuppression(dt, seeds)
         seeds = _points_to_vol(seeds, dt.shape)
     else:
-        seeds = vigra.analysis.labelMultiArrayWithBackground(np.isnan(seeds).view('uint8'))
+        seeds = vigra.analysis.labelMultiArrayWithBackground(seeds.view('uint8'))
 
     return seeds
 
@@ -369,7 +374,7 @@ def _read_data(ds_in, input_bb, config):
     else:
         input_ = vu.normalize(ds_in[input_bb])
     # check if we need to invert the input
-    if config.get('inverts_input', False):
+    if config.get('invert_inputs', False):
         input_ = 1. - input_
     return input_
 
