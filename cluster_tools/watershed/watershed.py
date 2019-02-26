@@ -202,7 +202,7 @@ def _make_seeds(dt, config):
         seeds = max_fu(vu.apply_filter(dt, 'gaussianSmoothing', sigma_seeds),
                        marker=np.nan, allowAtBorder=True, allowPlateaus=True)
     else:
-        seeds = max_fu(dt, marker=np.nan, allowAtBorder=True, allowPlateaus=Ttrue)
+        seeds = max_fu(dt, marker=np.nan, allowAtBorder=True, allowPlateaus=True)
 
     # check if we have just one plateau
     seeds = np.isnan(seeds)
@@ -272,6 +272,7 @@ def _apply_watershed_with_seeds(input_, dt, offset,
         ws = np.zeros_like(input_, dtype='uint64')
         for z in range(ws.shape[0]):
 
+            dtz = dt[z]
             # get the initial seeds for this slice
             # and a mask for the inital seeds
             initial_seeds_z = initial_seeds[z]
@@ -501,7 +502,7 @@ def watershed(job_id, config_path):
 
     # submit blocks
     with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
-        ds_in  = f_in[input_key]
+        ds_in = f_in[input_key]
         assert ds_in.ndim in (3, 4)
         ds_out = f_out[output_key]
         assert ds_out.ndim == 3

@@ -1,5 +1,3 @@
-import os
-import json
 import luigi
 
 from ..cluster_tasks import WorkflowBase
