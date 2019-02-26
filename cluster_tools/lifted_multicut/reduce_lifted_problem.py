@@ -412,7 +412,8 @@ def reduce_lifted_problem(job_id, config_path):
 
     fu.log("Reduced graph from %i to %i nodes; %i to %i edges; %i to %i lifted edges." % (n_nodes, n_new_nodes,
                                                                                           n_edges, n_new_edges,
-                                                                                          len(lifted_uvs), len(new_lifted_uvs)))
+                                                                                          len(lifted_uvs),
+                                                                                          len(new_lifted_uvs)))
     fu.log_job_success(job_id)
 
 

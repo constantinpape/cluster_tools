@@ -3,12 +3,10 @@
 import os
 import sys
 import json
-import numpy as np
 
 import luigi
 import nifty.distributed as ndist
 
-import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
@@ -38,6 +36,16 @@ class SparseLiftedNeighborhoodBase(luigi.Task):
 
     def requires(self):
         return self.dependency
+
+    @staticmethod
+    def default_task_config():
+        config = LocalTask.default_task_config()
+        # different modes for adding lifted edges:
+        # "all": add lifted edges between all nodes that have a label
+        # "same": add lifted edges only between nodes with the same label
+        # "different": add lifted edges only between nodes with different labels
+        config.update({'mode': 'all'})
+        return config
 
     def run_impl(self):
         # get the global config and init configs
@@ -112,11 +120,14 @@ def sparse_lifted_neighborhood(job_id, config_path):
     n_threads = config.get('threads_per_job', 1)
     graph_depth = config['nh_graph_depth']
 
+    mode = config.get('mode', 'all')
+    fu.log("lifted nh mode set to %s, depth set to %i" % (mode, graph_depth))
+
     fu.log("start lifted neighborhood extraction for depth %i" % graph_depth)
     ndist.computeLiftedNeighborhoodFromNodeLabels(os.path.join(graph_path, graph_key),
                                                   os.path.join(node_label_path, node_label_key),
                                                   os.path.join(output_path, output_key),
-                                                  graph_depth, n_threads)
+                                                  graph_depth, n_threads, mode)
 
     fu.log_job_success(job_id)
 
