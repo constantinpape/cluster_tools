@@ -1,5 +1,4 @@
 import os
-import json
 import luigi
 
 from .cluster_tasks import WorkflowBase
@@ -42,8 +41,10 @@ class MulticutSegmentationWorkflow(WorkflowBase):
     max_jobs_merge_features = luigi.IntParameter(default=1)
     # number of jobs used for sub multicuts
     max_jobs_multicut = luigi.IntParameter(default=1)
-    # use decomposer workflow
+    # skip watershed (watershed volume must already be preset)
     skip_ws = luigi.BoolParameter(default=False)
+    # run agglomeration immediately after watersheds
+    agglomerate_ws = luigi.BoolParameter(default=False)
     # path to random forest (if available)
     rf_path = luigi.Parameter(default='')
     # node label dict: dictionary for additional node labels used in costs
@@ -72,7 +73,8 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                                     output_path=self.ws_path,
                                     output_key=self.ws_key,
                                     mask_path=self.mask_path,
-                                    mask_key=self.mask_key)
+                                    mask_key=self.mask_key,
+                                    agglomeration=self.agglomerate_ws)
             return dep
 
     # TODO add options to choose which features to use
