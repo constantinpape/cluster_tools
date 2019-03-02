@@ -7,7 +7,6 @@ import numpy as np
 
 import luigi
 import nifty.tools as nt
-import nifty.distributed as ndist
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -51,7 +50,7 @@ class FilterBlocksBase(luigi.Task):
 
         # update the config with input and graph paths and keys
         # as well as block shape
-        config.update({'input_path': self.input_path,'input_key': self.input_key,
+        config.update({'input_path': self.input_path, 'input_key': self.input_key,
                        'block_shape': block_shape, 'filter_path': self.filter_path,
                        'output_path': self.output_path, 'output_key': self.output_key})
 
@@ -189,8 +188,7 @@ def filter_blocks(job_id, config_path):
                                       ds, filter_ids)
     else:
         fu.log("filtering blocks to new dataset")
-        with vu.file_reader(input_path, 'r') as f_in,\
-             vu.file_reader(output_path) as f_out:
+        with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
 
             ds_in = f_in[input_key]
             ds_out = f_out[output_key]
