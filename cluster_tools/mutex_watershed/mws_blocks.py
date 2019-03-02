@@ -37,7 +37,6 @@ class MwsBlocksBase(luigi.Task):
     serialize_overlap = luigi.BoolParameter(default=False)
     dependency = luigi.TaskParameter()
 
-
     @staticmethod
     def default_task_config():
         # we use this to get also get the common default config
@@ -92,6 +91,9 @@ class MwsBlocksBase(luigi.Task):
         with vu.file_reader(self.output_path) as f:
             f.require_dataset(self.output_key,  shape=shape, dtype='uint64',
                               compression=compression, chunks=chunks)
+
+        # make folder for overlap results
+        os.makedirs(os.path.join(self.tmp_folder, 'mws_overlaps'), exist_ok=True)
 
         block_list = vu.blocks_in_volume(shape, block_shape,
                                          roi_begin, roi_end)
@@ -243,8 +245,7 @@ def mws_blocks(job_id, config_path):
     mask_path = config.get('mask_path', '')
     mask_key = config.get('mask_key', '')
 
-    with vu.file_reader(input_path, 'r') as f_in,\
-        vu.file_reader(output_path) as f_out:
+    with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
 
         ds_in = f_in[input_key]
         ds_out = f_out[output_key]

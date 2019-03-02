@@ -336,7 +336,6 @@ def write(job_id, config_path):
     fu.log_job_success(job_id)
 
 
-
 if __name__ == '__main__':
     path = sys.argv[1]
     assert os.path.exists(path), path

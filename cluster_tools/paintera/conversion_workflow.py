@@ -1,5 +1,4 @@
 import os
-import json
 from datetime import datetime
 
 import numpy as np
@@ -46,6 +45,11 @@ class WritePainteraMetadata(luigi.Task):
         effective_scale = [1, 1, 1]
         # write the scale factors
         for scale, scale_factor in enumerate(scale_factors):
+
+            # don't write attrs for the original dataset
+            if scale == 0:
+                continue
+
             ds = group['s%i' % scale]
             effective_scale = [sf * eff for sf, eff in zip(scale_factor, effective_scale)]
             # we need to reverse the scale factors because paintera has axis order
@@ -156,7 +160,6 @@ class ConversionWorkflow(WorkflowBase):
         task = getattr(sampling_tasks, self._get_task_name('Downscaling'))
 
         # run downsampling
-        in_scale = self.label_scale
         in_key = os.path.join(self.label_out_key, 'data', 's0')
         dep = dependency
 
@@ -174,7 +177,6 @@ class ConversionWorkflow(WorkflowBase):
                        effective_scale_factor=effective_scale,
                        dependency=dep)
 
-            in_scale = out_scale
             in_key = out_key
         return dep
 

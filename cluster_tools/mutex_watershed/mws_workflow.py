@@ -1,5 +1,4 @@
 import os
-import json
 import numpy as np
 import luigi
 
@@ -90,13 +89,12 @@ class MwsWorkflow(WorkflowBase):
 
         merge_task = getattr(merge_tasks,
                              self._get_task_name('MergeAssignments'))
-        assignment_key = os.path.join(self.tmp_folder, 'assignments_mws')
+        assignment_key = 'mws_assignments'
         dep = merge_task(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
                          max_jobs=self.max_jobs, dependency=dep,
                          output_path=self.output_path, output_key=assignment_key,
                          shape=shape, offset_path=id_offset_path,
                          save_prefix='mws_assignments')
-        # return dep
         # we write in-place to the output dataset
         write_task = getattr(write_tasks,
                              self._get_task_name('Write'))
