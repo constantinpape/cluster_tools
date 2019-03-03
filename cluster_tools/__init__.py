@@ -1,5 +1,6 @@
 from .workflows import MulticutSegmentationWorkflow
 from .workflows import LiftedMulticutSegmentationWorkflow
+from .workflows import AgglomerativeClusteringWorkflow
 from .thresholded_components import ThresholdedComponentsWorkflow, ThresholdAndWatershedWorkflow
 from .mutex_watershed import MwsWorkflow
 # from .learning import LearningWorkflow

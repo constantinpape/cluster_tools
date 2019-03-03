@@ -125,8 +125,8 @@ def agglomerative_clustering(job_id, config_path):
     with vu.file_reader(features_path) as f:
         ds = f[features_key]
         ds.n_threads = n_threads
-        edge_features = ds[:, 0]
-        edge_sizes = ds[:, -1]
+        edge_features = ds[:, 0].squeeze()
+        edge_sizes = ds[:, -1].squeeze()
         assert len(edge_features) == n_edges
 
     n_nodes = int(uv_ids.max()) + 1

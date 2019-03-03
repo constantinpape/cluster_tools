@@ -22,37 +22,29 @@ from . import write as write_tasks
 from .agglomerative_clustering import agglomerative_clustering as agglomerate_tasks
 
 
-class MulticutSegmentationWorkflow(WorkflowBase):
+class SegmentationWorkflowBase(WorkflowBase):
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
     # where to save the watersheds
     ws_path = luigi.Parameter()
     ws_key = luigi.Parameter()
-    # where to save the multicut problems
+    # where to save the problem (graph, edge_features etc)
     problem_path = luigi.Parameter()
     # where to save the node labels
     node_labels_key = luigi.Parameter()
     # where to save the resulting segmentation
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
-    # number of scales
-    n_scales = luigi.IntParameter()
     # optional path to mask
     mask_path = luigi.Parameter(default='')
     mask_key = luigi.Parameter(default='')
-    # number of jobs used in feature merging
-    max_jobs_merge_features = luigi.IntParameter(default=1)
-    # number of jobs used for sub multicuts
-    max_jobs_multicut = luigi.IntParameter(default=1)
+    # number of jobs used for merge tasks
+    max_jobs_merge = luigi.IntParameter(default=1)
     # skip watershed (watershed volume must already be preset)
     skip_ws = luigi.BoolParameter(default=False)
     # run agglomeration immediately after watersheds
     agglomerate_ws = luigi.BoolParameter(default=False)
-    # path to random forest (if available)
-    rf_path = luigi.Parameter(default='')
-    # node label dict: dictionary for additional node labels used in costs
-    node_label_dict = luigi.DictParameter(default={})
-    # run some sanity checks for sub-results
+    # run some sanity checks for intermediate results
     sanity_checks = luigi.BoolParameter(default=False)
 
     # hard-coded keys
@@ -83,7 +75,7 @@ class MulticutSegmentationWorkflow(WorkflowBase):
     # TODO add options to choose which features to use
     # TODO in the current implementation, we can only compute the
     # graph with n_scales=1, otherwise we will clash with the multicut merged graphs
-    def _problem_tasks(self, dep):
+    def _problem_tasks(self, dep, compute_costs):
         dep = GraphWorkflow(tmp_folder=self.tmp_folder,
                             max_jobs=self.max_jobs,
                             config_dir=self.config_dir,
@@ -118,33 +110,24 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                                    graph_key=self.graph_key,
                                    output_path=self.problem_path,
                                    output_key=self.features_key,
-                                   max_jobs_merge=self.max_jobs_merge_features)
-        dep = EdgeCostsWorkflow(tmp_folder=self.tmp_folder,
-                                max_jobs=self.max_jobs,
-                                config_dir=self.config_dir,
-                                target=self.target,
-                                dependency=dep,
-                                features_path=self.problem_path,
-                                features_key=self.features_key,
-                                output_path=self.problem_path,
-                                output_key=self.costs_key,
-                                node_label_dict=self.node_label_dict,
-                                rf_path=self.rf_path)
-        return dep
-
-    def _multicut_tasks(self, dep):
-        dep = MulticutWorkflow(tmp_folder=self.tmp_folder,
-                               max_jobs=self.max_jobs_multicut,
-                               config_dir=self.config_dir,
-                               target=self.target,
-                               dependency=dep,
-                               problem_path=self.problem_path,
-                               n_scales=self.n_scales,
-                               assignment_path=self.output_path,
-                               assignment_key=self.node_labels_key)
+                                   max_jobs_merge=self.max_jobs_merge)
+        if compute_costs:
+            dep = EdgeCostsWorkflow(tmp_folder=self.tmp_folder,
+                                    max_jobs=self.max_jobs,
+                                    config_dir=self.config_dir,
+                                    target=self.target,
+                                    dependency=dep,
+                                    features_path=self.problem_path,
+                                    features_key=self.features_key,
+                                    output_path=self.problem_path,
+                                    output_key=self.costs_key,
+                                    node_label_dict=self.node_label_dict,
+                                    rf_path=self.rf_path)
         return dep
 
     def _write_tasks(self, dep, identifier):
+        if self.output_key == '':
+            return dep
         write_task = getattr(write_tasks, self._get_task_name('Write'))
         dep = write_task(tmp_folder=self.tmp_folder,
                          max_jobs=self.max_jobs,
@@ -159,12 +142,35 @@ class MulticutSegmentationWorkflow(WorkflowBase):
                          identifier=identifier)
         return dep
 
+
+
+class MulticutSegmentationWorkflow(SegmentationWorkflowBase):
+    # number of jobs used for sub multicuts
+    max_jobs_multicut = luigi.IntParameter(default=1)
+    # number of scales
+    n_scales = luigi.IntParameter()
+    # path to random forest (if available)
+    rf_path = luigi.Parameter(default='')
+    # node label dict: dictionary for additional node labels used in costs
+    node_label_dict = luigi.DictParameter(default={})
+
+    def _multicut_tasks(self, dep):
+        dep = MulticutWorkflow(tmp_folder=self.tmp_folder,
+                               max_jobs=self.max_jobs_multicut,
+                               config_dir=self.config_dir,
+                               target=self.target,
+                               dependency=dep,
+                               problem_path=self.problem_path,
+                               n_scales=self.n_scales,
+                               assignment_path=self.output_path,
+                               assignment_key=self.node_labels_key)
+        return dep
+
     def requires(self):
         dep = self._watershed_tasks()
-        dep = self._problem_tasks(dep)
+        dep = self._problem_tasks(dep, compute_costs=True)
         dep = self._multicut_tasks(dep)
-        if self.output_key != '':
-            dep = self._write_tasks(dep, 'multicut')
+        dep = self._write_tasks(dep, 'multicut')
         return dep
 
     @staticmethod
@@ -177,10 +183,20 @@ class MulticutSegmentationWorkflow(WorkflowBase):
         return config
 
 
-class LiftedMulticutSegmentationWorkflow(MulticutSegmentationWorkflow):
+class LiftedMulticutSegmentationWorkflow(SegmentationWorkflowBase):
+    # number of jobs used for sub multicuts
+    max_jobs_multicut = luigi.IntParameter(default=1)
+    # number of scales
+    n_scales = luigi.IntParameter()
+    # path to random forest (if available)
+    rf_path = luigi.Parameter(default='')
+    # node label dict: dictionary for additional node labels used in costs
+    node_label_dict = luigi.DictParameter(default={})
+    # node labels for lifted milticut
     lifted_labels_path = luigi.Parameter()
     lifted_labels_key = luigi.Parameter()
     lifted_prefix = luigi.Parameter()
+    # graph depth for lifted neighborhood
     nh_graph_depth = luigi.IntParameter(default=4)
 
     # TODO different options for lifted problems
@@ -220,11 +236,10 @@ class LiftedMulticutSegmentationWorkflow(MulticutSegmentationWorkflow):
 
     def requires(self):
         dep = self._watershed_tasks()
-        dep = self._problem_tasks(dep)
+        dep = self._problem_tasks(dep, compute_costs=True)
         dep = self._lifted_problem_tasks(dep)
         dep = self._lifted_multicut_tasks(dep)
-        if self.output_key != '':
-            dep = self._write_tasks(dep, 'lifted_multicut')
+        dep = self._write_tasks(dep, 'lifted_multicut')
         return dep
 
     @staticmethod
@@ -242,23 +257,26 @@ class LiftedMulticutSegmentationWorkflow(MulticutSegmentationWorkflow):
 class AgglomerativeClusteringWorkflow(MulticutSegmentationWorkflow):
     threshold = luigi.FloatParameter()
 
-    def requires(self):
-        assert self.n_scales == 0
-        dep = self._problem_tasks(self.dependency)
+    def _agglomerate_task(self, dep):
         agglomerate_task = getattr(agglomerate_tasks,
                                    self._get_task_name('AgglomerativeClustering'))
         dep = agglomerate_task(tmp_folder=self.tmp_folder,
                                max_jobs=self.max_jobs,
                                config_dir=self.config_dir,
                                problem_path=self.problem_path,
-                               assignment_path=self.assignment_path,
-                               assignment_key=self.assignment_key,
+                               assignment_path=self.output_path,
+                               assignment_key=self.node_labels_key,
                                features_path=self.problem_path,
                                features_key=self.features_key,
                                threshold=self.threshold,
                                dependency=dep)
-        if self.output_key != '':
-            dep = self._write_tasks(dep, 'agglomerative_clustering')
+        return dep
+
+    def requires(self):
+        dep = self._watershed_tasks()
+        dep = self._problem_tasks(dep, compute_costs=False)
+        dep = self._agglomerate_task(dep)
+        dep = self._write_tasks(dep, 'agglomerative_clustering')
         return dep
 
     @staticmethod
