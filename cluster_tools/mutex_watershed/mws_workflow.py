@@ -9,6 +9,7 @@ from ..thresholded_components import merge_offsets as offset_tasks
 from ..thresholded_components import merge_assignments as merge_tasks
 from .. import stitching as stitch_tasks
 from .. import write as write_tasks
+from ..workflows import AgglomerativeClusteringWorkflow
 
 from .import mws_blocks as block_tasks
 from .import mws_faces as face_tasks
@@ -20,11 +21,13 @@ class MwsWorkflow(WorkflowBase):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     offsets = luigi.ListParameter()
-    stitch_by_overlap = luigi.BoolParameter(default=True)
-    overlap_threshold = luigi.FloatParameter(default=.9)
+    stitch_mode = luigi.BoolParameter(default='overlap')
+    stitch_threshold = luigi.FloatParameter(default=.9)
     halo = luigi.ListParameter(default=None)
     mask_path = luigi.Parameter(default='')
     mask_key = luigi.Parameter(default='')
+
+    stich_modes = ('overlap', 'cluster', 'mws', None)
 
     def _stitch_by_overlap(self, dep, id_offset_path, halo):
         # merge block faces via max overlap
@@ -36,11 +39,18 @@ class MwsWorkflow(WorkflowBase):
                           config_dir=self.config_dir, dependency=dep,
                           shape=shape, overlap_prefix=ovlp_prefix,
                           save_prefix='mws_assignments', offsets_path=id_offset_path,
-                          overlap_threshold=self.overlap_threshold, halo=halo)
+                          overlap_threshold=self.stitch_threshold, halo=halo)
         return dep
 
-    # FIXME this does not work properly yet
+    # TODO implement
+    def _stitch_by_clustering(self, dep, id_offset_path):
+        raise NotImplementedError("Stitching by agglomerative clustering not implemented")
+        dep = AgglomerativeClusteringWorkflow()
+        return dep
+
+    # TODO debug
     def _stitch_by_mws(self, dep, id_offset_path):
+        raise NotImplementedError("Stitching by mws not implemented")
         # merge block faces via mutex ws
         face_task = getattr(face_tasks, self._get_task_name('MwsFaces'))
         dep = face_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
@@ -54,6 +64,7 @@ class MwsWorkflow(WorkflowBase):
     def requires(self):
         # make sure we have affogato
         assert su.compute_mws_segmentation is not None, "Need affogato for mutex watershed"
+        assert self.stitch_mode in self.stich_modes, "Stich mode %s not supported" % self.stitch_mode
 
         if self.halo is None:
             halo = np.max(np.abs(self.offsets), axis=0) + 1
@@ -68,7 +79,7 @@ class MwsWorkflow(WorkflowBase):
                          output_path=self.output_path, output_key=self.output_key,
                          mask_path=self.mask_path, mask_key=self.mask_key,
                          offsets=self.offsets, halo=halo,
-                         serialize_overlap=self.stitch_by_overlap)
+                         serialize_overlap=self.stitch_mode == 'overlap')
 
         # merge id-offsets
         with vu.file_reader(self.input_path, 'r') as f:
@@ -84,8 +95,15 @@ class MwsWorkflow(WorkflowBase):
 
         # get assignments either by re-running mws on the overlaps
         # or by stitching via biggest overlap
-        dep = self._stitch_by_overlap(dep, id_offset_path, halo) if self.stitch_by_overlap else\
-            self._stitch_by_mws(dep, id_offset_path)
+        if self.stitch_mode == 'overlap':
+            dep = self._stitch_by_overlap(dep, id_offset_path, halo)
+        elif self.stitch_mode == 'cluster':
+            dep = self._stitch_by_clustering(dep, id_offset_path)
+        elif self.stitch_mode == 'mws':
+            dep = self._stitch_by_mws(dep, id_offset_path)
+        else:
+            # stitch mode is none and we perform no further stitching
+            return dep
 
         merge_task = getattr(merge_tasks,
                              self._get_task_name('MergeAssignments'))
