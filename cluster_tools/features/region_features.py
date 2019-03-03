@@ -131,7 +131,11 @@ def _block_features(block_id, blocking,
             return
 
     # TODO support multichannel
-    input_ = vu.normalize(ds_in[bb])
+    # get global normalization values
+    min_val = 0
+    max_val = 255. if ds_in.dtype == np.dtype('uint8') else 1.
+
+    input_ = vu.normalize(ds_in[bb], min_val, max_val)
     # TODO support more features
     # TODO we might want to check for overflows and in general allow vigra to
     # work with uint64s ...

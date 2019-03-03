@@ -105,12 +105,13 @@ def apply_filter(input_, filter_name, sigma, apply_in_2d=False):
 
 
 # TODO enable channel-wise normalisation
-def normalize(input_):
+def normalize(input_, min_val=None, max_val=None):
     input_ = input_.astype('float32')
-    input_ -= input_.min()
-    max_ = input_.max()
-    if max_ > 0:
-        input_ /= max_
+    min_val = input_.min() if min_val is None else min_val
+    input_ -= min_val
+    max_val = input_.max() if max_val is None else max_val
+    if max_val > 0:
+        input_ /= max_val
     return input_
 
 

@@ -122,7 +122,8 @@ def _extract_and_merge_region_features(blocking, ds_in, ds, node_begin, node_end
         # calculate cumulative moving average
         prev_counts = out_counts[overlapping_ids]
         tot_counts = (prev_counts + overlapping_counts)
-        out_features[overlapping_ids] = (overlapping_mean + prev_counts * out_features[overlapping_ids]) / tot_counts
+        out_feats = (overlapping_counts * overlapping_mean + prev_counts * out_features[overlapping_ids]) / tot_counts
+        out_features[overlapping_ids] = out_feats
         out_counts[overlapping_ids] += overlapping_counts
 
     ds[node_begin:node_end] = out_features
