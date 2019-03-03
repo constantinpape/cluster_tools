@@ -19,7 +19,7 @@ from .debugging import CheckSubGraphsWorkflow
 from . import write as write_tasks
 
 #
-from .clustering import agglomerative_clustering as agglomerate_tasks
+from .agglomerative_clustering import agglomerative_clustering as agglomerate_tasks
 
 
 class MulticutSegmentationWorkflow(WorkflowBase):
