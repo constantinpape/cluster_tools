@@ -2,7 +2,6 @@
 
 import os
 import sys
-import argparse
 import json
 
 import numpy as np
@@ -179,8 +178,8 @@ def region_features(job_id, config_path):
     ignore_label = config['ignore_label']
 
     with vu.file_reader(input_path) as f_in,\
-        vu.file_reader(labels_path) as f_l,\
-        vu.file_reader(output_path) as f_out:
+            vu.file_reader(labels_path) as f_l,\
+            vu.file_reader(output_path) as f_out:
 
         ds_in = f_in[input_key]
         ds_labels = f_l[labels_key]

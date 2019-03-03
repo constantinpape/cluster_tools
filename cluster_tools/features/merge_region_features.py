@@ -2,12 +2,10 @@
 
 import os
 import sys
-import argparse
 import json
 
 import numpy as np
 import luigi
-import z5py
 import nifty.tools as nt
 
 import cluster_tools.utils.volume_utils as vu
@@ -90,6 +88,7 @@ class MergeRegionFeaturesLSF(MergeRegionFeaturesBase, LSFTask):
 #
 
 def _extract_and_merge_region_features(blocking, ds_in, ds, node_begin, node_end):
+    fu.log("processing node range %i to %i" % (node_begin, node_end))
     out_features = np.zeros(node_end - node_begin, dtype='float32')
     out_counts = np.zeros(node_end - node_begin, dtype='float32')
 
@@ -122,7 +121,8 @@ def _extract_and_merge_region_features(blocking, ds_in, ds, node_begin, node_end
 
         # calculate cumulative moving average
         prev_counts = out_counts[overlapping_ids]
-        out_features[overlapping_ids] = (overlapping_mean + prev_counts * out_features[overlapping_ids]) / (prev_counts + overlapping_counts)
+        tot_counts = (prev_counts + overlapping_counts)
+        out_features[overlapping_ids] = (overlapping_mean + prev_counts * out_features[overlapping_ids]) / tot_counts
         out_counts[overlapping_ids] += overlapping_counts
 
     ds[node_begin:node_end] = out_features
@@ -143,7 +143,7 @@ def merge_region_features(job_id, config_path):
     node_chunk_size = config['node_chunk_size']
 
     with vu.file_reader(output_path) as f,\
-        vu.file_reader(tmp_path) as f_in:
+            vu.file_reader(tmp_path) as f_in:
 
         ds_in = f_in[tmp_key]
         ds = f[output_key]

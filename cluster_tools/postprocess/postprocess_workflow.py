@@ -166,8 +166,9 @@ class ApplyThreshold(luigi.Task):
 
     def run(self):
         f = z5py.File(self.feature_path)
-        feats = f[self.feature_key][:, 0]
-        #
+        ds = f[self.feature_key]
+        feats = ds[:]
+
         assert self.threshold_mode in self.threshold_modes
         if self.threshold_mode == 'less':
             filter_ids = feats < self.threshold
