@@ -7,6 +7,8 @@ import nifty
 import nifty.ufd as nufd
 import nifty.graph.opt.multicut as nmc
 import nifty.graph.opt.lifted_multicut as nlmc
+import nifty.graph.agglo as nagglo
+
 from vigra.analysis import relabelConsecutive
 
 try:
@@ -192,7 +194,7 @@ def lifted_multicut_gaec(graph, costs, lifted_uv_ids, lifted_costs,
         return solver.optimize()
     else:
         visitor = objective.verboseVisitor(visitNth=1000000,
-                                            timeLimitTotal=time_limit)
+                                           timeLimitTotal=time_limit)
         return solver.optimize(visitor=visitor)
 
 
@@ -233,3 +235,29 @@ def mutex_watershed(affs, offsets, strides,
                                    randomize_strides=randomize_strides)
     relabelConsecutive(seg, out=seg, start_label=1, keep_zeros=mask is not None)
     return seg
+
+
+def mala_clustering(graph, edge_features, edge_sizes, threshold):
+    n_nodes = graph.numberOfNodes
+    policy = nagglo.malaClusterPolicy(graph=graph,
+                                      edgeIndicators=edge_features,
+                                      nodeSizes=np.zeros(n_nodes, dtype='float'),
+                                      edgeSizes=edge_sizes,
+                                      threshold=threshold)
+    clustering = nagglo.agglomerativeClustering(policy)
+    clustering.run()
+    return clustering.result()
+
+
+def agglomerative_clustering(graph, edge_features,
+                             node_sizes, edge_sizes,
+                             n_stop, size_regularizer):
+    policy = nagglo.edgeWeightedClusterPolicy(graph=graph,
+                                              edgeIndicators=edge_features,
+                                              nodeSizes=node_sizes.astype('float'),
+                                              edgeSizes=edge_sizes.astype('float'),
+                                              numberOfNodesStop=n_stop,
+                                              sizeRegularizer=size_regularizer)
+    clustering = nagglo.agglomerativeClustering(policy)
+    clustering.run()
+    return clustering.result()

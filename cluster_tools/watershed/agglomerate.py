@@ -10,11 +10,11 @@ import nifty.tools as nt
 
 import nifty
 import nifty.graph.rag as nrag
-import nifty.graph.agglo as nagglo
 from vigra.analysis import relabelConsecutive
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
+import cluster_tools.utils.segmentation_utils as su
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
@@ -186,28 +186,19 @@ def _agglomerate_block(blocking, block_id, ds_in, ds_out, config):
     graph = nifty.graph.undirectedGraph(n_nodes)
     graph.insertEdges(uv_ids)
 
-    # build cluster policy
     if use_mala_agglomeration:
-        policy = nagglo.malaClusterPolicy(graph=graph,
-                                          edgeIndicators=edge_features,
-                                          nodeSizes=np.zeros(n_nodes, dtype='float'),
-                                          edgeSizes=edge_sizes,
-                                          threshold=threshold)
+        node_labels = su.mala_clustering(graph, edge_features,
+                                         edge_sizes, threshold)
     else:
         node_ids, node_sizes = np.unique(seg, return_counts=True)
         if node_ids[0] != 0:
             node_sizes = np.concatenate([np.array([0]), node_sizes])
         n_stop = int(threshold * n_nodes)
-        policy = nagglo.edgeWeightedClusterPolicy(graph=graph,
-                                                  edgeIndicators=edge_features,
-                                                  nodeSizes=node_sizes.astype('float'),
-                                                  edgeSizes=edge_sizes.astype('float'),
-                                                  numberOfNodesStop=n_stop,
-                                                  sizeRegularizer=size_regularizer)
+        node_labels = su.agglomerative_clustering(graph, edge_features,
+                                                  node_sizes, edge_sizes,
+                                                  n_stop, size_regularizer)
+
     # run clusteting
-    clustering = nagglo.agglomerativeClustering(policy)
-    clustering.run()
-    node_labels = clustering.result()
     node_labels, max_id, _ = relabelConsecutive(node_labels, start_label=1, keep_zeros=True)
 
     fu.log("reduced number of labels from %i to %i" % (n_nodes, max_id + 1))

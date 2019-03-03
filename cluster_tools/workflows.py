@@ -18,6 +18,9 @@ from .lifted_multicut import LiftedMulticutWorkflow
 from .debugging import CheckSubGraphsWorkflow
 from . import write as write_tasks
 
+#
+from .clustering import agglomerative_clustering as agglomerate_tasks
+
 
 class MulticutSegmentationWorkflow(WorkflowBase):
     input_path = luigi.Parameter()
@@ -233,3 +236,35 @@ class LiftedMulticutSegmentationWorkflow(MulticutSegmentationWorkflow):
                   **LiftedFeaturesFromNodeLabelsWorkflow.get_config(),
                   **LiftedMulticutWorkflow.get_config()}
         return config
+
+
+# TODO support vanilla agglomerative clustering
+class AgglomerativeClusteringWorkflow(MulticutSegmentationWorkflow):
+    threshold = luigi.FloatParameter()
+
+    def requires(self):
+        assert self.n_scales == 0
+        dep = self._problem_tasks(self.dependency)
+        agglomerate_task = getattr(agglomerate_tasks,
+                                   self._get_task_name('AgglomerativeClustering'))
+        dep = agglomerate_task(tmp_folder=self.tmp_folder,
+                               max_jobs=self.max_jobs,
+                               config_dir=self.config_dir,
+                               problem_path=self.problem_path,
+                               assignment_path=self.assignment_path,
+                               assignment_key=self.assignment_key,
+                               features_path=self.problem_path,
+                               features_key=self.features_key,
+                               threshold=self.threshold,
+                               dependency=dep)
+        if self.output_key != '':
+            dep = self._write_tasks(dep, 'agglomerative_clustering')
+        return dep
+
+    @staticmethod
+    def get_config():
+        configs = super(AgglomerativeClusteringWorkflow,
+                        AgglomerativeClusteringWorkflow).get_config()
+        configs.update({'agglomerative_clustering':
+                        agglomerate_tasks.AgglomerativeClusteringLocal.default_task_config()})
+        return configs
