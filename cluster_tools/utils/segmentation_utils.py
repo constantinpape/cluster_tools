@@ -222,9 +222,12 @@ def key_to_lifted_agglomerator(key):
 
 
 def mutex_watershed(affs, offsets, strides,
-                    randomize_strides=False, mask=None):
+                    randomize_strides=False, mask=None,
+                    noise_level=0):
     assert compute_mws_segmentation is not None, "Need affogato for mutex watershed"
     ndim = len(offsets[0])
+    if noise_level > 0:
+        affs += noise_level * np.random.rand(*affs.shape)
     affs[:ndim] *= -1
     affs[:ndim] += 1
     # from cremi_tools.viewer.volumina import view

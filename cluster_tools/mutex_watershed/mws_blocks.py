@@ -42,7 +42,7 @@ class MwsBlocksBase(luigi.Task):
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
         config.update({'strides': [1, 1, 1], 'randomize_strides': False,
-                       'size_filter': 25})
+                       'size_filter': 25, 'noise_level': 0.})
         return config
 
     def clean_up_for_retry(self, block_list):
@@ -153,7 +153,7 @@ def _mws_block(block_id, blocking,
                ds_in, ds_out, offsets,
                strides, randomize_strides,
                halo, serialize_overlap,
-               tmp_folder):
+               tmp_folder, noise_level):
     fu.log("start processing block %i" % block_id)
 
     block = blocking.getBlockWithHalo(block_id, halo)
@@ -163,7 +163,8 @@ def _mws_block(block_id, blocking,
     affs = vu.normalize(ds_in[aff_bb])
 
     seg = su.mutex_watershed(affs, offsets, strides=strides,
-                             randomize_strides=randomize_strides)
+                             randomize_strides=randomize_strides,
+                             noise_level=noise_level)
 
     out_bb = vu.block_to_bb(block.innerBlock)
     local_bb = vu.block_to_bb(block.innerBlockLocal)
@@ -187,7 +188,7 @@ def _mws_block_with_mask(block_id, blocking,
                          mask, offsets,
                          strides, randomize_strides,
                          halo, serialize_overlap,
-                         tmp_folder):
+                         tmp_folder, noise_level):
     fu.log("start processing block %i" % block_id)
 
     block = blocking.getBlockWithHalo(block_id, halo)
@@ -198,7 +199,8 @@ def _mws_block_with_mask(block_id, blocking,
     bb_mask = mask[in_bb].astype('bool')
 
     seg = su.mutex_watershed(affs, offsets, strides=strides, mask=bb_mask,
-                             randomize_strides=randomize_strides)
+                             randomize_strides=randomize_strides,
+                             noise_level=noise_level)
 
     out_bb = vu.block_to_bb(block.innerBlock)
     local_bb = vu.block_to_bb(block.innerBlockLocal)
@@ -238,6 +240,7 @@ def mws_blocks(job_id, config_path):
     assert all(isinstance(stride, int) for stride in strides)
     randomize_strides = config['randomize_strides']
     assert isinstance(randomize_strides, bool)
+    noise_level = config['noise_level']
 
     halo = config['halo']
     serialize_overlap = config['serialize_overlap']
@@ -259,14 +262,16 @@ def mws_blocks(job_id, config_path):
                                                ds_in, ds_out,
                                                mask, offsets,
                                                strides, randomize_strides,
-                                               halo, serialize_overlap, tmp_folder)
+                                               halo, serialize_overlap, tmp_folder,
+                                               noise_level)
                           for block_id in block_list]
 
         else:
             id_offsets = [_mws_block(block_id, blocking,
                                      ds_in, ds_out,
                                      offsets, strides, randomize_strides,
-                                     halo, serialize_overlap, tmp_folder)
+                                     halo, serialize_overlap, tmp_folder,
+                                     noise_level)
                           for block_id in block_list]
 
     offset_dict = {block_id: off for block_id, off in zip(block_list, id_offsets)}

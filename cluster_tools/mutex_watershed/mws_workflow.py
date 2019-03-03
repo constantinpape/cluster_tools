@@ -1,6 +1,8 @@
 import os
+import json
 import numpy as np
 import luigi
+import z5py
 
 from ..cluster_tasks import WorkflowBase
 from ..utils import volume_utils as vu
@@ -13,6 +15,28 @@ from ..workflows import AgglomerativeClusteringWorkflow
 
 from .import mws_blocks as block_tasks
 from .import mws_faces as face_tasks
+
+
+# TODO refactor this
+class OffsetAssignmentTask(luigi.Task):
+    input_path = luigi.Parameter()
+    output_path = luigi.Parameter()
+    output_key = luigi.Parameter()
+    dependency = luigi.TaskParameter()
+
+    def requires(self):
+        return self.dependency
+
+    def run(self):
+        with open(self.input_path) as f:
+            offset_config = json.load(f)
+            n_labels = offset_config['n_labels']
+        assignments = np.arange(n_labels, dtype='uint64')
+        with z5py.File(self.output_path) as f:
+            f.create_dataset(self.output_key, data=assignments)
+
+    def output(self):
+        return luigi.LocalTarget(os.path.join(self.output_path, self.output_key))
 
 
 class MwsWorkflow(WorkflowBase):
@@ -61,6 +85,27 @@ class MwsWorkflow(WorkflowBase):
                         offsets=self.offsets, id_offsets_path=id_offset_path)
         return dep
 
+    def _apply_offsets(self, dep, id_offset_path):
+        # make the offset assignments
+        offset_assignment_key = 'mws_offset_assignments'
+        dep = OffsetAssignmentTask(input_path=id_offset_path,
+                                   output_path=self.output_path,
+                                   output_key=offset_assignment_key,
+                                   dependency=dep)
+
+        # write to apply the offsets
+        write_task = getattr(write_tasks,
+                             self._get_task_name('Write'))
+        dep = write_task(tmp_folder=self.tmp_folder,
+                         config_dir=self.config_dir,
+                         max_jobs=self.max_jobs,
+                         input_path=self.output_path, input_key=self.output_key,
+                         output_path=self.output_path, output_key=self.output_key,
+                         assignment_path=self.output_path, assignment_key=offset_assignment_key,
+                         identifier='mws-offsets', offset_path=id_offset_path,
+                         dependency=dep)
+        return dep
+
     def requires(self):
         # make sure we have affogato
         assert su.compute_mws_segmentation is not None, "Need affogato for mutex watershed"
@@ -103,6 +148,8 @@ class MwsWorkflow(WorkflowBase):
             dep = self._stitch_by_mws(dep, id_offset_path)
         else:
             # stitch mode is none and we perform no further stitching
+            # but need to apply the offsets
+            dep = self._apply_offsets(dep, id_offset_path)
             return dep
 
         merge_task = getattr(merge_tasks,
@@ -124,7 +171,6 @@ class MwsWorkflow(WorkflowBase):
                          assignment_path=self.output_path, assignment_key=assignment_key,
                          identifier='mws', offset_path=id_offset_path,
                          dependency=dep)
-
         return dep
 
     @staticmethod
