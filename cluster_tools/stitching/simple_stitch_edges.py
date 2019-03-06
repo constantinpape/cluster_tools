@@ -18,29 +18,19 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 # Stitching Tasks
 #
 
-class StitchFacesBase(luigi.Task):
-    """ StitchFaces base class
+class SimpleStitchEdgesBase(luigi.Task):
+    """ SimpleStitchEdges base class
     """
 
-    task_name = 'stitch_faces'
+    task_name = 'simple_stitch_edges'
     src_file = os.path.abspath(__file__)
     allow_retry = False
 
-    shape = luigi.Parameter()
-    overlap_prefix = luigi.Parameter()
-    save_prefix = luigi.Parameter()
-    offsets_path = luigi.Parameter()
-    overlap_threshold = luigi.FloatParameter()
-    halo = luigi.ListParameter()
+    graph_path = luigi.Parameter()
+    labels_path = luigi.Parameter()
+    labels_key = luigi.Parameter()
     # task that is required before running this task
     dependency = luigi.TaskParameter()
-
-    @staticmethod
-    def default_task_config():
-        # we use this to get also get the common default config
-        config = LocalTask.default_task_config()
-        config.update({'ignore_label': None})
-        return config
 
     def requires(self):
         return self.dependency
@@ -53,15 +43,12 @@ class StitchFacesBase(luigi.Task):
                                          roi_begin, roi_end)
         n_jobs = min(len(block_list), self.max_jobs)
 
+        graph_key = 's0/graph'
+        with vu.file_reader(graph_path, 'r') as f:
+            n_edges = f[graph_key].numberOfEdges
+
         config = self.get_task_config()
-        config.update({'shape': self.shape,
-                       'offsets_path': self.offsets_path,
-                       'overlap_prefix': self.overlap_prefix,
-                       'save_prefix': self.save_prefix,
-                       'overlap_threshold': self.overlap_threshold,
-                       'block_shape': block_shape,
-                       'tmp_folder': self.tmp_folder,
-                       'halo': self.halo})
+        config.update({})
 
         # we only have a single job to find the labeling
         self.prepare_jobs(n_jobs, block_list, config)
@@ -73,23 +60,23 @@ class StitchFacesBase(luigi.Task):
         self.check_jobs(n_jobs)
 
 
-class StitchFacesLocal(StitchFacesBase, LocalTask):
+class SimpleStitchEdgesLocal(SimpleStitchEdgesBase, LocalTask):
     """
-    StitchFaces on local machine
-    """
-    pass
-
-
-class StitchFacesSlurm(StitchFacesBase, SlurmTask):
-    """
-    StitchFaces on slurm cluster
+    SimpleStitchEdges on local machine
     """
     pass
 
 
-class StitchFacesLSF(StitchFacesBase, LSFTask):
+class SimpleStitchEdgesSlurm(SimpleStitchEdgesBase, SlurmTask):
     """
-    StitchFaces on lsf cluster
+    SimpleStitchEdges on slurm cluster
+    """
+    pass
+
+
+class SimpleStitchEdgesLSF(SimpleStitchEdgesBase, LSFTask):
+    """
+    SimpleStitchEdges on lsf cluster
     """
     pass
 
@@ -174,7 +161,7 @@ def _stitch_face(offsets, overlap_prefix, block_a, block_b,
         return None
 
 
-def _stitch_faces(block_id, blocking, halo,
+def _simple_stitch_edges(block_id, blocking, halo,
                   overlap_prefix, overlap_threshold,
                   offsets, empty_blocks, ignore_label):
     fu.log("start processing block %i" % block_id)
@@ -200,7 +187,7 @@ def _stitch_faces(block_id, blocking, halo,
     return assignments
 
 
-def stitch_faces(job_id, config_path):
+def simple_stitch_edges(job_id, config_path):
 
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
@@ -226,7 +213,7 @@ def stitch_faces(job_id, config_path):
         n_labels = offsets_dict['n_labels']
 
     blocking = nt.blocking([0, 0, 0], shape, block_shape)
-    assignments = [_stitch_faces(block_id, blocking, halo,
+    assignments = [_simple_stitch_edges(block_id, blocking, halo,
                                  os.path.join(tmp_folder, overlap_prefix),
                                  overlap_threshold, offsets, empty_blocks,
                                  ignore_label)
@@ -247,4 +234,4 @@ if __name__ == '__main__':
     path = sys.argv[1]
     assert os.path.exists(path), path
     job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
-    stitch_faces(job_id, path)
+    simple_stitch_edges(job_id, path)
