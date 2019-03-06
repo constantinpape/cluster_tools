@@ -20,6 +20,8 @@ from . import write as write_tasks
 
 #
 from .agglomerative_clustering import agglomerative_clustering as agglomerate_tasks
+from .stitching import simple_stitch_edges as simple_stitch_tasks
+from .stitching import simple_stitch_assignments as stitch_assignment_tasks
 
 
 class SegmentationWorkflowBase(WorkflowBase):
@@ -141,7 +143,6 @@ class SegmentationWorkflowBase(WorkflowBase):
                          assignment_key=self.node_labels_key,
                          identifier=identifier)
         return dep
-
 
 
 class MulticutSegmentationWorkflow(SegmentationWorkflowBase):
@@ -285,4 +286,48 @@ class AgglomerativeClusteringWorkflow(MulticutSegmentationWorkflow):
                         AgglomerativeClusteringWorkflow).get_config()
         configs.update({'agglomerative_clustering':
                         agglomerate_tasks.AgglomerativeClusteringLocal.default_task_config()})
+        return configs
+
+
+# TODO support vanilla agglomerative clustering
+class SimpleStitchingWorkflow(MulticutSegmentationWorkflow):
+    edge_size_threshold = luigi.FloatParameter()
+
+    def _simple_stitcher(self, dep):
+        simple_stitch_task = getattr(simple_stitch_tasks,
+                                     self._get_task_name('SimpleStitchEdges'))
+        dep = simple_stitch_task(tmp_folder=self.tmp_folder,
+                                 max_jobs=self.max_jobs,
+                                 config_dir=self.config_dir,
+                                 graph_path=self.problem_path,
+                                 labels_path=self.ws_path,
+                                 labels_key=self.ws_key,
+                                 dependency=dep)
+        # from simple stitch edges to assignments
+        stitch_assignment_task = getattr(stitch_assignment_tasks,
+                                         self._get_task_name('SimpleStitchingAssignments'))
+        dep = stitch_assignment_task(tmp_folder=self.tmp_folder,
+                                     max_jobs=self.max_jobs,
+                                     config_dir=self.config_dir,
+                                     features_path=self.problem_path,
+                                     features_key=self.features_key,
+                                     edge_size_threshold=self.edge_size_threshold,
+                                     assignment_path=self.output_path,
+                                     assignment_key=self.node_labels_key,
+                                     dependency=dep)
+        return dep
+
+    def requires(self):
+        dep = self._watershed_tasks()
+        dep = self._problem_tasks(dep, compute_costs=False)
+        dep = self._simple_stitcher(dep)
+        dep = self._write_tasks(dep, 'simple_stitching')
+        return dep
+
+    @staticmethod
+    def get_config():
+        configs = super(SimpleStitchingWorkflow,
+                        SimpleStitchingWorkflow).get_config()
+        # configs.update({'agglomerative_clustering':
+        #                 agglomerate_tasks.AgglomerativeClusteringLocal.default_task_config()})
         return configs
