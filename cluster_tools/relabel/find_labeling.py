@@ -126,8 +126,10 @@ def find_labeling(job_id, config_path):
 
     fu.log("saving results to %s/%s" % (assignment_path, assignment_key))
     with vu.file_reader(assignment_path) as f:
+        chunk_size = min(int(1e6), len(assignments))
+        chunks = (chunk_size, 2)
         ds = f.create_dataset(assignment_key, shape=assignments.shape, dtype='uint64',
-                              compression='gzip')
+                              compression='gzip', chunks=chunks)
         ds.n_threads = n_threads
         ds[:] = assignments
     # log success
