@@ -30,7 +30,8 @@ class MergeAssignmentsBase(luigi.Task):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     shape = luigi.ListParameter()
-    number_of_labels = luigi.IntParameter()
+    offset_path = luigi.Parameter()
+    save_prefix = luigi.Parameter(default='cc_assignments')
     # task that is required before running this task
     dependency = luigi.TaskParameter()
 
@@ -50,8 +51,8 @@ class MergeAssignmentsBase(luigi.Task):
                        'output_key': self.output_key,
                        'tmp_folder': self.tmp_folder,
                        'n_jobs': n_jobs,
-                       'number_of_labels': int(self.number_of_labels)})
-
+                       'offset_path': self.offset_path,
+                       'save_prefix': self.save_prefix})
 
         # we only have a single job to find the labeling
         self.prepare_jobs(1, None, config)
@@ -96,27 +97,43 @@ def merge_assignments(job_id, config_path):
 
     tmp_folder = config['tmp_folder']
     n_jobs = config['n_jobs']
-    number_of_labels = config['number_of_labels']
+    offset_path = config['offset_path']
+    save_prefix = config['save_prefix']
 
+    with open(offset_path) as f:
+        n_labels = int(json.load(f)['n_labels'])
+    labels = np.arange(n_labels, dtype='uint64')
+
+    # load and remove assignments
     assignments = [np.load(os.path.join(tmp_folder,
-                                        'assignments_%i.npy' % block_job_id))
+                                        '%s_%i.npy' % (save_prefix, block_job_id)))
                    for block_job_id in range(n_jobs)]
-    assignments = np.concatenate(assignments, axis=0)
-    assignments = np.unique(assignments, axis=0)
     # for block_job_id in range(n_jobs):
     #     os.remove(os.path.join(tmp_folder,
     #                            'assignments_%i.npy' % block_job_id))
 
-    labels = np.arange(number_of_labels, dtype='uint64')
+    if all(ass.size for ass in assignments):
+        assignments = np.concatenate(assignments, axis=0)
+        assignments = np.unique(assignments, axis=0)
+        assert assignments.shape[1] == 2
+        fu.log("have %i pairs of node assignments" % len(assignments))
+        have_assignments = True
+    else:
+        fu.log("did not find any node assignments, label assignment will be identity")
+        have_assignments = False
+
     ufd = nufd.boost_ufd(labels)
-    ufd.merge(assignments)
+    if have_assignments:
+        assert int(assignments.max()) + 1 <= n_labels, "%i, %i" % (int(assignments.max()) + 1, n_labels)
+        ufd.merge(assignments)
 
     label_assignments = ufd.find(labels)
-    vigra.analysis.relabelConsecutive(label_assignments, keep_zeros=True,
-                                      start_label=1)
-    assert len(label_assignments) == number_of_labels
+    label_assignemnts, max_id, _ = vigra.analysis.relabelConsecutive(label_assignments, keep_zeros=True,
+                                                                     start_label=1)
+    assert len(label_assignments) == n_labels
+    fu.log("reducing the number of labels from %i to %i" % (n_labels, max_id + 1))
 
-    chunks = (min(65334, number_of_labels),)
+    chunks = (min(65334, n_labels),)
     with vu.file_reader(output_path) as f:
         f.create_dataset(output_key, data=label_assignments,
                          compression='gzip', chunks=chunks)

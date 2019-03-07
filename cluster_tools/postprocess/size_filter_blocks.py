@@ -7,8 +7,6 @@ import pickle
 
 import luigi
 import numpy as np
-import vigra
-import nifty.tools as nt
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -102,7 +100,7 @@ def size_filter_blocks(job_id, config_path):
                                     for job_id in range(n_jobs)])
     count_values = np.concatenate([np.load(os.path.join(tmp_folder, 'counts_job_%i.npy' % job_id))
                                    for job_id in range(n_jobs)])
-    uniques = nt.unique(unique_values)
+    uniques = np.unique(unique_values)
     counts = np.zeros(int(uniques[-1]) + 1, dtype='uint64')
 
     for uniques_job, counts_job in zip(unique_values, count_values):

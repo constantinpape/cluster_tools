@@ -91,7 +91,7 @@ class WriteDownscalingMetadata(luigi.Task):
             dsc = f.require_dataset('s00/subdivisions', shape=chunks.shape, dtype=chunks.dtype)
             dsc[:] = chunks
 
-    # write bdv xml, from:
+    # write bdv xml, based on:
     # https://github.com/tlambert03/imarispy/blob/master/imarispy/bdv.py#L136
     def _write_bdv_xml(self):
         # TODO we have hardcoded the number of
@@ -166,6 +166,7 @@ class WriteDownscalingMetadata(luigi.Task):
     def _bdv_metadata(self):
         effective_scale = [1, 1, 1]
 
+        # FIXME we can move this in the main loop !
         # get the scale and chunks for the initial (0th) scale
         scales = [deepcopy(effective_scale)]
         with file_reader(self.output_path, 'r') as f:
@@ -388,7 +389,7 @@ class PainteraToBdvWorkflow(WorkflowBase):
         # get scales that need to be copied
         scales = self.get_scales()
 
-        t_prev = self.dependency
+        dep = self.dependency
         scale_factors = []
         for scale in scales:
             in_key = self.get_scale_key(scale, 'paintera')
@@ -412,14 +413,12 @@ class PainteraToBdvWorkflow(WorkflowBase):
                         continue
 
             prefix = 's%i' % scale
-            t = copy_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
-                          config_dir=self.config_dir,
-                          input_path=self.input_path, input_key=in_key,
-                          output_path=self.output_path, output_key=out_key,
-                          prefix=prefix, effective_scale_factor=effective_scale,
-                          dependency=t_prev)
-
-            t_prev = t
+            dep = copy_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                            config_dir=self.config_dir,
+                            input_path=self.input_path, input_key=in_key,
+                            output_path=self.output_path, output_key=out_key,
+                            prefix=prefix, effective_scale_factor=effective_scale,
+                            dependency=dep)
 
         # get the metadata for this dataset
         # if we have the `resolution` or `offset` attribute
@@ -444,13 +443,13 @@ class PainteraToBdvWorkflow(WorkflowBase):
         scale_factors = [sf[::-1] for sf in scale_factors]
 
         # task to write the metadata
-        t_meta = WriteDownscalingMetadata(tmp_folder=self.tmp_folder,
-                                          output_path=self.output_path,
-                                          metadata_format='bdv',
-                                          metadata_dict=metadata_dict,
-                                          scale_factors=scale_factors,
-                                          dependency=t_prev)
-        return t_meta
+        dep = WriteDownscalingMetadata(tmp_folder=self.tmp_folder,
+                                       output_path=self.output_path,
+                                       metadata_format='bdv',
+                                       metadata_dict=metadata_dict,
+                                       scale_factors=scale_factors,
+                                       dependency=dep)
+        return dep
 
     @staticmethod
     def get_config():

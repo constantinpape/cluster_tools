@@ -92,15 +92,27 @@ def parse_job(log_file, job_id):
     return msg == "processed job %i" % job_id
 
 
-def parse_jobs_task(log_prefix, max_jobs):
-    """ Parse jobs success for all jobs of a task
+# LSF appends its own logs to the out-file, so we need to parse differently
+def parse_job_lsf(log_file, job_id):
+    """ Parse lsf log file to check whether the corresponding
+        job was finished successfully
     """
-    passed_jobs = []
-    for job_id in range(max_jobs):
-        path = log_prefix + '%i.log' % job_id
-        if parse_job(path, job_id):
-            passed_jobs.append(job_id)
-    return passed_jobs
+    with open(log_file, 'r') as f:
+        for ll in f:
+            ll = ll.rstrip()
+            # '---------------' marks the begin of lsf log
+            if ll.startswith('---------------'):
+                return False
+            try:
+                # get rid of the datetime prefix and check
+                msg = " ".join(ll.split()[2:])
+            except:
+                # if this fails for some reason, there is something unexpected in
+                # the log and we fail the job
+                return False
+            if msg == "processed job %i" % job_id:
+                return True
+    return False
 
 
 ########################

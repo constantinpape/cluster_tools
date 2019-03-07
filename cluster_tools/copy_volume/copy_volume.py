@@ -33,6 +33,7 @@ class CopyVolumeBase(luigi.Task):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     prefix = luigi.Parameter()
+    dtype = luigi.Parameter(default=None)
     fit_to_roi = luigi.BoolParameter(default=False)
     effective_scale_factor = luigi.ListParameter(default=[])
     dependency = luigi.TaskParameter(default=DummyTask())
@@ -41,7 +42,7 @@ class CopyVolumeBase(luigi.Task):
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'chunks': None, 'compression': 'gzip', 'dtype': None})
+        config.update({'chunks': None, 'compression': 'gzip'})
         return config
 
     def requires(self):
@@ -89,12 +90,7 @@ class CopyVolumeBase(luigi.Task):
             out_shape = shape
 
         compression = task_config.pop('compression', 'gzip')
-
-        dtype = task_config.pop('dtype', None)
-        if dtype is None:
-            dtype = ds_dtype
-        if not isinstance(dtype, str):
-            dtype = dtype.name
+        dtype = str(ds_dtype) if self.dtype is None else self.dtype
 
         chunks = task_config.pop('chunks', None)
         if chunks is None:
@@ -110,7 +106,7 @@ class CopyVolumeBase(luigi.Task):
         # as well as block shape
         task_config.update({'input_path': self.input_path, 'input_key': self.input_key,
                             'output_path': self.output_path, 'output_key': self.output_key,
-                            'block_shape': block_shape})
+                            'block_shape': block_shape, 'dtype': dtype})
 
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)

@@ -16,7 +16,7 @@ def run_wf(sample, max_jobs, target='local'):
     tmp_folder = './tmp_%s' % sample
     input_path = '/groups/saalfeld/home/papec/Work/neurodata_hdd/cremi_new/sample%s.n5' % sample
     exp_path = 'sample%s_exp.n5' % sample
-    input_key = 'predictions/full_affs'
+    input_key = 'volumes/affinities'
     mask_key = 'masks/original_mask'
     ws_key = 'segmentation/watershed'
 

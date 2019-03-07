@@ -10,7 +10,6 @@ import z5py
 
 import nifty.tools as nt
 import nifty.graph.rag as nrag
-import nifty.distributed as ndist
 
 try:
     from cluster_tools.features import EdgeFeaturesWorkflow
@@ -21,7 +20,7 @@ except ImportError:
     from cluster_tools.cluster_tasks import BaseClusterTask
 
 
-class TestFeatures(unittest.TestCase):
+class TestEdgeFeatures(unittest.TestCase):
     input_path = '/g/kreshuk/pape/Work/data/cluster_tools_test_data/test_data.n5'
     input_key = 'volumes/boundaries_float32'
     ws_key = 'volumes/watershed'
@@ -50,11 +49,10 @@ class TestFeatures(unittest.TestCase):
             json.dump(global_config, f)
 
     def tearDown(self):
-        pass
-        # try:
-        #     rmtree(self.tmp_folder)
-        # except OSError:
-        #     pass
+        try:
+            rmtree(self.tmp_folder)
+        except OSError:
+            pass
 
     def _check_subresults(self):
         f = z5py.File(self.input_path)
@@ -126,8 +124,8 @@ class TestFeatures(unittest.TestCase):
         self.assertTrue(np.allclose(features_nifty[:, 8], features[:, 8]))
         self.assertFalse(np.allcose(features[:, 3:8], 0))
         # check that the edge-lens agree
-        len_nifty = nrag.accumulateEdgeMeanAndLength(rag, inp)[:, 1]
-        self.assertTrue(np.allclose(len_nifty, features_block[:, -1]))
+        # len_nifty = nrag.accumulateEdgeMeanAndLength(rag, inp)[:, 1]
+        # self.assertTrue(np.allclose(len_nifty, features_block[:, -1]))
 
     def test_boundary_features(self):
         max_jobs = 8

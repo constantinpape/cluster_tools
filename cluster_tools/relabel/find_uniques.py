@@ -6,7 +6,6 @@ import json
 
 import luigi
 import numpy as np
-import vigra
 import nifty.tools as nt
 
 import cluster_tools.utils.volume_utils as vu
@@ -97,7 +96,7 @@ def uniques_in_block(block_id, blocking, ds, return_counts):
         fu.log_block_success(block_id)
         return uniques, counts
     else:
-        uniques = nt.unique(labels)
+        uniques = np.unique(labels)
         fu.log_block_success(block_id)
         return uniques
 
@@ -129,7 +128,7 @@ def find_uniques(job_id, config_path):
                    for block_id in block_list]
 
     if return_counts:
-        unique_values = nt.unique(np.concatenate([un[0] for un in uniques]))
+        unique_values = np.unique(np.concatenate([un[0] for un in uniques]))
         counts = np.zeros(int(unique_values[-1] + 1), dtype='uint64')
         for uniques_block, counts_block in uniques:
             counts[uniques_block] += counts_block.astype('uint64')
@@ -137,10 +136,10 @@ def find_uniques(job_id, config_path):
         assert len(counts) == len(unique_values)
 
         count_path = os.path.join(tmp_folder, 'counts_job_%i.npy' % job_id)
-        np.save(count_path, count_values)
+        np.save(count_path, counts)
 
     else:
-        unique_values = nt.unique(np.concatenate(uniques))
+        unique_values = np.unique(np.concatenate(uniques))
 
     # save the uniques for this job
     save_path = os.path.join(tmp_folder, 'find_uniques_job_%i.npy' % job_id)

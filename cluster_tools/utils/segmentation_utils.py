@@ -1,3 +1,4 @@
+import time
 from concurrent import futures
 from functools import partial
 
@@ -5,8 +6,15 @@ import numpy as np
 import nifty
 import nifty.ufd as nufd
 import nifty.graph.opt.multicut as nmc
-# import nifty.graph.opt.lifted_multicut as nlmc
+import nifty.graph.opt.lifted_multicut as nlmc
+import nifty.graph.agglo as nagglo
+
 from vigra.analysis import relabelConsecutive
+
+try:
+    from affogato.segmentation import compute_mws_segmentation
+except ImportError:
+    compute_mws_segmentation = None
 
 
 # TODO logging
@@ -138,3 +146,121 @@ def key_to_agglomerator(key):
                   'fusion-moves': multicut_fusion_moves}
     assert key in agglo_dict, key
     return agglo_dict[key]
+
+
+def lifted_multicut_kernighan_lin(graph, costs, lifted_uv_ids, lifted_costs,
+                                  warmstart=True, time_limit=None, n_threads=1):
+    objective = nlmc.liftedMulticutObjective(graph)
+    objective.setGraphEdgesCosts(costs)
+    objective.setCosts(lifted_uv_ids, lifted_costs)
+    solver_kl = objective.liftedMulticutKernighanLinFactory().create(objective)
+    if time_limit is None:
+        if warmstart:
+            solver_gaec = objective.liftedMulticutGreedyAdditiveFactory().create(objective)
+            res = solver_gaec.optimize()
+            return solver_kl.optimize(nodeLabels=res)
+        else:
+            return solver_kl.optimize()
+    else:
+        if warmstart:
+            solver_gaec = objective.liftedMulticutGreedyAdditiveFactory().create(objective)
+            visitor1 = objective.verboseVisitor(visitNth=1000000,
+                                                timeLimitTotal=time_limit)
+            t0 = time.time()
+            res = solver_gaec.optimize(visitor=visitor1)
+            t0 = time.time() - t0
+            # time limit is not hard, so t0 might actually be bigger than
+            # our time limit already
+            if t0 > time_limit:
+                return res
+            visitor2 = objective.verboseVisitor(visitNth=1000000,
+                                                timeLimitTotal=time_limit - t0)
+            return solver_kl.optimize(nodeLabels=res,
+                                      visitor=visitor2)
+
+        else:
+            visitor = objective.verboseVisitor(visitNth=1000000,
+                                               timeLimitTotal=time_limit)
+            return solver_kl.optimize(visitor=visitor)
+
+
+def lifted_multicut_gaec(graph, costs, lifted_uv_ids, lifted_costs,
+                         time_limit=None, n_threads=1):
+    objective = nlmc.liftedMulticutObjective(graph)
+    objective.setGraphEdgesCosts(costs)
+    objective.setCosts(lifted_uv_ids, lifted_costs)
+    solver = objective.liftedMulticutGreedyAdditiveFactory().create(objective)
+    if time_limit is None:
+        return solver.optimize()
+    else:
+        visitor = objective.verboseVisitor(visitNth=1000000,
+                                           timeLimitTotal=time_limit)
+        return solver.optimize(visitor=visitor)
+
+
+# TODO
+def lifted_multicut_fusion_moves(graph, costs, lifted_uv_ids, lifted_costs,
+                                 time_limit=None, n_threads=1, solver='kernighan-lin'):
+    assert solver in ('kernighan-lin', 'greedy-additive')
+    objective = nlmc.liftedMulticutObjective(graph)
+    objective.setGraphEdgesCosts(costs)
+    objective.setCosts(lifted_uv_ids, lifted_costs)
+    if time_limit is None:
+        return solver.optimize()
+    else:
+        visitor = objective.verboseVisitor(visitNth=1000000,
+                                           timeLimitTotal=time_limit)
+        return solver.optimize(visitor=visitor)
+
+
+def key_to_lifted_agglomerator(key):
+    agglo_dict = {'kernighan-lin': lifted_multicut_kernighan_lin,
+                  'greedy-additive': lifted_multicut_gaec,
+                  'fusion-moves': lifted_multicut_fusion_moves}
+    assert key in agglo_dict, key
+    return agglo_dict[key]
+
+
+def mutex_watershed(affs, offsets, strides,
+                    randomize_strides=False, mask=None,
+                    noise_level=0):
+    assert compute_mws_segmentation is not None, "Need affogato for mutex watershed"
+    ndim = len(offsets[0])
+    if noise_level > 0:
+        affs += noise_level * np.random.rand(*affs.shape)
+    affs[:ndim] *= -1
+    affs[:ndim] += 1
+    # from cremi_tools.viewer.volumina import view
+    # view([affs.transpose((1, 2, 3, 0)), mask.astype('uint32')])
+    seg = compute_mws_segmentation(affs, offsets,
+                                   number_of_attractive_channels=ndim,
+                                   strides=strides, mask=mask,
+                                   randomize_strides=randomize_strides)
+    relabelConsecutive(seg, out=seg, start_label=1, keep_zeros=mask is not None)
+    return seg
+
+
+def mala_clustering(graph, edge_features, edge_sizes, threshold):
+    n_nodes = graph.numberOfNodes
+    policy = nagglo.malaClusterPolicy(graph=graph,
+                                      edgeIndicators=edge_features,
+                                      nodeSizes=np.zeros(n_nodes, dtype='float'),
+                                      edgeSizes=edge_sizes,
+                                      threshold=threshold)
+    clustering = nagglo.agglomerativeClustering(policy)
+    clustering.run()
+    return clustering.result()
+
+
+def agglomerative_clustering(graph, edge_features,
+                             node_sizes, edge_sizes,
+                             n_stop, size_regularizer):
+    policy = nagglo.edgeWeightedClusterPolicy(graph=graph,
+                                              edgeIndicators=edge_features,
+                                              nodeSizes=node_sizes.astype('float'),
+                                              edgeSizes=edge_sizes.astype('float'),
+                                              numberOfNodesStop=n_stop,
+                                              sizeRegularizer=size_regularizer)
+    clustering = nagglo.agglomerativeClustering(policy)
+    clustering.run()
+    return clustering.result()

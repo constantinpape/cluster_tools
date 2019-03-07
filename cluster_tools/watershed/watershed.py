@@ -3,12 +3,12 @@
 import os
 import sys
 import json
-from math import ceil
 
 import luigi
 import numpy as np
 import vigra
 import nifty.tools as nt
+from nifty.filters import nonMaximumDistanceSuppression
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -43,7 +43,8 @@ class WatershedBase(luigi.Task):
                        'apply_ws_2d': True, 'sigma_seeds': 2., 'size_filter': 25,
                        'sigma_weights': 2., 'halo': [0, 0, 0],
                        'two_pass': False, 'channel_begin': 0, 'channel_end': None,
-                       'alpha': 0.8})
+                       'agglomerate_channels': 'mean', 'alpha': 0.8,
+                       'invert_inputs': False, 'non_maximum_suppression': True})
         return config
 
     def clean_up_for_retry(self, block_list):
@@ -156,6 +157,10 @@ def _apply_dt(input_, config):
     threshold = config.get('threshold', .5)
     threshd = (input_ > threshold).astype('uint32')
 
+    # we need to check if any values were above the threshold
+    if(np.sum(threshd) == 0):
+        return None
+
     pixel_pitch = config.get('pixel_pitch', None)
     apply_2d = config.get('apply_dt_2d', True)
     if apply_2d:
@@ -173,32 +178,62 @@ def _apply_dt(input_, config):
 
 def _make_hmap(input_, distances, alpha, sigma_weights):
     distances = 1. - vu.normalize(distances)
-    hmap = (1. - alpha) * input_ + alpha * distances
+    hmap = alpha * input_ + (1. - alpha) * distances
     # smooth input if sigma is given
     if sigma_weights != 0:
         hmap = vu.apply_filter(hmap, 'gaussianSmoothing', sigma_weights)
     return hmap
 
 
+def _points_to_vol(points, shape):
+    vol = np.zeros(shape, dtype='uint32')
+    coords = tuple(points[:, i] for i in range(points.shape[1]))
+    vol[coords] = 1
+    return vigra.analysis.labelMultiArrayWithBackground(vol)
+
+
+def _make_seeds(dt, config):
+    sigma_seeds = config.get('sigma_seeds', 2.)
+    apply_nonmax_suppression = config.get('non_maximum_suppression', True)
+
+    # find local maxima of the distance transform
+    max_fu = vigra.analysis.localMaxima if dt.ndim == 2 else vigra.analysis.localMaxima3D
+    if sigma_seeds > 0:
+        seeds = max_fu(vu.apply_filter(dt, 'gaussianSmoothing', sigma_seeds),
+                       marker=np.nan, allowAtBorder=True, allowPlateaus=True)
+    else:
+        seeds = max_fu(dt, marker=np.nan, allowAtBorder=True, allowPlateaus=True)
+
+    # check if we have just one plateau
+    seeds = np.isnan(seeds)
+    if np.sum(seeds) == seeds.size:
+        return np.ones_like(seeds, dtype='uint32')
+
+    # find seeds via connected components after max-suppression if enabled)
+    if apply_nonmax_suppression:
+        seeds = np.array(np.where(seeds)).transpose()
+        seeds = nonMaximumDistanceSuppression(dt, seeds)
+        seeds = _points_to_vol(seeds, dt.shape)
+    else:
+        seeds = vigra.analysis.labelMultiArrayWithBackground(seeds.view('uint8'))
+
+    return seeds
+
+
 # apply watershed
 def _apply_watershed(input_, dt, offset, config, mask=None):
     apply_2d = config.get('apply_ws_2d', True)
-    sigma_seeds = config.get('sigma_seeds', 2.)
     sigma_weights = config.get('sigma_weights', 2.)
     size_filter = config.get('size_filter', 25)
-    alpha = config.get('alpha', 0.2)
+    alpha = config.get('alpha', 0.8)
 
     # apply the watersheds in 2d
     if apply_2d:
         ws = np.zeros_like(input_, dtype='uint64')
         for z in range(ws.shape[0]):
-            # compute seeds for this slice
-            dtz = vu.apply_filter(dt[z], 'gaussianSmoothing',
-                                  sigma_seeds) if sigma_seeds != 0 else dt[z]
-            seeds = vigra.analysis.localMaxima(dtz, marker=np.nan,
-                                               allowAtBorder=True, allowPlateaus=True)
-            seeds = vigra.analysis.labelImageWithBackground(np.isnan(seeds).view('uint8'))
             # run watershed for this slice
+            dtz = dt[z]
+            seeds = _make_seeds(dtz, config)
             hmap = _make_hmap(input_[z], dtz, alpha, sigma_weights)
             wsz, max_id = vu.watershed(hmap, seeds=seeds, size_filter=size_filter)
             # mask seeds if we have a mask
@@ -215,11 +250,7 @@ def _apply_watershed(input_, dt, offset, config, mask=None):
 
     # apply the watersheds in 3d
     else:
-        if sigma_seeds != 0:
-            dt = vu.apply_filter(dt, 'gaussianSmoothing', sigma_seeds)
-        seeds = vigra.analysis.localMaxima3D(dt, marker=np.nan,
-                                             allowAtBorder=True, allowPlateaus=True)
-        seeds = vigra.analysis.labelVolumeWithBackground(np.isnan(seeds).view('uint8'))
+        seeds = _make_seeds(dt, config)
         hmap = _make_hmap(input_, dt, alpha, sigma_weights)
         ws, max_id = vu.watershed(hmap, seeds, size_filter=size_filter)
         ws += offset
@@ -232,20 +263,16 @@ def _apply_watershed(input_, dt, offset, config, mask=None):
 def _apply_watershed_with_seeds(input_, dt, offset,
                                 initial_seeds, config, mask=None):
     apply_2d = config.get('apply_ws_2d', True)
-    sigma_seeds = config.get('sigma_seeds', 2.)
     size_filter = config.get('size_filter', 25)
     sigma_weights = config.get('sigma_weights', 2.)
-    alpha = config.get('alpha', 0.2)
+    alpha = config.get('alpha', 0.8)
 
     # apply the watersheds in 2d
     if apply_2d:
         ws = np.zeros_like(input_, dtype='uint64')
         for z in range(ws.shape[0]):
 
-            # smooth the distance transform if specified
-            dtz = vu.apply_filter(dt[z], 'gaussianSmoothing',
-                                  sigma_seeds) if sigma_seeds != 0 else dt[z]
-
+            dtz = dt[z]
             # get the initial seeds for this slice
             # and a mask for the inital seeds
             initial_seeds_z = initial_seeds[z]
@@ -253,9 +280,7 @@ def _apply_watershed_with_seeds(input_, dt, offset,
             # don't place maxima at initial seeds
             dtz[initial_seed_mask] = 0
 
-            seeds = vigra.analysis.localMaxima(dtz, marker=np.nan,
-                                               allowAtBorder=True, allowPlateaus=True)
-            seeds = vigra.analysis.labelImageWithBackground(np.isnan(seeds).view('uint8'))
+            seeds = _make_seeds(dtz, config)
             # remove seeds in mask
             if mask is not None:
                 seeds[mask[z]] = 0
@@ -293,13 +318,8 @@ def _apply_watershed_with_seeds(input_, dt, offset,
 
     # apply the watersheds in 3d
     else:
-        if sigma_seeds != 0:
-            dt = vu.apply_filter(dt, 'gaussianSmoothing', sigma_seeds)
-
         # find seeds
-        seeds = vigra.analysis.localMaxima3D(dt, marker=np.nan,
-                                             allowAtBorder=True, allowPlateaus=True)
-        seeds = vigra.analysis.labelVolumeWithBackground(np.isnan(seeds).view('uint8'))
+        seeds = _make_seeds(dt, config)
         # remove seeds in mask
         if mask is not None:
             seeds[mask] = 0
@@ -354,6 +374,9 @@ def _read_data(ds_in, input_bb, config):
         input_ = getattr(np, agglomerate)(input_, axis=0)
     else:
         input_ = vu.normalize(ds_in[input_bb])
+    # check if we need to invert the input
+    if config.get('invert_inputs', False):
+        input_ = 1. - input_
     return input_
 
 
@@ -365,6 +388,10 @@ def _ws_block(blocking, block_id, ds_in, ds_out, config, pass_):
 
     # apply distance transform
     dt = _apply_dt(input_, config)
+    # check if input was valid
+    if dt is None:
+        fu.log_block_success(block_id)
+        return
 
     # get offset to make new seeds unique between blocks
     # (we need to relabel later to make processing efficient !)
@@ -410,6 +437,10 @@ def _ws_block_masked(blocking, block_id,
 
     # apply distance transform
     dt = _apply_dt(input_, config)
+    # check if input was valid
+    if dt is None:
+        fu.log_block_success(block_id)
+        return
 
     # get offset to make new seeds unique between blocks
     # (we need to relabel later to make processing efficient !)
@@ -471,7 +502,7 @@ def watershed(job_id, config_path):
 
     # submit blocks
     with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
-        ds_in  = f_in[input_key]
+        ds_in = f_in[input_key]
         assert ds_in.ndim in (3, 4)
         ds_out = f_out[output_key]
         assert ds_out.ndim == 3

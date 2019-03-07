@@ -59,9 +59,10 @@ class WriteBase(luigi.Task):
         # get shape and make block config
         shape = vu.get_shape(self.input_path, self.input_key)
 
-        # require output dataset
         # TODO read chunks from config
+        # require output dataset
         chunks = tuple(bs // 2 for bs in block_shape)
+        chunks = tuple(min(ch, sh) for ch, sh in zip(chunks, shape))
         with vu.file_reader(self.output_path) as f:
             f.require_dataset(self.output_key, shape=shape, chunks=chunks,
                               compression='gzip', dtype='uint64')
@@ -132,6 +133,27 @@ class WriteLSF(WriteBase, LSFTask):
 #
 
 
+def _apply_node_labels(seg, node_labels):
+    # choose the appropriate mapping:
+    # - 1d np.array -> just apply it
+    # - 2d np.array -> extract the local dict and apply
+    # - dict -> extract the local dict and apply
+    apply_array = False if isinstance(node_labels, dict) else (True if node_labels.ndim == 1 else False)
+    if apply_array:
+        seg = nt.take(node_labels, seg)
+    else:
+        # this copys the dict and hence is extremely RAM hungry
+        # so we make the dict as small as possible
+        this_labels = np.unique(seg)
+        if isinstance(node_labels, dict):
+            this_assignment = {label: node_labels[label] for label in this_labels}
+        else:
+            this_assignment = node_labels[:, 1][np.in1d(node_labels[:, 0], this_labels)]
+            this_assignment = {label: this_assignment[ii] for ii, label in enumerate(this_labels)}
+        seg = nt.takeDict(this_assignment, seg)
+    return seg
+
+
 def _write_block_with_offsets(ds_in, ds_out, blocking, block_id,
                               node_labels, offsets):
     fu.log("start processing block %i" % block_id)
@@ -139,12 +161,15 @@ def _write_block_with_offsets(ds_in, ds_out, blocking, block_id,
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
     seg = ds_in[bb]
-    seg[seg != 0] += off
-    # choose the appropriate function for array or dictionary
-    if isinstance(node_labels, np.ndarray):
-        seg = nt.take(node_labels, seg)
-    else:
-        seg = nt.takeDict(node_labels, seg)
+
+    # check if this block is empty and don't write if it is
+    mask = seg != 0
+    if np.sum(mask) == 0:
+        fu.log_block_success(block_id)
+        return
+
+    seg[mask] += off
+    seg = _apply_node_labels(seg, node_labels)
     ds_out[bb] = seg
     fu.log_block_success(block_id)
 
@@ -175,18 +200,7 @@ def _write_block(ds_in, ds_out, blocking, block_id, node_labels):
         fu.log_block_success(block_id)
         return
 
-    # choose the appropriate function for array or dictionary
-    if isinstance(node_labels, np.ndarray):
-        # this should actually amount to the same as
-        # seg = node_labels[seg]
-        seg = nt.take(node_labels, seg)
-    else:
-        # this copys the dict and hence is extremely RAM hungry
-        # so we make the dict as small as possible
-        this_labels = nt.unique(seg)
-        this_assignment = {label: node_labels[label] for label in this_labels}
-        seg = nt.takeDict(this_assignment, seg)
-
+    seg = _apply_node_labels(seg, node_labels)
     ds_out[bb] = seg
     fu.log_block_success(block_id)
 
@@ -213,6 +227,12 @@ def _load_assignments(path, key, n_threads):
             assert ds.ndim in (1, 2)
             ds.n_threads = n_threads
             node_labels = ds[:]
+
+            # this can happen if we only have a single label.
+            # for some reason z5 returns this as int, not as array
+            if isinstance(node_labels, int):
+                node_labels = np.array([node_labels], dtype='uint64')
+
             # if we have 2d node_labels, these correspond to an assignment table
             # and we turn them into a dict for efficient downstream processing
             if node_labels.ndim == 2:
@@ -316,7 +336,6 @@ def write(job_id, config_path):
             _write_maxlabel(output_path, output_key, node_labels)
 
     fu.log_job_success(job_id)
-
 
 
 if __name__ == '__main__':

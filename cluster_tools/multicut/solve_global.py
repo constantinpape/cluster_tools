@@ -4,7 +4,6 @@ import os
 import sys
 import json
 
-import numpy as np
 import luigi
 import nifty
 
@@ -117,11 +116,9 @@ def solve_global(job_id, config_path):
     fu.log("using agglomerator %s" % agglomerator_key)
     agglomerator = su.key_to_agglomerator(agglomerator_key)
 
-    # TODO this should come from input variable
     with vu.file_reader(problem_path) as f:
         group = f['s%i' % scale]
         graph_group = group['graph']
-        n_nodes = graph_group.attrs['numberOfNodes']
         ignore_label = graph_group.attrs['ignoreLabel']
 
         ds = graph_group['edges']
@@ -129,15 +126,20 @@ def solve_global(job_id, config_path):
         uv_ids = ds[:]
         n_edges = len(uv_ids)
 
-        ds = group['node_labeling']
-        ds.n_threads = n_threads
-        initial_node_labeling = ds[:]
+        # we only need to load the initial node labeling if at
+        # least one reduction step was performed i.e. scale > 0
+        if scale > 0:
+            ds = group['node_labeling']
+            ds.n_threads = n_threads
+            initial_node_labeling = ds[:]
 
         ds = group['costs']
         ds.n_threads = n_threads
         costs = ds[:]
         assert len(costs) == n_edges, "%i, %i" (len(costs), n_edges)
 
+    n_nodes = int(uv_ids.max()) + 1
+    fu.log("creating graph with %i nodes an %i edges" % (n_nodes, len(uv_ids)))
     graph = nifty.graph.undirectedGraph(n_nodes)
     graph.insertEdges(uv_ids)
     fu.log("start agglomeration")
@@ -147,7 +149,10 @@ def solve_global(job_id, config_path):
     fu.log("finished agglomeration")
 
     # get the labeling of initial nodes
-    initial_node_labeling = node_labeling[initial_node_labeling]
+    if scale > 0:
+        initial_node_labeling = node_labeling[initial_node_labeling]
+    else:
+        initial_node_labeling = node_labeling
     n_nodes = len(initial_node_labeling)
 
     # make sure zero is mapped to 0 if we have an ignore label

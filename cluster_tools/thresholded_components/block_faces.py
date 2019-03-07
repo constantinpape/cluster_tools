@@ -15,7 +15,7 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
 #
-# Find Labeling Tasks
+# Block Face Tasks
 #
 
 class BlockFacesBase(luigi.Task):
@@ -41,11 +41,6 @@ class BlockFacesBase(luigi.Task):
 
         # get shape and make block config
         shape = vu.get_shape(self.input_path, self.input_key)
-
-        block_list = vu.blocks_in_volume(shape, block_shape,
-                                         roi_begin, roi_end)
-        n_jobs = min(len(block_list), self.max_jobs)
-
         config = self.get_task_config()
         config.update({'input_path': self.input_path,
                        'input_key': self.input_key,
@@ -89,51 +84,11 @@ class BlockFacesLSF(BlockFacesBase, LSFTask):
     pass
 
 
-def _process_face(blocking, block_id,
-                  axis, direction, ds, offsets):
-    ngb_id = blocking.getNeighborId(block_id, axis,
-                                    direction)
-    if ngb_id < block_id or ngb_id < 0:
-        return None
-
-    off_a = offsets[block_id]
-    off_b = offsets[ngb_id]
-
-    if off_a == 0 or off_b == 0:
-        return None
-
-    block_a = blocking.getBlock(block_id)
-    # we now that the overlap is along 'axis'
-    # get the overlap with halo 1 in block coordinates
-    halo = 3 * [0]
-    halo[axis] = 1
-    have_ovlp, begin_a, end_a, begin_b, end_b = blocking.getLocalOverlaps(block_id, ngb_id, halo)
-    # sanity checks
-    assert have_ovlp
-    assert all(beg_a == beg_b if dim != axis else beg_a != beg_b
-               for dim, beg_a, beg_b in zip(range(3), begin_a, begin_b))
-
-    # shape of the overlap
-    oshape = tuple(end - beg for beg, end in zip(begin_a, end_a))
-    # get the global bounding box of the face
-    # and load it
-    face = tuple(slice(off + beg, off + end)
-                 for off, beg, end in zip(block_a.begin, begin_a, end_a))
+def _process_face(ds, offsets, face, face_a, face_b,
+                  block_a, block_b):
+    off_a = offsets[block_a]
+    off_b = offsets[block_b]
     seg = ds[face]
-
-    # find block with the lower coordinate in the overlap axis
-    if begin_a[axis] < begin_b[axis]:
-        slice_a = slice(0, 1)
-        slice_b = slice(1, 2)
-    else:
-        slice_a = slice(1, 2)
-        slice_b = slice(0, 1)
-
-    # get the local coordinates of faces in a and b
-    face_a = tuple(slice(None) if dim != axis else slice_a
-                   for dim in range(3))
-    face_b = tuple(slice(None) if dim != axis else slice_b
-                   for dim in range(3))
 
     # load the local faces
     labels_a = seg[face_a].squeeze()
@@ -146,6 +101,9 @@ def _process_face(blocking, block_id,
     labels_b = labels_b[have_labels]
     assert labels_a.shape == labels_b.shape
 
+    if labels_a.size == 0:
+        return None
+
     # add the offsets that make the block ids unique
     labels_a += off_a
     labels_b += off_b
@@ -155,15 +113,21 @@ def _process_face(blocking, block_id,
     return assignments
 
 
-def _process_faces(block_id, blocking, ds, offsets):
+def _process_faces(block_id, blocking, ds, offsets, empty_blocks):
     fu.log("start processing block %i" % block_id)
-    assignments = [_process_face(blocking, block_id,
-                                 axis, direction, ds, offsets)
-                   for axis in range(3) for direction in (False, True)]
-    assignments = [ass for ass in assignments
-                   if ass is not None]
+    if block_id in empty_blocks:
+        fu.log_block_success(block_id)
+        return None
 
-    # all assignments might be None, so we need to check for taht
+    assignments = [_process_face(ds, offsets, face,
+                                 face_a, face_b, block_a, block_b)
+                   for face, face_a, face_b, block_a, block_b
+                   in vu.iterate_faces(blocking, block_id,
+                                       return_only_lower=True,
+                                       empty_blocks=empty_blocks)]
+    assignments = [ass for ass in assignments if ass is not None]
+
+    # all assignments might be None, so we need to check for that
     if assignments:
         assignments = np.unique(np.concatenate(assignments, axis=0),
                                 axis=0)
@@ -188,7 +152,10 @@ def block_faces(job_id, config_path):
     block_shape = config['block_shape']
 
     with open(offsets_path) as f:
-        offsets = json.load(f)['offsets']
+        offsets_dict = json.load(f)
+        offsets = offsets_dict['offsets']
+        empty_blocks = offsets_dict['empty_blocks']
+        n_labels = offsets_dict['n_labels']
 
     with vu.file_reader(input_path, 'r') as f:
         ds = f[input_key]
@@ -196,14 +163,16 @@ def block_faces(job_id, config_path):
 
         blocking = nt.blocking([0, 0, 0], shape, block_shape)
         assignments = [_process_faces(block_id, blocking, ds,
-                                      offsets)
+                                      offsets, empty_blocks)
                        for block_id in block_list]
     # filter out empty assignments
     assignments = [ass for ass in assignments if ass is not None]
-    assignments = np.concatenate(assignments, axis=0)
-    assignments = np.unique(assignments, axis=0)
+    if assignments:
+        assignments = np.concatenate(assignments, axis=0)
+        assignments = np.unique(assignments, axis=0)
+        assert assignments.max() < n_labels, "%i, %i" % (int(assignments.max()), n_labels)
 
-    save_path = os.path.join(tmp_folder, 'assignments_%i.npy' % job_id)
+    save_path = os.path.join(tmp_folder, 'cc_assignments_%i.npy' % job_id)
     np.save(save_path, assignments)
     fu.log_job_success(job_id)
 

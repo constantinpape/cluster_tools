@@ -18,14 +18,24 @@ except ImportError:
 from nifty.tools import blocking
 
 
+def is_z5(path):
+    ext = os.path.splitext(path)[1][1:].lower()
+    return ext in ('n5', 'zr', 'zarr')
+
+
+def is_h5(path):
+    ext = os.path.splitext(path)[1][1:].lower()
+    return ext in ('h5', 'hdf5', 'hdf')
+
+
 def file_reader(path, mode='a'):
-    ending = path.split('.')[-1].lower()
-    if ending in ('n5', 'zr', 'zarr'):
+    if is_z5(path):
         return z5py.File(path, mode=mode)
-    elif ending in ('h5', 'hdf5', 'hdf'):
+    elif is_h5(path):
         return h5py.File(path, mode=mode)
     else:
-        raise RuntimeError("Invalid file format %s" % ending)
+        ext = os.path.splitext(path)[1][1:].lower()
+        raise RuntimeError("Invalid file format %s" % ext)
 
 
 def get_shape(path, key):
@@ -95,10 +105,13 @@ def apply_filter(input_, filter_name, sigma, apply_in_2d=False):
 
 
 # TODO enable channel-wise normalisation
-def normalize(input_):
+def normalize(input_, min_val=None, max_val=None):
     input_ = input_.astype('float32')
-    input_ -= input_.min()
-    input_ /= input_.max()
+    min_val = input_.min() if min_val is None else min_val
+    input_ -= min_val
+    max_val = input_.max() if max_val is None else max_val
+    if max_val > 0:
+        input_ /= max_val
     return input_
 
 
@@ -152,15 +165,12 @@ def make_checkerboard_block_lists(blocking, roi_begin=None, roi_end=None):
 
 class InterpolatedVolume(object):
     def __init__(self, volume, output_shape, spline_order=0):
-        assert isinstance(volume, np.ndarray)
         assert len(output_shape) == volume.ndim == 3, "Only 3d supported"
-        assert all(osh > vsh for osh, vsh in zip(output_shape, volume.shape)),\
-            "Can only interpolate to larger shapes, got %s %s" % (str(output_shape), str(volume.shape))
         self.volume = volume
         self.shape = output_shape
         self.dtype = volume.dtype
-
         self.scale = [sh / float(fsh) for sh, fsh in zip(self.volume.shape, self.shape)]
+
         if np.dtype(self.dtype) == np.bool:
             self.min, self.max = 0, 1
         else:
@@ -200,9 +210,9 @@ class InterpolatedVolume(object):
         index_ = tuple(slice(int(floor(ind.start * sc)),
                              int(ceil(ind.stop * sc))) for ind, sc in zip(index, self.scale))
         # vigra can't deal with singleton dimension
-        small_shape = tuple(idx.stop - idx.start for idx in index_)
+        data_shape = tuple(idx.stop - idx.start for idx in index_)
         index_ = tuple(slice(idx.start, idx.stop) if sh > 1 else
-                       slice(idx.start, idx.stop + 1) for idx, sh in zip(index_, small_shape))
+                       slice(idx.start, idx.stop + 1) for idx, sh in zip(index_, data_shape))
         data = self.volume[index_]
 
         # speed ups for empty blocks and masks
@@ -220,14 +230,69 @@ class InterpolatedVolume(object):
 def load_mask(mask_path, mask_key, shape):
     with file_reader(mask_path, 'r') as f_mask:
         mshape = f_mask[mask_key].shape
-
     # check if th mask is at full - shape, otherwise interpolate
     if tuple(mshape) == tuple(shape):
-        # TODO this only works for n5
-        mask = z5py.File(mask_path)[mask_key]
-
+        mask = file_reader(mask_path, 'r')[mask_key]
     else:
         with file_reader(mask_path, 'r') as f_mask:
             mask = f_mask[mask_key][:].astype('bool')
         mask = InterpolatedVolume(mask, shape, spline_order=0)
     return mask
+
+
+def get_face(blocking, block_id, ngb_id, axis, halo=[1, 1, 1]):
+    # get the two block coordinates
+    block_a = blocking.getBlock(block_id)
+    block_b = blocking.getBlock(ngb_id)
+    ndim = len(block_a.shape)
+
+    # validate exhaustively, because a lot of errors may happen here ...
+    # validate the non-overlapping axes
+    assert all(beg_a == beg_b for dim, beg_a, beg_b
+               in zip(range(ndim), block_a.begin, block_b.begin) if dim != axis),\
+        "begin_a: %s, begin_b: %s, axis: %i" % (str(block_a.begin), str(block_b.begin), axis)
+    assert all(end_a == end_b for dim, end_a, end_b
+               in zip(range(ndim), block_a.end, block_b.end) if dim != axis)
+    # validate the overlapping axis
+    assert block_a.begin[axis] != block_b.begin[axis]
+    assert block_a.end[axis] != block_b.end[axis]
+
+    # compute the bounding box corresponiding to the face between the two blocks
+    face = tuple(slice(beg, end) if dim != axis else slice(end - ha, end + ha)
+                 for dim, beg, end, ha in zip(range(ndim), block_a.begin, block_a.end, halo))
+    # get the local coordinates of faces in a and b
+    slice_a = slice(0, halo[axis])
+    slice_b = slice(halo[axis], 2 * halo[axis])
+
+    face_a = tuple(slice(None) if dim != axis else slice_a
+                   for dim in range(ndim))
+    face_b = tuple(slice(None) if dim != axis else slice_b
+                   for dim in range(ndim))
+    return face, face_a, face_b
+
+
+def iterate_faces(blocking, block_id, halo=[1, 1, 1], return_only_lower=True,
+                  empty_blocks=None):
+
+    ndim = len(blocking.blockShape)
+    assert len(halo) == ndim, str(halo)
+    directions = (False,) if return_only_lower else (False, True)
+    # iterate over the axes and directions
+    for axis in range(ndim):
+        for direction in directions:
+            # get neighbor id and check if it is valid
+            ngb_id = blocking.getNeighborId(block_id, axis, direction)
+            if ngb_id == -1:
+                continue
+            if empty_blocks is not None:
+                if ngb_id in empty_blocks:
+                    continue
+            face, face_a, face_b = get_face(blocking, block_id, ngb_id,
+                                            axis, halo)
+            yield face, face_a, face_b, block_id, ngb_id
+
+
+def faces_to_ovlp_axis(face_a, face_b):
+    axis = np.where([fa != fb for fa, fb in zip(face_a, face_b)])[0]
+    assert len(axis) == 1, str(axis)
+    return axis[0]

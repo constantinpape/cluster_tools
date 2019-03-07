@@ -1,5 +1,4 @@
 import os
-import json
 from datetime import datetime
 
 import numpy as np
@@ -46,6 +45,11 @@ class WritePainteraMetadata(luigi.Task):
         effective_scale = [1, 1, 1]
         # write the scale factors
         for scale, scale_factor in enumerate(scale_factors):
+
+            # don't write attrs for the original dataset
+            if scale == 0:
+                continue
+
             ds = group['s%i' % scale]
             effective_scale = [sf * eff for sf, eff in zip(scale_factor, effective_scale)]
             # we need to reverse the scale factors because paintera has axis order
@@ -156,7 +160,6 @@ class ConversionWorkflow(WorkflowBase):
         task = getattr(sampling_tasks, self._get_task_name('Downscaling'))
 
         # run downsampling
-        in_scale = self.label_scale
         in_key = os.path.join(self.label_out_key, 'data', 's0')
         dep = dependency
 
@@ -174,7 +177,6 @@ class ConversionWorkflow(WorkflowBase):
                        effective_scale_factor=effective_scale,
                        dependency=dep)
 
-            in_scale = out_scale
             in_key = out_key
         return dep
 
@@ -297,7 +299,7 @@ class ConversionWorkflow(WorkflowBase):
                 segment_ids, counts = np.unique(assignments,
                                                 return_counts=True)
                 seg_ids_to_counts = {seg_id: count for seg_id, count in zip(segment_ids, counts)}
-                fragment_ids_to_counts =  nt.takeDict(seg_ids_to_counts, assignments)
+                fragment_ids_to_counts = nt.takeDict(seg_ids_to_counts, assignments)
                 fragment_ids = np.arange(n_fragments, dtype='uint64')
 
                 non_triv_fragments = fragment_ids[fragment_ids_to_counts > 1]
@@ -310,6 +312,12 @@ class ConversionWorkflow(WorkflowBase):
                 # TODO do we need to assign a special value to ignore label (0) ?
                 frag_to_seg = np.vstack((non_triv_fragments, non_triv_segments))
 
+                # fragment_ids = np.arange(n_fragments, dtype='uint64')
+                # assignments += n_fragments
+                # frag_to_seg = np.vstack((fragment_ids, assignments))
+
+                # max_id = int(frag_to_seg.max())
+
                 out_key = os.path.join(self.label_out_key, 'fragment-segment-assignment')
                 chunks = (1, frag_to_seg.shape[1])
                 f_out.require_dataset(out_key, data=frag_to_seg, shape=frag_to_seg.shape,
@@ -319,27 +327,27 @@ class ConversionWorkflow(WorkflowBase):
     def requires(self):
         # first, we make the labels at label_out_key
         # (as label-multi-set if specified)
-        t1 = self._make_labels(self.dependency)
+        dep = self._make_labels(self.dependency)
         # next, align the scales of labels and raw data
-        t2, scale_factors = self._align_scales(t1)
+        dep, scale_factors = self._align_scales(dep)
         downsampling_factors = [[1, 1, 1]] + scale_factors[self.label_scale+1:]
 
         # # next, compute the mapping of unique labels to blocks
-        t3 = self._uniques_in_blocks(t2, downsampling_factors)
+        dep = self._uniques_in_blocks(dep, downsampling_factors)
         # # next, compute the inverse mapping
-        t4 = self._label_block_mapping(t3, downsampling_factors)
+        dep = self._label_block_mapping(dep, downsampling_factors)
         # # next, compute the fragment-segment-assignment
-        t5, max_id = self._fragment_segment_assignment(t4)
+        dep, max_id = self._fragment_segment_assignment(dep)
 
         # finally, write metadata
-        t6 = WritePainteraMetadata(tmp_folder=self.tmp_folder, path=self.path,
-                                   raw_key=self.raw_key,
-                                   label_group=self.label_out_key, scale_factors=scale_factors,
-                                   label_scale=self.label_scale,
-                                   is_label_multiset=self.use_label_multiset,
-                                   resolution=self.resolution, offset=self.offset,
-                                   max_id=max_id, dependency=t5)
-        return t6
+        dep = WritePainteraMetadata(tmp_folder=self.tmp_folder, path=self.path,
+                                    raw_key=self.raw_key,
+                                    label_group=self.label_out_key, scale_factors=scale_factors,
+                                    label_scale=self.label_scale,
+                                    is_label_multiset=self.use_label_multiset,
+                                    resolution=self.resolution, offset=self.offset,
+                                    max_id=max_id, dependency=dep)
+        return dep
 
     @staticmethod
     def get_config():

@@ -31,6 +31,7 @@ class BlockNodeLabelsBase(luigi.Task):
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
+    ignore_label = luigi.IntParameter(default=None)
     #
     dependency = luigi.TaskParameter()
 
@@ -55,15 +56,17 @@ class BlockNodeLabelsBase(luigi.Task):
                        'input_path': self.input_path,
                        'input_key': self.input_key,
                        'block_shape': block_shape,
-                       'output_path': self.output_path, 'output_key': self.output_key})
+                       'output_path': self.output_path, 'output_key': self.output_key,
+                       'ignore_label': self.ignore_label})
 
-        # make graph file and write shape as attribute
         shape = vu.get_shape(self.ws_path, self.ws_key)
+        chunks = tuple(min(bs, sh) for bs, sh in zip(block_shape, shape))
+
         # create output dataset
         with vu.file_reader(self.output_path) as f:
             f.require_dataset(self.output_key, shape=shape,
                               dtype='uint64',
-                              chunks=tuple(block_shape),
+                              chunks=chunks,
                               compression='gzip')
 
         if self.n_retries == 0:
@@ -106,7 +109,8 @@ class BlockNodeLabelsLSF(BlockNodeLabelsBase, LSFTask):
 #
 
 def _labels_for_block(block_id, blocking,
-                      ds_ws, out_path, labels):
+                      ds_ws, out_path, labels,
+                      ignore_label):
     fu.log("start processing block %i" % block_id)
     # read labels and input in this block
     block = blocking.getBlock(block_id)
@@ -115,7 +119,7 @@ def _labels_for_block(block_id, blocking,
 
     # check if watershed block is empty
     if ws.sum() == 0:
-        fu.log("watershed of block %i is empty" % block_id)
+        fu.log("block %i is empty" % block_id)
         fu.log_block_success(block_id)
         return
 
@@ -132,7 +136,9 @@ def _labels_for_block(block_id, blocking,
                      for beg, ch in zip(block.begin,
                                         blocking.blockShape))
     ndist.computeAndSerializeLabelOverlaps(ws, labs,
-                                           out_path, chunk_id)
+                                           out_path, chunk_id,
+                                           withIgnoreLabel=False if ignore_label is None else True,
+                                           ignoreLabel=0 if ignore_label is None else ignore_label)
     fu.log_block_success(block_id)
 
 
@@ -154,6 +160,7 @@ def block_node_labels(job_id, config_path):
 
     block_shape = config['block_shape']
     block_list = config['block_list']
+    ignore_label = config['ignore_label']
 
     with vu.file_reader(ws_path, 'r') as f:
         shape = f[ws_key].shape
@@ -169,18 +176,38 @@ def block_node_labels(job_id, config_path):
     # label shape is smaller than ws shape
     # -> interpolated
     if all(lsh < sh for lsh, sh in zip(lab_shape, shape)):
-        labels = vu.InterpolatedVolume(ds_labels[:], shape, spline_order=0)
-        f_lab.close()
+        labels = vu.InterpolatedVolume(ds_labels, shape, spline_order=0)
     else:
         assert lab_shape == shape
         labels = ds_labels
+
+    if ignore_label is None:
+        fu.log("accumulating labels without ignore label")
+    else:
+        fu.log("accumulating labels with ignore label %i" % ignore_label)
 
     with vu.file_reader(ws_path, 'r') as f_in:
         ds_ws = f_in[ws_key]
         out_path = os.path.join(output_path, output_key)
         [_labels_for_block(block_id, blocking,
-                           ds_ws, out_path, labels)
+                           ds_ws, out_path, labels,
+                           ignore_label)
          for block_id in block_list]
+
+    # need to serialize the label max-id here for
+    # the merge_node_labels task
+    if job_id == 0:
+        with vu.file_reader(ws_path, 'r'):
+            try:
+                max_id = ds_ws.attrs['maxId']
+            except KeyError:
+                raise KeyError("Dataset %s:%s does not have attribute maxId" % (ws_path, ws_key))
+
+        with vu.file_reader(output_path) as f:
+            ds_out = f[output_key]
+            ds_out.attrs['maxId'] = max_id
+
+    f_lab.close()
     fu.log_job_success(job_id)
 
 
