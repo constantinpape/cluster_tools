@@ -112,13 +112,11 @@ def simple_stitch_assignments(job_id, config_path):
     # load the edge results of the first
     f = vu.file_reader(input_path, 'r')
     key0 = 'job_results/job_0'
-    res0 = f[key0][:]
+    merge_edges = f[key0][:].astype('bool')
 
-    merge_edges = np.in1d(res0, [0, 1])
     for job in range(1, n_jobs):
         key = 'job_results/job_%i' % job
-        res_job = f[key][:]
-        res_job = np.in1d(res_job, [0, 1])
+        res_job = f[key][:].astype('bool')
         merge_edges = np.logical_and(merge_edges, res_job)
 
     # load edge sizes to not merge across tiny edges
@@ -144,7 +142,7 @@ def simple_stitch_assignments(job_id, config_path):
     with vu.file_reader(assignments_path) as f:
         chunks = (min(int(1e5), len(node_labeling)),)
         ds = f.require_dataset(assignments_key, shape=node_labeling.shape, compression='gzip',
-                               chunks=chunks)
+                               chunks=chunks, dtype='uint64')
         ds[:] = node_labeling
 
     fu.log_job_success(job_id)

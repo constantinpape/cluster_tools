@@ -52,7 +52,8 @@ class SimpleStitchEdgesBase(luigi.Task):
                        'graph_path': self.graph_path,
                        'labels_path': self.labels_path,
                        'labels_key': self.labels_key,
-                       'n_edges': n_edges})
+                       'n_edges': n_edges,
+                       'block_shape': block_shape})
 
         with vu.file_reader(tmp_file) as f:
             f.require_group('job_results')
@@ -101,15 +102,20 @@ def simple_stitch_edges(job_id, config_path):
     labels_key = config['labels_key']
     n_edges = config['n_edges']
     block_list = config['block_list']
+    block_shape = config['block_shape']
 
     out_path = config['out_path']
     out_key = 'job_results/job_%i' % job_id
 
     block_prefix = os.path.join(graph_path, 's0/sub_graphs/block_')
-    res = ndist.find1DEdges(block_prefix, labels_path, labels_key, n_edges, block_list)
+    # res = ndist.find1DEdges(block_prefix, labels_path, labels_key, n_edges, block_list)
+    res = ndist.findBlockBoundaryEdges(block_prefix, labels_path, labels_key,
+                                       n_edges, block_shape, block_list)
 
     with vu.file_reader(out_path) as f:
-        f.create_dataset(out_key, data=res, compression='gzip')
+        chunks = (min(int(1e6), len(res)),)
+        f.create_dataset(out_key, data=res.astype('uint8'), compression='gzip',
+                         chunks=chunks)
 
     fu.log_job_success(job_id)
 
