@@ -37,13 +37,14 @@ class SimpleStitchEdgesBase(luigi.Task):
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 
-        block_list = vu.blocks_in_volume(self.shape, block_shape,
+        shape = vu.get_shape(self.labels_path, self.labels_key)
+        block_list = vu.blocks_in_volume(shape, block_shape,
                                          roi_begin, roi_end)
         n_jobs = min(len(block_list), self.max_jobs)
 
         graph_key = 's0/graph'
         with vu.file_reader(self.graph_path, 'r') as f:
-            n_edges = f[graph_key].numberOfEdges
+            n_edges = f[graph_key].attrs['numberOfEdges']
 
         config = self.get_task_config()
         tmp_file = os.path.join(self.tmp_folder, 'stitch_edges.n5')

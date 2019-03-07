@@ -305,15 +305,16 @@ class SimpleStitchingWorkflow(MulticutSegmentationWorkflow):
                                  dependency=dep)
         # from simple stitch edges to assignments
         stitch_assignment_task = getattr(stitch_assignment_tasks,
-                                         self._get_task_name('SimpleStitchingAssignments'))
+                                         self._get_task_name('SimpleStitchAssignments'))
         dep = stitch_assignment_task(tmp_folder=self.tmp_folder,
                                      max_jobs=self.max_jobs,
                                      config_dir=self.config_dir,
-                                     features_path=self.problem_path,
+                                     problem_path=self.problem_path,
+                                     graph_key=self.graph_key,
                                      features_key=self.features_key,
                                      edge_size_threshold=self.edge_size_threshold,
-                                     assignment_path=self.output_path,
-                                     assignment_key=self.node_labels_key,
+                                     assignments_path=self.output_path,
+                                     assignments_key=self.node_labels_key,
                                      dependency=dep)
         return dep
 

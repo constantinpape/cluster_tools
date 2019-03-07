@@ -124,7 +124,7 @@ class MwsWorkflow(WorkflowBase):
                          output_path=self.output_path, output_key=self.output_key,
                          mask_path=self.mask_path, mask_key=self.mask_key,
                          offsets=self.offsets, halo=halo,
-                         serialize_overlap=self.stitch_mode == 'overlap')
+                         serialize_overlap=self.stitch_mode in ('overlap', None))
 
         # merge id-offsets
         with vu.file_reader(self.input_path, 'r') as f:

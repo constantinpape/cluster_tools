@@ -41,7 +41,9 @@ class SimpleStitchAssignmentsBase(luigi.Task):
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 
-        block_list = vu.blocks_in_volume(self.shape, block_shape,
+        with vu.file_reader(self.problem_path, 'r') as f:
+            shape = f.attrs['shape']
+        block_list = vu.blocks_in_volume(shape, block_shape,
                                          roi_begin, roi_end)
         n_jobs = min(len(block_list), self.max_jobs)
 
@@ -113,8 +115,8 @@ def simple_stitch_assignments(job_id, config_path):
     res0 = f[key0][:]
 
     merge_edges = np.in1d(res0, [0, 1])
-    for job_id in range(1, n_jobs):
-        key = 'job_results/job_%i' % job_id
+    for job in range(1, n_jobs):
+        key = 'job_results/job_%i' % job
         res_job = f[key][:]
         res_job = np.in1d(res_job, [0, 1])
         merge_edges = np.logical_and(merge_edges, res_job)
@@ -140,7 +142,10 @@ def simple_stitch_assignments(job_id, config_path):
     assert node_labeling[0] == 0
 
     with vu.file_reader(assignments_path) as f:
-        f.create_dataset(assignments_key, data=node_labeling, compression='gzip')
+        chunks = (min(int(1e5), len(node_labeling)),)
+        ds = f.require_dataset(assignments_key, shape=node_labeling.shape, compression='gzip',
+                               chunks=chunks)
+        ds[:] = node_labeling
 
     fu.log_job_success(job_id)
 
