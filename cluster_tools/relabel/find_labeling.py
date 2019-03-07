@@ -3,7 +3,6 @@
 import os
 import sys
 import json
-import pickle
 from concurrent import futures
 
 import luigi
@@ -28,7 +27,9 @@ class FindLabelingBase(luigi.Task):
     allow_retry = False
 
     shape = luigi.ListParameter()
-    assignment_path = luigi.Parameter()  # where to save the assignments
+    # where to save the assignments
+    assignment_path = luigi.Parameter()
+    assignment_key = luigi.Parameter()
     # task that is required before running this task
     dependency = luigi.TaskParameter()
 
@@ -45,6 +46,7 @@ class FindLabelingBase(luigi.Task):
         config = self.get_task_config()
         config.update({'shape': self.shape,
                        'assignment_path': self.assignment_path,
+                       'assignment_key': self.assignment_key,
                        'tmp_folder': self.tmp_folder, 'n_jobs': n_jobs})
 
         # we only have a single job to find the labeling
@@ -89,6 +91,7 @@ def find_labeling(job_id, config_path):
     tmp_folder = config['tmp_folder']
     n_threads = config['threads_per_job']
     assignment_path = config['assignment_path']
+    assignment_key = config['assignment_key']
 
     def _read_input(job_id):
         return np.load(os.path.join(tmp_folder, 'find_uniques_job_%i.npy' % job_id))
@@ -109,7 +112,7 @@ def find_labeling(job_id, config_path):
         stop_label = len(uniques) + 1
 
     new_ids = np.arange(start_label, stop_label, dtype='uint64')
-    mapping = dict(zip(uniques, new_ids))
+    assignments = np.concatenate([uniques[:, None], new_ids[:, None]], axis=1)
 
     # check if we have zero in the uniques -> need to keep it
     # if uniques[0] == 0:
@@ -120,11 +123,13 @@ def find_labeling(job_id, config_path):
     #     _, max_id, mapping = vigra.analysis.relabelConsecutive(uniques,
     #                                                            keep_zeros=False,
     #                                                            start_label=1)
-    assert len(mapping) == len(uniques), "%i, %i" % (len(mapping), len(uniques))
 
-    fu.log("saving results to %s" % assignment_path)
-    with open(assignment_path, 'wb') as f:
-        pickle.dump(mapping, f)
+    fu.log("saving results to %s/%s" % (assignment_path, assignment_key))
+    with vu.file_reader(assignment_path) as f:
+        ds = f.create_dataset(assignment_key, shape=assignments.shape, dtype='uint64',
+                              compression='gzip')
+        ds.n_threads = n_threads
+        ds[:] = assignments
     # log success
     fu.log_job_success(job_id)
 

@@ -15,6 +15,7 @@ class TestRelabel(unittest.TestCase):
     input_path = '/home/pape/Work/data/fafb/calyx/central.zarr'
     input_key = 'fragments'
     output_key = 'data'
+    assignment_key = 'assignments'
     tmp_folder = './tmp'
     output_path = './tmp/relabeled.n5'
     config_folder = './tmp/configs'
@@ -52,6 +53,7 @@ class TestRelabel(unittest.TestCase):
         task = RelabelWorkflow(tmp_folder=self.tmp_folder, config_dir=self.config_folder,
                                max_jobs=4, target=self.target,
                                input_path=self.input_path, input_key=self.input_key,
+                               assignment_path=self.output_path, assignment_key=self.assignment_key,
                                output_path=self.output_path, output_key=self.output_key)
         ret = luigi.build([task], local_scheduler=True)
         self.assertTrue(ret)

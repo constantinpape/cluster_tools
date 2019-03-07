@@ -1,4 +1,3 @@
-import os
 import luigi
 
 from ..cluster_tasks import WorkflowBase
@@ -11,6 +10,8 @@ from .. import write as write_tasks
 class RelabelWorkflow(WorkflowBase):
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
+    assignment_path = luigi.Parameter()
+    assignment_key = luigi.Parameter()
     output_path = luigi.Parameter(default='')
     output_key = luigi.Parameter(default='')
 
@@ -28,15 +29,13 @@ class RelabelWorkflow(WorkflowBase):
         # because it is only used internally for this task
         # but it could also be exposed if this is useful
         # at some point
-        assignment_path = os.path.join(self.tmp_folder, 'relabeling.pkl')
         labeling_task = getattr(labeling_tasks,
                                 self._get_task_name('FindLabeling'))
         shape = get_shape(self.input_path, self.input_key)
-        dep = labeling_task(tmp_folder=self.tmp_folder,
-                            max_jobs=self.max_jobs,
-                            config_dir=self.config_dir,
-                            shape=shape,
-                            assignment_path=assignment_path,
+        dep = labeling_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                            config_dir=self.config_dir, shape=shape,
+                            assignment_path=self.assignment_path,
+                            assignment_key=self.assignment_key,
                             dependency=dep)
 
         # check if we relabel in-place (default) or to a new output file
@@ -57,7 +56,8 @@ class RelabelWorkflow(WorkflowBase):
                          input_key=self.input_key,
                          output_path=out_path,
                          output_key=out_key,
-                         assignment_path=assignment_path,
+                         assignment_path=self.assignment_path,
+                         assignment_key=self.assignment_key,
                          identifier='relabel',
                          dependency=dep)
         return dep

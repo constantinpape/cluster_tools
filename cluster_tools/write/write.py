@@ -133,6 +133,27 @@ class WriteLSF(WriteBase, LSFTask):
 #
 
 
+def _apply_node_labels(seg, node_labels):
+    # choose the appropriate mapping:
+    # - 1d np.array -> just apply it
+    # - 2d np.array -> extract the local dict and apply
+    # - dict -> extract the local dict and apply
+    apply_array = False if isinstance(node_labels, dict) else (True if node_labels.ndim == 1 else False)
+    if apply_array:
+        seg = nt.take(node_labels, seg)
+    else:
+        # this copys the dict and hence is extremely RAM hungry
+        # so we make the dict as small as possible
+        this_labels = np.unique(seg)
+        if isinstance(node_labels, dict):
+            this_assignment = {label: node_labels[label] for label in this_labels}
+        else:
+            this_assignment = node_labels[:, 1][np.in1d(node_labels[:, 0], this_labels)]
+            this_assignment = {label: this_assignment[ii] for ii, label in enumerate(this_labels)}
+        seg = nt.takeDict(this_assignment, seg)
+    return seg
+
+
 def _write_block_with_offsets(ds_in, ds_out, blocking, block_id,
                               node_labels, offsets):
     fu.log("start processing block %i" % block_id)
@@ -148,15 +169,7 @@ def _write_block_with_offsets(ds_in, ds_out, blocking, block_id,
         return
 
     seg[mask] += off
-    # choose the appropriate function for array or dictionary
-    if isinstance(node_labels, np.ndarray):
-        seg = nt.take(node_labels, seg)
-    else:
-        # this copys the dict and hence is extremely RAM hungry
-        # so we make the dict as small as possible
-        this_labels = np.unique(seg)
-        this_assignment = {label: node_labels[label] for label in this_labels}
-        seg = nt.takeDict(this_assignment, seg)
+    seg = _apply_node_labels(seg, node_labels)
     ds_out[bb] = seg
     fu.log_block_success(block_id)
 
@@ -187,18 +200,7 @@ def _write_block(ds_in, ds_out, blocking, block_id, node_labels):
         fu.log_block_success(block_id)
         return
 
-    # choose the appropriate function for array or dictionary
-    if isinstance(node_labels, np.ndarray):
-        # this should actually amount to the same as
-        # seg = node_labels[seg]
-        seg = nt.take(node_labels, seg)
-    else:
-        # this copys the dict and hence is extremely RAM hungry
-        # so we make the dict as small as possible
-        this_labels = np.unique(seg)
-        this_assignment = {label: node_labels[label] for label in this_labels}
-        seg = nt.takeDict(this_assignment, seg)
-
+    seg = _apply_node_labels(seg, node_labels)
     ds_out[bb] = seg
     fu.log_block_success(block_id)
 
