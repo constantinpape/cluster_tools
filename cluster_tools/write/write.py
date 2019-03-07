@@ -154,7 +154,7 @@ def _write_block_with_offsets(ds_in, ds_out, blocking, block_id,
     else:
         # this copys the dict and hence is extremely RAM hungry
         # so we make the dict as small as possible
-        this_labels = nt.unique(seg)
+        this_labels = np.unique(seg)
         this_assignment = {label: node_labels[label] for label in this_labels}
         seg = nt.takeDict(this_assignment, seg)
     ds_out[bb] = seg
@@ -195,7 +195,7 @@ def _write_block(ds_in, ds_out, blocking, block_id, node_labels):
     else:
         # this copys the dict and hence is extremely RAM hungry
         # so we make the dict as small as possible
-        this_labels = nt.unique(seg)
+        this_labels = np.unique(seg)
         this_assignment = {label: node_labels[label] for label in this_labels}
         seg = nt.takeDict(this_assignment, seg)
 
