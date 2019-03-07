@@ -8,8 +8,7 @@ from concurrent import futures
 
 import luigi
 import numpy as np
-import vigra
-import nifty.tools as nt
+# import vigra
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -28,9 +27,8 @@ class FindLabelingBase(luigi.Task):
     src_file = os.path.abspath(__file__)
     allow_retry = False
 
-    input_path = luigi.Parameter()
-    input_key = luigi.Parameter()
-    assignment_path = luigi.Parameter() # where to save the assignments
+    shape = luigi.ListParameter()
+    assignment_path = luigi.Parameter()  # where to save the assignments
     # task that is required before running this task
     dependency = luigi.TaskParameter()
 
@@ -41,14 +39,11 @@ class FindLabelingBase(luigi.Task):
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 
-        # get shape and make block config
-        shape = vu.get_shape(self.input_path, self.input_key)
-
-        block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+        block_list = vu.blocks_in_volume(self.shape, block_shape, roi_begin, roi_end)
         n_jobs = min(len(block_list), self.max_jobs)
 
         config = self.get_task_config()
-        config.update({'input_path': self.input_path, 'input_key': self.input_key,
+        config.update({'shape': self.shape,
                        'assignment_path': self.assignment_path,
                        'tmp_folder': self.tmp_folder, 'n_jobs': n_jobs})
 
@@ -92,8 +87,6 @@ def find_labeling(job_id, config_path):
         config = json.load(f)
     n_jobs = config['n_jobs']
     tmp_folder = config['tmp_folder']
-    input_path = config['input_path']
-    input_key = config['input_key']
     n_threads = config['threads_per_job']
     assignment_path = config['assignment_path']
 
@@ -106,12 +99,28 @@ def find_labeling(job_id, config_path):
         tasks = [tp.submit(_read_input, job_id) for job_id in range(n_jobs)]
         uniques = np.concatenate([t.result() for t in tasks])
     fu.log("compute uniques")
-    # uniques = nt.unique(uniques)
     uniques = np.unique(uniques)
     fu.log("relabel")
-    _, max_id, mapping = vigra.analysis.relabelConsecutive(uniques,
-                                                           keep_zeros=True,
-                                                           start_label=1)
+    if uniques[0] == 0:
+        start_label = 0
+        stop_label = len(uniques)
+    else:
+        start_label = 1
+        stop_label = len(uniques) + 1
+
+    new_ids = np.arange(start_label, stop_label, dtype='uint64')
+    mapping = dict(zip(uniques, new_ids))
+
+    # check if we have zero in the uniques -> need to keep it
+    # if uniques[0] == 0:
+    #     _, max_id, mapping = vigra.analysis.relabelConsecutive(uniques,
+    #                                                            keep_zeros=True,
+    #                                                            start_label=1)
+    # else:
+    #     _, max_id, mapping = vigra.analysis.relabelConsecutive(uniques,
+    #                                                            keep_zeros=False,
+    #                                                            start_label=1)
+    assert len(mapping) == len(uniques), "%i, %i" % (len(mapping), len(uniques))
 
     fu.log("saving results to %s" % assignment_path)
     with open(assignment_path, 'wb') as f:

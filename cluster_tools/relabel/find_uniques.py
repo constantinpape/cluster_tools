@@ -6,7 +6,6 @@ import json
 
 import luigi
 import numpy as np
-import vigra
 import nifty.tools as nt
 
 import cluster_tools.utils.volume_utils as vu

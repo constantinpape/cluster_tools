@@ -1,8 +1,8 @@
 import os
-import json
 import luigi
 
 from ..cluster_tasks import WorkflowBase
+from ..utils.volume_utils import get_shape
 from . import find_uniques as unique_tasks
 from . import find_labeling as labeling_tasks
 from .. import write as write_tasks
@@ -31,11 +31,11 @@ class RelabelWorkflow(WorkflowBase):
         assignment_path = os.path.join(self.tmp_folder, 'relabeling.pkl')
         labeling_task = getattr(labeling_tasks,
                                 self._get_task_name('FindLabeling'))
+        shape = get_shape(self.input_path, self.input_key)
         dep = labeling_task(tmp_folder=self.tmp_folder,
                             max_jobs=self.max_jobs,
                             config_dir=self.config_dir,
-                            input_path=self.input_path,
-                            input_key=self.input_key,
+                            shape=shape,
                             assignment_path=assignment_path,
                             dependency=dep)
 
