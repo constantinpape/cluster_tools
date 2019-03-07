@@ -7,7 +7,6 @@ from concurrent import futures
 
 import luigi
 import numpy as np
-# import vigra
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -96,13 +95,14 @@ def find_labeling(job_id, config_path):
     def _read_input(job_id):
         return np.load(os.path.join(tmp_folder, 'find_uniques_job_%i.npy' % job_id))
 
-    # TODO this could be parallelized
     fu.log("read uniques")
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(_read_input, job_id) for job_id in range(n_jobs)]
         uniques = np.concatenate([t.result() for t in tasks])
+
     fu.log("compute uniques")
     uniques = np.unique(uniques)
+
     fu.log("relabel")
     if uniques[0] == 0:
         start_label = 0
@@ -110,19 +110,8 @@ def find_labeling(job_id, config_path):
     else:
         start_label = 1
         stop_label = len(uniques) + 1
-
     new_ids = np.arange(start_label, stop_label, dtype='uint64')
     assignments = np.concatenate([uniques[:, None], new_ids[:, None]], axis=1)
-
-    # check if we have zero in the uniques -> need to keep it
-    # if uniques[0] == 0:
-    #     _, max_id, mapping = vigra.analysis.relabelConsecutive(uniques,
-    #                                                            keep_zeros=True,
-    #                                                            start_label=1)
-    # else:
-    #     _, max_id, mapping = vigra.analysis.relabelConsecutive(uniques,
-    #                                                            keep_zeros=False,
-    #                                                            start_label=1)
 
     fu.log("saving results to %s/%s" % (assignment_path, assignment_key))
     with vu.file_reader(assignment_path) as f:
@@ -132,6 +121,7 @@ def find_labeling(job_id, config_path):
                               compression='gzip', chunks=chunks)
         ds.n_threads = n_threads
         ds[:] = assignments
+
     # log success
     fu.log_job_success(job_id)
 
