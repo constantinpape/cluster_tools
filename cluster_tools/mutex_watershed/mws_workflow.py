@@ -15,6 +15,7 @@ from ..workflows import AgglomerativeClusteringWorkflow
 
 from .import mws_blocks as block_tasks
 from .import mws_faces as face_tasks
+from .import two_pass_mws as two_pass_tasks
 
 
 # TODO refactor this
@@ -180,3 +181,46 @@ class MwsWorkflow(WorkflowBase):
         configs.update({'mws_blocks': block_tasks.MwsBlocksLocal.default_task_config(),
                         'mws_faces': face_tasks.MwsFacesLocal.default_task_config()})
         return configs
+
+
+def TwoPassMwsWorkflow(WorkflowBase):
+    input_path = luigi.Parameter()
+    input_key = luigi.Parameter()
+    output_path = luigi.Parameter()
+    output_key = luigi.Parameter()
+    offsets = luigi.ListParameter()
+    halo = luigi.ListParameter(default=None)
+    mask_path = luigi.Parameter(default='')
+    mask_key = luigi.Parameter(default='')
+
+    def requires(self):
+        two_pass_task = getattr(block_tasks, self._get_task_name('TwoPassMws'))
+        dep = block_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                         config_dir=self.config_dir, dependency=self.dependency,
+                         input_path=self.input_path, input_key=self.input_key,
+                         output_path=self.output_path, output_key=self.output_key,
+                         mask_path=self.mask_path, mask_key=self.mask_key,
+                         offsets=self.offsets, halo=halo)
+        dep = ''
+        return dep
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

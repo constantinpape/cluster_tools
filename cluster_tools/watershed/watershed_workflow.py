@@ -2,6 +2,7 @@ import luigi
 
 from ..cluster_tasks import WorkflowBase
 from . import watershed as watershed_tasks
+from . import two_pass_watershed as two_pass_tasks
 from . import agglomerate as agglomerate_tasks
 from ..relabel import RelabelWorkflow
 
@@ -13,11 +14,16 @@ class WatershedWorkflow(WorkflowBase):
     output_key = luigi.Parameter()
     mask_path = luigi.Parameter(default='')
     mask_key = luigi.Parameter(default='')
+    two_pass = luigi.BoolParameter(default=False)
     agglomeration = luigi.BoolParameter(default=False)
 
     def requires(self):
-        ws_task = getattr(watershed_tasks,
-                          self._get_task_name('Watershed'))
+        if self.two_pass:
+            ws_task = getattr(two_pass_tasks,
+                              self._get_task_name('TwoPassWatershed'))
+        else:
+            ws_task = getattr(watershed_tasks,
+                              self._get_task_name('Watershed'))
         dep = ws_task(tmp_folder=self.tmp_folder,
                       max_jobs=self.max_jobs,
                       config_dir=self.config_dir,
