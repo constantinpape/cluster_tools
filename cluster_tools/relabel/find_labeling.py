@@ -25,7 +25,8 @@ class FindLabelingBase(luigi.Task):
     src_file = os.path.abspath(__file__)
     allow_retry = False
 
-    shape = luigi.ListParameter()
+    input_path = luigi.Parameter()
+    input_key = luigi.Parameter()
     # where to save the assignments
     assignment_path = luigi.Parameter()
     assignment_key = luigi.Parameter()
@@ -39,11 +40,12 @@ class FindLabelingBase(luigi.Task):
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 
-        block_list = vu.blocks_in_volume(self.shape, block_shape, roi_begin, roi_end)
+        shape = vu.get_shape(self.input_path, self.input_key)
+        block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
         n_jobs = min(len(block_list), self.max_jobs)
 
         config = self.get_task_config()
-        config.update({'shape': self.shape,
+        config.update({'shape': shape,
                        'assignment_path': self.assignment_path,
                        'assignment_key': self.assignment_key,
                        'tmp_folder': self.tmp_folder, 'n_jobs': n_jobs})

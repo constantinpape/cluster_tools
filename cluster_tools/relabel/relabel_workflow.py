@@ -31,12 +31,11 @@ class RelabelWorkflow(WorkflowBase):
         # at some point
         labeling_task = getattr(labeling_tasks,
                                 self._get_task_name('FindLabeling'))
-        shape = get_shape(self.input_path, self.input_key)
         dep = labeling_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
-                            config_dir=self.config_dir, shape=shape,
+                            config_dir=self.config_dir, dependency=dep,
+                            input_path=self.input_path, input_key=self.input_key,
                             assignment_path=self.assignment_path,
-                            assignment_key=self.assignment_key,
-                            dependency=dep)
+                            assignment_key=self.assignment_key)
 
         # check if we relabel in-place (default) or to a new output file
         if self.output_path == '':

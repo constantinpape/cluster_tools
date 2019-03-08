@@ -39,7 +39,7 @@ class TestWatershed(unittest.TestCase):
         self._mkdir(self.tmp_folder)
         self._mkdir(self.config_folder)
         global_config = WatershedLocal.default_global_config()
-        global_config['shebang'] = '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env/bin/python'
+        global_config['shebang'] = '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python'
         global_config['block_shape'] = [10, 256, 256]
         with open(os.path.join(self.config_folder, 'global.config'), 'w') as f:
             json.dump(global_config, f)
@@ -95,20 +95,6 @@ class TestWatershed(unittest.TestCase):
         self.assertTrue(ret)
         self._check_result()
 
-    def test_ws_two_pass_2d(self):
-        config = WatershedLocal.default_task_config()
-        config['two_pass'] = True
-        config['apply_presmooth_2d'] = True
-        config['apply_dt_2d'] = True
-        config['apply_ws_2d'] = True
-        config['threshold'] = 0.25
-        config['halo'] = [0, 15, 15]
-        with open(os.path.join(self.config_folder, 'watershed.config'), 'w') as f:
-            json.dump(config, f)
-        ret = self._run_ws()
-        self.assertTrue(ret)
-        self._check_result()
-
     def test_ws_3d(self):
         config = WatershedLocal.default_task_config()
         config['apply_presmooth_2d'] = False
@@ -116,21 +102,6 @@ class TestWatershed(unittest.TestCase):
         config['apply_ws_2d'] = False
         config['sigma_seeds'] = (.5, 2., 2.)
         config['sigma_weights'] = (.5, 2., 2.)
-        with open(os.path.join(self.config_folder, 'watershed.config'), 'w') as f:
-            json.dump(config, f)
-        ret = self._run_ws()
-        self.assertTrue(ret)
-        self._check_result()
-
-    def test_ws_two_pass_3d(self):
-        config = WatershedLocal.default_task_config()
-        config['two_pass'] = True
-        config['apply_presmooth_2d'] = False
-        config['apply_dt_2d'] = False
-        config['apply_ws_2d'] = False
-        config['sigma_seeds'] = (.5, 2., 2.)
-        config['sigma_weights'] = (.5, 2., 2.)
-        config['halo'] = [5, 15, 15]
         with open(os.path.join(self.config_folder, 'watershed.config'), 'w') as f:
             json.dump(config, f)
         ret = self._run_ws()

@@ -54,7 +54,7 @@ class WatershedWorkflow(WorkflowBase):
                               target=self.target,
                               input_path=self.output_path,
                               input_key=self.output_key,
-                              assignment_path=self.output_key,
+                              assignment_path=self.output_path,
                               assignment_key='relabel_watershed',
                               dependency=dep)
         return dep
