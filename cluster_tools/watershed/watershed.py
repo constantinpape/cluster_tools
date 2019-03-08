@@ -297,7 +297,14 @@ def _ws_block(blocking, block_id, ds_in, ds_out, mask, config):
 
     # -> apply ws and write the results to the inner volume
     ws = _apply_watershed(input_, dt, offset, config, inv_mask)
-    ds_out[output_bb] = ws[inner_bb]
+
+    # FIXME this does not work yet because uint64 is not exported in vigra
+    # really need this though ...
+    # # if we had a halo, we need to run connected components
+    # if output_bb != input_bb:
+    #     ws = ws[inner_bb]
+    #     ws = vigra.analysis.labelVolumeWithBackground(ws)
+    ds_out[output_bb] = ws
 
     # log block success
     fu.log_block_success(block_id)

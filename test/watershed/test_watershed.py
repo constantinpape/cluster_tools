@@ -93,7 +93,7 @@ class TestWatershed(unittest.TestCase):
         config['halo'] = [0, 32, 32]
         with open(os.path.join(self.config_folder, 'watershed.config'), 'w') as f:
             json.dump(config, f)
-        ret = self._run_ws()
+        ret = self._run_ws(two_pass)
         self.assertTrue(ret)
         self._check_result()
 
@@ -103,7 +103,7 @@ class TestWatershed(unittest.TestCase):
     def test_ws_2d_two_pass(self):
         self._test_ws_2d(True)
 
-    def test_ws_3d(self):
+    def _test_ws_3d(self, two_pass):
         config = WatershedLocal.default_task_config()
         config['apply_presmooth_2d'] = False
         config['apply_dt_2d'] = False
@@ -113,7 +113,7 @@ class TestWatershed(unittest.TestCase):
         config['halo'] = [2, 32, 32]
         with open(os.path.join(self.config_folder, 'watershed.config'), 'w') as f:
             json.dump(config, f)
-        ret = self._run_ws()
+        ret = self._run_ws(two_pass)
         self.assertTrue(ret)
         self._check_result()
 
@@ -131,7 +131,7 @@ class TestWatershed(unittest.TestCase):
         config['pixel_pitch'] = (10, 1 , 1)
         with open(os.path.join(self.config_folder, 'watershed.config'), 'w') as f:
             json.dump(config, f)
-        ret = self._run_ws()
+        ret = self._run_ws(False)
         self.assertTrue(ret)
         self._check_result()
 
