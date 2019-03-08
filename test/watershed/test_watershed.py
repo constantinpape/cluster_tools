@@ -69,7 +69,7 @@ class TestWatershed(unittest.TestCase):
         ids1 = np.unique(res_cc)
         self.assertEqual(len(ids0), len(ids1))
 
-    def _run_ws(self):
+    def _run_ws(self, two_pass):
         max_jobs = 8
         task = WatershedWorkflow(input_path=self.input_path,
                                  input_key=self.input_key,
@@ -78,22 +78,30 @@ class TestWatershed(unittest.TestCase):
                                  config_dir=self.config_folder,
                                  tmp_folder=self.tmp_folder,
                                  target=self.target,
-                                 max_jobs=max_jobs)
+                                 max_jobs=max_jobs,
+                                 two_pass=two_pass)
         ret = luigi.build([task], local_scheduler=True)
         return ret
 
-    def test_ws_2d(self):
+    def _test_ws_2d(self, two_pass):
         config = WatershedLocal.default_task_config()
         config['apply_presmooth_2d'] = True
         config['apply_dt_2d'] = True
         config['apply_ws_2d'] = True
         config['threshold'] = 0.25
         config['sigma_weights'] = 0.
+        config['halo'] = [0, 32, 32]
         with open(os.path.join(self.config_folder, 'watershed.config'), 'w') as f:
             json.dump(config, f)
         ret = self._run_ws()
         self.assertTrue(ret)
         self._check_result()
+
+    def test_ws_2d(self):
+        self._test_ws_2d(False)
+
+    def test_ws_2d_two_pass(self):
+        self._test_ws_2d(True)
 
     def test_ws_3d(self):
         config = WatershedLocal.default_task_config()
@@ -102,11 +110,18 @@ class TestWatershed(unittest.TestCase):
         config['apply_ws_2d'] = False
         config['sigma_seeds'] = (.5, 2., 2.)
         config['sigma_weights'] = (.5, 2., 2.)
+        config['halo'] = [2, 32, 32]
         with open(os.path.join(self.config_folder, 'watershed.config'), 'w') as f:
             json.dump(config, f)
         ret = self._run_ws()
         self.assertTrue(ret)
         self._check_result()
+
+    def test_ws_3d(self):
+        self._test_ws_3d(False)
+
+    def test_ws_3d_two_pass(self):
+        self._test_ws_3d(True)
 
     def test_ws_pixel_pitch(self):
         config = WatershedLocal.default_task_config()
