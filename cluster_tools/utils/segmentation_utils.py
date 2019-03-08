@@ -256,9 +256,12 @@ def mutex_watershed_with_seeds(affs, offsets, seeds, strides,
     grid_graph.set_seeds(seeds)
     uvs, weights = grid_graph.compute_nh_and_weights(np.require(affs[:ndim], requirements='C'),
                                                      offsets[:ndim])
-    mutex_uvs, mutex_weights = grid_graph.compute_nh_and_weights(np.require(affs[ndim:], requirements='C'),
+    mutex_uvs, mutex_weights = grid_graph.compute_nh_and_weights(np.require(affs[ndim:],
+                                                                            requirements='C'),
                                                                  offsets[ndim:])
-    n_nodes = grid_graph.n_nodes
+
+    # we assume that the seeds were properly offset
+    n_nodes = int(seeds.max()) + 1
     seg = compute_mws_clustering(n_nodes, uvs, mutex_uvs, weights, mutex_weights)
     relabelConsecutive(seg, out=seg, start_label=1, keep_zeros=mask is not None)
     return seg.reshape(shape)

@@ -197,7 +197,9 @@ def _mws_block_pass2(block_id, blocking,
     # load seeds
     seeds = ds_out[in_bb]
     # offset the seeds for the mws
-    seeds_mws = seeds + np.prod(affs.shape[1:])
+    seed_offset = np.prod(affs.shape[1:])
+    seeds_mws = vigra.analysis.relabelConsecutive(seeds,
+                                                  start_label=seed_offset, keep_zeros=False)[0]
     seg = su.mutex_watershed_with_seeds(affs, offsets, seeds_mws, strides=strides,
                                         mask=bb_mask, randomize_strides=randomize_strides,
                                         noise_level=noise_level)
