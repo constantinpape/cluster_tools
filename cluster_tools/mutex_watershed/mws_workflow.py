@@ -16,6 +16,7 @@ from ..workflows import AgglomerativeClusteringWorkflow
 from .import mws_blocks as block_tasks
 from .import mws_faces as face_tasks
 from .import two_pass_mws as two_pass_tasks
+from .import two_pass_assignments as assignmnent_tasks
 
 
 # TODO refactor this
@@ -183,7 +184,7 @@ class MwsWorkflow(WorkflowBase):
         return configs
 
 
-def TwoPassMwsWorkflow(WorkflowBase):
+class TwoPassMwsWorkflow(WorkflowBase):
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
@@ -193,34 +194,35 @@ def TwoPassMwsWorkflow(WorkflowBase):
     mask_path = luigi.Parameter(default='')
     mask_key = luigi.Parameter(default='')
 
+    assignment_path = 'assignments/two_pass_mws'
+
     def requires(self):
-        two_pass_task = getattr(block_tasks, self._get_task_name('TwoPassMws'))
-        dep = block_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
-                         config_dir=self.config_dir, dependency=self.dependency,
-                         input_path=self.input_path, input_key=self.input_key,
+        two_pass_task = getattr(two_pass_tasks, self._get_task_name('TwoPassMws'))
+        dep = two_pass_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                            config_dir=self.config_dir, dependency=self.dependency,
+                            input_path=self.input_path, input_key=self.input_key,
+                            output_path=self.output_path, output_key=self.output_key,
+                            mask_path=self.mask_path, mask_key=self.mask_key,
+                            offsets=self.offsets, halo=self.halo)
+        assignmnent_task = getattr(assignmnent_tasks, 'TwoPassAssignments')
+        dep = assignmnent_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                               config_dir=self.config_dir, dependency=dep,
+                               path=self.output_path, key=self.output_key,
+                               assignment_path=self.output_path, assignment_key=self.assignments_key)
+        write_task = getattr(write_tasks,
+                             self._get_task_name('Write'))
+        dep = write_task(tmp_folder=self.tmp_folder,
+                         config_dir=self.config_dir,
+                         max_jobs=self.max_jobs,
+                         input_path=self.output_path, input_key=self.output_key,
                          output_path=self.output_path, output_key=self.output_key,
-                         mask_path=self.mask_path, mask_key=self.mask_key,
-                         offsets=self.offsets, halo=halo)
-        dep = ''
+                         assignment_path=self.output_path, assignment_key=self.assignment_key,
+                         identifier='two-pass-mws',
+                         dependency=dep)
         return dep
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    @staticmethod
+    def get_config():
+        configs = super(TwoPassMwsWorkflow, TwoPassMwsWorkflow).get_config()
+        configs.update({'two_pas_mws': two_pass_tasks.TwoPassMwsLocal.default_task_config()})
+        return configs

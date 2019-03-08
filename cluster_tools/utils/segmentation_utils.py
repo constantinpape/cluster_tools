@@ -13,6 +13,7 @@ from vigra.analysis import relabelConsecutive
 
 try:
     from affogato.segmentation import compute_mws_segmentation
+    from affogato.segmentation import MWSGridGraph, compute_mws_clustering
 except ImportError:
     compute_mws_segmentation = None
 
@@ -230,14 +231,37 @@ def mutex_watershed(affs, offsets, strides,
         affs += noise_level * np.random.rand(*affs.shape)
     affs[:ndim] *= -1
     affs[:ndim] += 1
-    # from cremi_tools.viewer.volumina import view
-    # view([affs.transpose((1, 2, 3, 0)), mask.astype('uint32')])
     seg = compute_mws_segmentation(affs, offsets,
                                    number_of_attractive_channels=ndim,
                                    strides=strides, mask=mask,
                                    randomize_strides=randomize_strides)
     relabelConsecutive(seg, out=seg, start_label=1, keep_zeros=mask is not None)
     return seg
+
+
+def mutex_watershed_with_seeds(affs, offsets, seeds, strides,
+                               randomize_strides=False, mask=None,
+                               noise_level=0):
+    assert compute_mws_segmentation is not None, "Need affogato for mutex watershed"
+    ndim = len(offsets[0])
+    if noise_level > 0:
+        affs += noise_level * np.random.rand(*affs.shape)
+    affs[:ndim] *= -1
+    affs[:ndim] += 1
+
+    shape = affs.shape[1:]
+    grid_graph = MWSGridGraph(shape)
+    if mask is not None:
+        grid_graph.set_mask(mask)
+    grid_graph.set_seeds(seeds)
+    uvs, weights = grid_graph.compute_nh_and_weights(np.require(affs[:ndim], requirements='C'),
+                                                     offsets[:ndim])
+    mutex_uvs, mutex_weights = grid_graph.compute_nh_and_weights(np.require(affs[ndim:], requirements='C'),
+                                                                 offsets[ndim:])
+    n_nodes = grid_graph.n_nodes
+    seg = compute_mws_clustering(n_nodes, uvs, mutex_uvs, weights, mutex_weights)
+    relabelConsecutive(seg, out=seg, start_label=1, keep_zeros=mask is not None)
+    return seg.reshape(shape)
 
 
 def mala_clustering(graph, edge_features, edge_sizes, threshold):
