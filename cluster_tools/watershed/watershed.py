@@ -166,7 +166,7 @@ def _make_seeds(dt, config):
 
     # find local maxima of the distance transform
     max_fu = vigra.analysis.localMaxima if dt.ndim == 2 else vigra.analysis.localMaxima3D
-    if sigma_seeds > 0:
+    if sigma_seeds:
         seeds = max_fu(vu.apply_filter(dt, 'gaussianSmoothing', sigma_seeds),
                        marker=np.nan, allowAtBorder=True, allowPlateaus=True)
     else:
