@@ -3,7 +3,6 @@
 import os
 import sys
 import json
-from functools import partial
 
 import luigi
 import numpy as np
@@ -32,7 +31,6 @@ class TwoPassMwsBase(luigi.Task):
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
-    assignments_key = luigi.Parameter()
     offsets = luigi.ListParameter()
     mask_path = luigi.Parameter(default='')
     mask_key = luigi.Parameter(default='')
@@ -100,6 +98,11 @@ class TwoPassMwsBase(luigi.Task):
 
         blocking = nt.blocking([0, 0, 0], list(shape), list(block_shape))
         block_lists = vu.make_checkerboard_block_lists(blocking, roi_begin, roi_end)
+
+        # we need the max-block-id to write out max-label-id later
+        max_block_id = max([max(bl) for bl in block_lists])
+        config.update({'max_block_id': max_block_id})
+
         for pass_id, block_list in enumerate(block_lists):
             config['pass'] = pass_id
             self._mws_pass(block_list, config, 'pass_%i' % pass_id)
@@ -134,7 +137,8 @@ def _mws_block_pass1(block_id, blocking,
                      ds_in, ds_out,
                      mask, offsets,
                      strides, randomize_strides,
-                     halo, noise_level):
+                     halo, noise_level, max_block_id,
+                     tmp_folder):
     fu.log("(Pass1) start processing block %i" % block_id)
 
     block = blocking.getBlockWithHalo(block_id, halo)
@@ -158,6 +162,7 @@ def _mws_block_pass1(block_id, blocking,
     out_bb = vu.block_to_bb(block.innerBlock)
     local_bb = vu.block_to_bb(block.innerBlockLocal)
     seg = seg[local_bb]
+
     # FIXME once vigra supports uint64 or we implement our own ...
     # seg = vigra.analysis.labelVolumeWithBackground(seg)
 
@@ -166,8 +171,21 @@ def _mws_block_pass1(block_id, blocking,
     vigra.analysis.relabelConsecutive(seg, start_label=offset_id, keep_zeros=True, out=seg)
     ds_out[out_bb] = seg
 
+    # get the state of the segmentation of this block
+    grid_graph = su.compute_grid_graph(seg.shape, mask=bb_mask)
+    affs = affs[(slice(None),) + local_bb]
+    state_uvs, state_weights, state_attractive = grid_graph.compute_state_for_segmentation(affs, seg, offsets,
+                                                                                           n_attractive_channels=3,
+                                                                                           ignore_label=True)
+    # serialize the states
+    save_path = os.path.join(tmp_folder, 'seg_state_block%i.h5' % block_id)
+    with vu.file_reader(save_path) as f:
+        f.create_dataset('edges', data=state_uvs)
+        f.create_dataset('weights', data=state_weights)
+        f.create_dataset('attractive_edge_mask', data=state_attractive)
+
     # write max-id for the last block
-    if block_id == blocking.numberOfBlocks - 1:
+    if block_id == max_block_id:
         _write_nlabels(ds_out, seg)
     # log block success
     fu.log_block_success(block_id)
@@ -177,13 +195,17 @@ def _mws_block_pass2(block_id, blocking,
                      ds_in, ds_out,
                      mask, offsets,
                      strides, randomize_strides,
-                     halo, noise_level, tmp_folder):
+                     halo, noise_level, max_block_id,
+                     tmp_folder):
     fu.log("(Pass2) start processing block %i" % block_id)
 
     block = blocking.getBlockWithHalo(block_id, halo)
     in_bb = vu.block_to_bb(block.outerBlock)
 
     if mask is None:
+        # if we don't have a mask, initialize with fully 'in-mask' volume
+        # bb_mask = np.ones(tuple(b.stop - b.begin for b in in_bb),
+        #                   dtype='bool')
         bb_mask = None
     else:
         bb_mask = mask[in_bb].astype('bool')
@@ -191,47 +213,93 @@ def _mws_block_pass2(block_id, blocking,
             fu.log_block_success(block_id)
             return
 
+    # TODO does this make sense ?
+    # set the mask for parts of indirect neighbor blocks
+    # (which are also part of pass 2) to 0
+    # bb_mask = mask_corners(bb_mask, halo)
+
     aff_bb = (slice(None),) + in_bb
     affs = vu.normalize(ds_in[aff_bb])
 
     # load seeds
     seeds = ds_out[in_bb]
-    # offset the seeds for the mws
-    seed_offset = np.prod(affs.shape[1:])
-    seeds_mws = vigra.analysis.relabelConsecutive(seeds,
-                                                  start_label=seed_offset, keep_zeros=False)[0]
-    seg = su.mutex_watershed_with_seeds(affs, offsets, seeds_mws, strides=strides,
-                                        mask=bb_mask, randomize_strides=randomize_strides,
-                                        noise_level=noise_level)
-
-    # find all the segment ids corresponding to seeds
     seed_ids = np.unique(seeds)
     if seed_ids[0] == 0:
         seed_ids = seed_ids[1:]
 
+    # load the serialized state for the neighboring (pass1) blocks
+    # and find relevant edges between seed ids
+
+    seed_edges = []
+    seed_edge_weights = []
+    attractive_mask = []
+
+    for axis in range(3):
+        for to_lower in (False, True):
+            ngb_id = blocking.getNeighborId(block_id, axis, to_lower)
+
+            # get path to state serialization and check if it exists
+            save_path = os.path.join(tmp_folder, 'seg_state_block%i.h5' % ngb_id)
+            if not os.path.exists(save_path):
+                continue
+
+            with vu.file_reader(save_path) as f:
+                # first, load the edges and see if they have overlap with our seed ids
+                ngb_edges = f['edges'][:]
+                ngb_edge_mask = np.in1d(ngb_edges, seed_ids).reshape(ngb_edges.shape)
+                ngb_edge_mask = ngb_edge_mask.all(axis=1)
+
+                # if we have edges, load the corresponding weights
+                # and attractive / repulsive state
+                if ngb_edge_mask.sum() > 0:
+                    ngb_edges = ngb_edges[ngb_edge_mask]
+                    ngb_weights = f['weights'][:][ngb_edge_mask]
+                    ngb_attractive_edges = f['attractive_edge_mask'][:][ngb_edge_mask]
+
+                    seed_edges.append(ngb_edges)
+                    seed_edge_weights.append(ngb_weights)
+                    attractive_mask.append(ngb_attractive_edges)
+
+    seed_edges = np.concatenate(seed_edges, axis=0)
+    seed_edge_weights = np.concatenate(seed_edge_weights)
+    attractive_mask = np.concatenate(attractive_mask)
+    assert len(seed_edges) == len(seed_edge_weights) == len(attractive_mask)
+
+    repulsive_mask = np.logical_not(attractive_mask)
+    attractive_edges, repulsive_edges = seed_edges[attractive_mask], seed_edges[repulsive_mask]
+    attractive_weights, repulsive_weights = seed_edge_weights[attractive_mask], seed_edge_weights[repulsive_mask]
+
+    # run mws segmentation with seeds
+    seg, grid_graph = su.mutex_watershed_with_seeds(affs, offsets, seeds, strides=strides,
+                                                    mask=bb_mask, randomize_strides=randomize_strides,
+                                                    noise_level=noise_level, return_graph=True,
+                                                    seed_state={'attractive': (attractive_edges, attractive_weights),
+                                                                'repulsive': (repulsive_edges, repulsive_weights)})
     # offset with lowest block coordinate
     offset_id = block_id * np.prod(blocking.blockShape)
     vigra.analysis.relabelConsecutive(seg, start_label=offset_id, keep_zeros=True, out=seg)
 
-    assignments = []
-    for seed_id in seed_ids:
-        seed_mask = seeds == seed_id
-        for new_id in np.unique(seg[seed_mask]):
-            assignments.append([seed_id, new_id])
-    assignments = np.array(assignments, dtype='uint64')
+    # find assignment of seed ids to segmentation ids
+    assignments = grid_graph.get_seed_assignments_from_node_labels(seg.flatten())
+
+    # get the cropped segmentation
+    local_bb = vu.block_to_bb(block.innerBlockLocal)
+    seg_crop = seg[local_bb]
+
+    # filter the assignments from ids that are not in the crop
+    crop_ids = np.unique(seg_crop)
+    filter_mask = np.in1d(assignments[:, 1], crop_ids)
+    assignments = assignments[filter_mask]
 
     # store assignments to tmp folder
     save_path = os.path.join(tmp_folder, 'mws_two_pass_assignments_block_%i.npy' % block_id)
     np.save(save_path, assignments)
 
-    local_bb = vu.block_to_bb(block.innerBlockLocal)
-    seg = seg[local_bb]
-
     out_bb = vu.block_to_bb(block.innerBlock)
-    ds_out[out_bb] = seg
+    ds_out[out_bb] = seg_crop
 
     # write max-id for the last block
-    if block_id == blocking.numberOfBlocks - 1:
+    if block_id == max_block_id:
         _write_nlabels(ds_out, seg)
     # log block success
     fu.log_block_success(block_id)
@@ -265,6 +333,7 @@ def two_pass_mws(job_id, config_path):
     mask_key = config.get('mask_key', '')
     pass_id = config['pass']
     tmp_folder = config['tmp_folder']
+    max_block_id = config['max_block_id']
 
     with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
 
@@ -279,13 +348,14 @@ def two_pass_mws(job_id, config_path):
         else:
             mask = None
 
-        mws_fu = _mws_block_pass1 if pass_id == 0 else partial(_mws_block_pass2,
-                                                               tmp_folder=tmp_folder)
+        mws_fu = _mws_block_pass1 if pass_id == 0 else _mws_block_pass2
+
         [mws_fu(block_id, blocking,
                 ds_in, ds_out,
                 mask, offsets,
                 strides, randomize_strides,
-                halo,  noise_level)
+                halo,  noise_level, max_block_id,
+                tmp_folder)
          for block_id in block_list]
 
     fu.log_job_success(job_id)

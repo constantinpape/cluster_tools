@@ -1,6 +1,7 @@
 import os
 import json
 from functools import partial
+from itertools import product
 from math import floor, ceil
 
 import numpy as np
@@ -134,12 +135,7 @@ def apply_size_filter(segmentation, input_, size_filter, exclude=None):
     return segmentation, max_id
 
 
-# TODO is there a more efficient way to do this?
-# TODO support roi
-def make_checkerboard_block_lists(blocking, roi_begin=None, roi_end=None):
-    assert (roi_begin is None) == (roi_end is None)
-    if roi_begin is not None:
-        raise NotImplementedError("Roi not implemented")
+def _make_checkerboard(blocking):
     blocks_a = [0]
     blocks_b = []
     all_blocks = [0]
@@ -161,6 +157,48 @@ def make_checkerboard_block_lists(blocking, roi_begin=None, roi_end=None):
     assert len(set(all_blocks) - expected) == 0
     assert len(blocks_a) == len(blocks_b), "%i, %i" % (len(blocks_a), len(blocks_b))
     return blocks_a, blocks_b
+
+
+def _make_checkerboard_with_roi(blocking, roi_begin, roi_end):
+
+    # find the smallest roi coordinate
+    block0 = blocking.coordinatesToBlockId(roi_begin)
+
+    blocks_a = [block0]
+    blocks_b = []
+    all_blocks = [block0]
+
+    blocks_in_roi = blocking.getBlockIdsOverlappingBoundingBox(roi_begin, roi_end)
+    assert block0 in blocks_in_roi
+
+    def recurse(current_block, insert_list):
+        other_list = blocks_a if insert_list is blocks_b else blocks_b
+        for dim in range(3):
+            ngb_id = blocking.getNeighborId(current_block, dim, False)
+            if ngb_id != -1:
+                #  check if this block is overlapping the roi
+                if ngb_id not in blocks_in_roi:
+                    continue
+                if ngb_id not in all_blocks:
+                    insert_list.append(ngb_id)
+                    all_blocks.append(ngb_id)
+                    recurse(ngb_id, other_list)
+
+    recurse(block0, blocks_b)
+    all_blocks = blocks_a + blocks_b
+    expected = set(blocks_in_roi)
+    assert len(all_blocks) == len(expected), "%i, %i" % (len(all_blocks), len(expected))
+    assert len(set(all_blocks) - expected) == 0
+    assert len(blocks_a) == len(blocks_b), "%i, %i" % (len(blocks_a), len(blocks_b))
+    return blocks_a, blocks_b
+
+
+def make_checkerboard_block_lists(blocking, roi_begin=None, roi_end=None):
+    assert (roi_begin is None) == (roi_end is None)
+    if roi_begin is None:
+        return _make_checkerboard(blocking)
+    else:
+        return _make_checkerboard_with_roi(blocking, roi_begin, roi_end)
 
 
 class InterpolatedVolume(object):
@@ -296,3 +334,18 @@ def faces_to_ovlp_axis(face_a, face_b):
     axis = np.where([fa != fb for fa, fb in zip(face_a, face_b)])[0]
     assert len(axis) == 1, str(axis)
     return axis[0]
+
+
+def mask_corners(input_, halo):
+    ndim = input_.ndim
+    shape = input_.shape
+
+    corners = ndim * [[0, 1]]
+    corners = product(*corners)
+
+    for corner in corners:
+        corner_bb = tuple(slice(0, ha) if co == 0 else slice(sh - ha, sh)
+                          for ha, co, sh in zip(halo, shape, corner))
+        input_[corner_bb] = 0
+
+    return input_

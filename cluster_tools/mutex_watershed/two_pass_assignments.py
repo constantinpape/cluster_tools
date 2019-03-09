@@ -31,6 +31,7 @@ class TwoPassAssignmentsBase(luigi.Task):
     key = luigi.Parameter()
     assignments_path = luigi.Parameter()
     assignments_key = luigi.Parameter()
+    relabel_key = luigi.Parameter()
     dependency = luigi.TaskParameter()
 
     def requires(self):
@@ -44,6 +45,7 @@ class TwoPassAssignmentsBase(luigi.Task):
         config.update({'path': self.path, 'key': self.key,
                        'assignments_path': self.assignments_path,
                        'assignments_key': self.assignments_key,
+                       'relabel_key': self.relabel_key,
                        'tmp_folder': self.tmp_folder, 'block_shape': block_shape})
 
         # we only have a single job to find the labeling
@@ -89,26 +91,58 @@ def two_pass_assignments(job_id, config_path):
     key = config['key']
     assignments_path = config['assignments_path']
     assignments_key = config['assignments_key']
+    relabel_key = config['relabel_key']
     block_shape = config['block_shape']
     tmp_folder = config['tmp_folder']
 
     with vu.file_reader(path, 'r') as f:
         ds = f[key]
         shape = ds.shape
-        n_labels = int(ds.attrs['maxId']) + 1
 
     blocking = nt.blocking([0, 0, 0], list(shape), block_shape)
     n_blocks = blocking.numberOfBlocks
 
-    # load all block assignments
-    pattern = os.path.join(tmp_folder, '')
-    assignments = np.concatenate([np.load(pattern % block_id) for block_id in range(n_blocks)],
-                                 axis=0).astype('uint64')
+    # load block assignments
+    pattern = os.path.join(tmp_folder, 'mws_two_pass_assignments_block_%i.npy')
+    assignments = []
+    for block_id in range(n_blocks):
+        save_path = pattern % block_id
+        # NOTE, we only have assignments for some of the blocks
+        # due to checkerboard procesing (and potentially roi)
+        if os.path.exists(save_path):
+            assignments.append(np.load(save_path))
+    assignments = np.concatenate(assignments, axis=0).astype('uint64')
+    fu.log("Loaded assignments of shape %s" % str(assignments.shape))
+
+    # load the relabeling and use it to relabel the assignments
+    with vu.file_reader(assignments_path, 'r') as f:
+        relabeling = f[relabel_key][:]
+    # expected format of relabeling:
+    # array[n_labels, 2]
+    # first column holds the new old ids
+    # second column holds the corresponding new (consecutive!) ids
+    assert relabeling.ndim == 2
+    assert relabeling.shape[1] == 2
+
+    n_labels = len(relabeling)
+    old_to_new = dict(zip(relabeling[:, 0], relabeling[:, 1]))
+    assignments = nt.takeDict(old_to_new, assignments)
+    assert n_labels > assignments.max(), "%i, %i" % (n_labels, assignments.max())
+
+    fu.log("merge %i labels with ufd" % n_labels)
     ufd = nufd.ufd(n_labels)
     ufd.merge(assignments)
     node_labels = ufd.elementLabeling()
-    if 0 in node_labels:
-        assert node_labels[0] == 0
+
+    # make sure 0 is mapped to 0
+    # TODO should refactor this into util function and use it
+    # wherever we need it after ufd labeling
+    if node_labels[0] != 0:
+        # we have 0 in labels -> need to remap
+        if 0 in node_labels:
+            node_labels[node_labels == 0] = node_labels.max() + 1
+        node_labels[0] = 0
+
     vigra.analysis.relabelConsecutive(node_labels, out=node_labels, start_label=1, keep_zeros=True)
 
     with vu.file_reader(assignments_path) as f:

@@ -1,1 +1,1 @@
-from .mws_workflow import MwsWorkflow
+from .mws_workflow import TwoPassMwsWorkflow
