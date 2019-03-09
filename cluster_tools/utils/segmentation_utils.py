@@ -257,17 +257,23 @@ def mutex_watershed_with_seeds(affs, offsets, seeds, strides,
     grid_graph.set_seeds(seeds)
 
     # compute nn and mutex nh
+    grid_graph.intra_seed_weight = 1  # set intra-seed weight to maximal attractive
     uvs, weights = grid_graph.compute_nh_and_weights(np.require(affs[:ndim], requirements='C'),
                                                      offsets[:ndim])
+
+    grid_graph.intra_seed_weight = 0  # set intral-seed weight to minimal repulsive
     mutex_uvs, mutex_weights = grid_graph.compute_nh_and_weights(np.require(affs[ndim:],
                                                                             requirements='C'),
                                                                  offsets[ndim:], strides, randomize_strides)
 
     # compute the segmentation
-    n_nodes = max(int(seeds.max()) + 1, grid_graph.n_nodes)
+    n_nodes = grid_graph.n_nodes
     seg = compute_mws_clustering(n_nodes, uvs, mutex_uvs, weights, mutex_weights)
     relabelConsecutive(seg, out=seg, start_label=1, keep_zeros=mask is not None)
-    return seg.reshape(shape)
+    seg = seg.reshape(shape)
+    if mask is not None:
+        seg[np.logical_not(mask)] = 0
+    return seg
 
 
 def mala_clustering(graph, edge_features, edge_sizes, threshold):
