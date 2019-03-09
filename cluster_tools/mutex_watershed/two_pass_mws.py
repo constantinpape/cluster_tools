@@ -157,8 +157,9 @@ def _mws_block_pass1(block_id, blocking,
 
     out_bb = vu.block_to_bb(block.innerBlock)
     local_bb = vu.block_to_bb(block.innerBlockLocal)
-    # TODO do we want to tun connected components here to prevent small merges
     seg = seg[local_bb]
+    # FIXME once vigra supports uint64 or we implement our own ...
+    # seg = vigra.analysis.labelVolumeWithBackground(seg)
 
     # offset with lowest block coordinate
     offset_id = block_id * np.prod(blocking.blockShape)
@@ -195,7 +196,11 @@ def _mws_block_pass2(block_id, blocking,
 
     # load seeds
     seeds = ds_out[in_bb]
-    seg = su.mutex_watershed_with_seeds(affs, offsets, strides=strides,
+    # offset the seeds for the mws
+    seed_offset = np.prod(affs.shape[1:])
+    seeds_mws = vigra.analysis.relabelConsecutive(seeds,
+                                                  start_label=seed_offset, keep_zeros=False)[0]
+    seg = su.mutex_watershed_with_seeds(affs, offsets, seeds_mws, strides=strides,
                                         mask=bb_mask, randomize_strides=randomize_strides,
                                         noise_level=noise_level)
 
