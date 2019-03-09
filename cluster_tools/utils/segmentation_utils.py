@@ -249,19 +249,22 @@ def mutex_watershed_with_seeds(affs, offsets, seeds, strides,
     affs[:ndim] *= -1
     affs[:ndim] += 1
 
+    # compute grid graph with seeds and optional mask
     shape = affs.shape[1:]
     grid_graph = MWSGridGraph(shape)
     if mask is not None:
         grid_graph.set_mask(mask)
     grid_graph.set_seeds(seeds)
+
+    # compute nn and mutex nh
     uvs, weights = grid_graph.compute_nh_and_weights(np.require(affs[:ndim], requirements='C'),
                                                      offsets[:ndim])
     mutex_uvs, mutex_weights = grid_graph.compute_nh_and_weights(np.require(affs[ndim:],
                                                                             requirements='C'),
-                                                                 offsets[ndim:])
+                                                                 offsets[ndim:], strides, randomize_strides)
 
-    # we assume that the seeds were properly offset
-    n_nodes = int(seeds.max()) + 1
+    # compute the segmentation
+    n_nodes = max(int(seeds.max()) + 1, grid_graph.n_nodes)
     seg = compute_mws_clustering(n_nodes, uvs, mutex_uvs, weights, mutex_weights)
     relabelConsecutive(seg, out=seg, start_label=1, keep_zeros=mask is not None)
     return seg.reshape(shape)
