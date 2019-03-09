@@ -111,6 +111,7 @@ def simple_stitch_edges(job_id, config_path):
     # res = ndist.find1DEdges(block_prefix, labels_path, labels_key, n_edges, block_list)
     res = ndist.findBlockBoundaryEdges(block_prefix, labels_path, labels_key,
                                        n_edges, block_shape, block_list)
+    fu.log('Found %i / %i block boundary edges' % (res.sum(), len(res)))
 
     with vu.file_reader(out_path) as f:
         chunks = (min(int(1e6), len(res)),)

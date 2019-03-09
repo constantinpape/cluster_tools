@@ -117,7 +117,7 @@ def simple_stitch_assignments(job_id, config_path):
     for job in range(1, n_jobs):
         key = 'job_results/job_%i' % job
         res_job = f[key][:].astype('bool')
-        merge_edges = np.logical_and(merge_edges, res_job)
+        merge_edges = np.logical_or(merge_edges, res_job)
 
     # load edge sizes to not merge across tiny edges
     f = vu.file_reader(problem_path, 'r')
