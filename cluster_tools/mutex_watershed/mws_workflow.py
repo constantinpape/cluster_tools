@@ -13,6 +13,14 @@ class MwsWorkflow(WorkflowBase):
     """ Simple MWS Workflow without any stitching.
 
     Arguments:
+        input_path [str]
+        input_key [str]
+        output_path [str]
+        output_key [str]
+        offsets [list[list[int]]
+        halo [list[int]]
+        mask_path [str]
+        mask_key [str]
     """
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
@@ -42,7 +50,8 @@ class MwsWorkflow(WorkflowBase):
     @staticmethod
     def get_config():
         configs = super(MwsWorkflow, MwsWorkflow).get_config()
-        configs.update()
+        configs.update({'mws_blocks': mws_tasks.MwsBlocksLocal.default_task_config(),
+                        **RelabelWorkflow.get_config()})
         return configs
 
 
@@ -52,6 +61,13 @@ class TwoPassMwsWorkflow(WorkflowBase):
 
     Arguments:
         input_path [str]
+        input_key [str]
+        output_path [str]
+        output_key [str]
+        offsets [list[list[int]]
+        halo [list[int]]
+        mask_path [str]
+        mask_key [str]
     """
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
