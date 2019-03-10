@@ -24,6 +24,90 @@ from .stitching import simple_stitch_edges as simple_stitch_tasks
 from .stitching import simple_stitch_assignments as stitch_assignment_tasks
 
 
+# TODO add options to choose which features to use
+# NOTE in the current implementation, we can only compute the
+# graph with n_scales=1, otherwise we will clash with the multicut merged graphs
+class ProblemWorkflow(WorkflowBase):
+    input_path = luigi.Parameter()
+    input_key = luigi.Parameter()
+    ws_path = luigi.Parameter()
+    ws_key = luigi.Parameter()
+    problem_path = luigi.Parameter()
+
+    # optional params for costs
+    rf_path = luigi.Parameter(default='')
+    node_label_dict = luigi.DictParameter(default={})
+
+    max_jobs_merge = luigi.IntParameter(default=1)
+    # do we compte costs
+    compute_costs = luigi.BoolParameter(default=True)
+    # do we run sanity checks ?
+    sanity_checks = luigi.BoolParameter(default=False)
+
+    # hard-coded keys
+    graph_key = 's0/graph'
+    features_key = 'features'
+    costs_key = 's0/costs'
+
+    def requires(self):
+        dep = GraphWorkflow(tmp_folder=self.tmp_folder,
+                            max_jobs=self.max_jobs,
+                            config_dir=self.config_dir,
+                            target=self.target,
+                            dependency=self.dependency,
+                            input_path=self.ws_path,
+                            input_key=self.ws_key,
+                            graph_path=self.problem_path,
+                            output_key=self.graph_key,
+                            n_scales=1)
+        # sanity check the subgraph
+        if self.sanity_checks:
+            graph_block_prefix = os.path.join(self.problem_path,
+                                              's0', 'sub_graphs', 'block_')
+            dep = CheckSubGraphsWorkflow(tmp_folder=self.tmp_folder,
+                                         max_jobs=self.max_jobs,
+                                         config_dir=self.config_dir,
+                                         target=self.target,
+                                         ws_path=self.ws_path,
+                                         ws_key=self.ws_key,
+                                         graph_block_prefix=graph_block_prefix,
+                                         dependency=dep)
+        dep = EdgeFeaturesWorkflow(tmp_folder=self.tmp_folder,
+                                   max_jobs=self.max_jobs,
+                                   config_dir=self.config_dir,
+                                   target=self.target,
+                                   dependency=dep,
+                                   input_path=self.input_path,
+                                   input_key=self.input_key,
+                                   labels_path=self.ws_path,
+                                   labels_key=self.ws_key,
+                                   graph_path=self.problem_path,
+                                   graph_key=self.graph_key,
+                                   output_path=self.problem_path,
+                                   output_key=self.features_key,
+                                   max_jobs_merge=self.max_jobs_merge)
+        if self.compute_costs:
+            dep = EdgeCostsWorkflow(tmp_folder=self.tmp_folder,
+                                    max_jobs=self.max_jobs,
+                                    config_dir=self.config_dir,
+                                    target=self.target,
+                                    dependency=dep,
+                                    features_path=self.problem_path,
+                                    features_key=self.features_key,
+                                    output_path=self.problem_path,
+                                    output_key=self.costs_key,
+                                    node_label_dict=self.node_label_dict,
+                                    rf_path=self.rf_path)
+        return dep
+
+    @staticmethod
+    def get_config():
+        config = {**GraphWorkflow.get_config(),
+                  **EdgeFeaturesWorkflow.get_config(),
+                  **EdgeCostsWorkflow.get_config()}
+        return config
+
+
 class SegmentationWorkflowBase(WorkflowBase):
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
@@ -40,6 +124,12 @@ class SegmentationWorkflowBase(WorkflowBase):
     # optional path to mask
     mask_path = luigi.Parameter(default='')
     mask_key = luigi.Parameter(default='')
+
+    # optional path for random forest used for cost computation
+    rf_path = luigi.Parameter(default='')
+    # node label dict: dictionary for additional node labels used in costs
+    node_label_dict = luigi.DictParameter(default={})
+
     # number of jobs used for merge tasks
     max_jobs_merge = luigi.IntParameter(default=1)
     # skip watershed (watershed volume must already be preset)
@@ -74,57 +164,15 @@ class SegmentationWorkflowBase(WorkflowBase):
                                     agglomeration=self.agglomerate_ws)
             return dep
 
-    # TODO add options to choose which features to use
-    # TODO in the current implementation, we can only compute the
-    # graph with n_scales=1, otherwise we will clash with the multicut merged graphs
     def _problem_tasks(self, dep, compute_costs):
-        dep = GraphWorkflow(tmp_folder=self.tmp_folder,
-                            max_jobs=self.max_jobs,
-                            config_dir=self.config_dir,
-                            target=self.target,
-                            dependency=dep,
-                            input_path=self.ws_path,
-                            input_key=self.ws_key,
-                            graph_path=self.problem_path,
-                            output_key=self.graph_key,
-                            n_scales=1)
-        if self.sanity_checks:
-            graph_block_prefix = os.path.join(self.problem_path,
-                                              's0', 'sub_graphs', 'block_')
-            dep = CheckSubGraphsWorkflow(tmp_folder=self.tmp_folder,
-                                         max_jobs=self.max_jobs,
-                                         config_dir=self.config_dir,
-                                         target=self.target,
-                                         ws_path=self.ws_path,
-                                         ws_key=self.ws_key,
-                                         graph_block_prefix=graph_block_prefix,
-                                         dependency=dep)
-        dep = EdgeFeaturesWorkflow(tmp_folder=self.tmp_folder,
-                                   max_jobs=self.max_jobs,
-                                   config_dir=self.config_dir,
-                                   target=self.target,
-                                   dependency=dep,
-                                   input_path=self.input_path,
-                                   input_key=self.input_key,
-                                   labels_path=self.ws_path,
-                                   labels_key=self.ws_key,
-                                   graph_path=self.problem_path,
-                                   graph_key=self.graph_key,
-                                   output_path=self.problem_path,
-                                   output_key=self.features_key,
-                                   max_jobs_merge=self.max_jobs_merge)
-        if compute_costs:
-            dep = EdgeCostsWorkflow(tmp_folder=self.tmp_folder,
-                                    max_jobs=self.max_jobs,
-                                    config_dir=self.config_dir,
-                                    target=self.target,
-                                    dependency=dep,
-                                    features_path=self.problem_path,
-                                    features_key=self.features_key,
-                                    output_path=self.problem_path,
-                                    output_key=self.costs_key,
-                                    node_label_dict=self.node_label_dict,
-                                    rf_path=self.rf_path)
+        dep = ProblemWorkflow(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
+                              max_jobs=self.max_jobs, target=self.target, dependency=dep,
+                              input_path=self.input_path, input_key=self.input_key,
+                              ws_path=self.ws_path, ws_key=self.ws_key,
+                              problem_path=self.problem_path, rf_path=self.rf_path,
+                              node_label_dict=self.node_label_dict,
+                              max_jobs_merge=self.max_jobs_merge,
+                              compute_costs=compute_costs, sanity_checks=self.sanity_checks)
         return dep
 
     def _write_tasks(self, dep, identifier):
@@ -144,16 +192,17 @@ class SegmentationWorkflowBase(WorkflowBase):
                          identifier=identifier)
         return dep
 
+    @staticmethod
+    def get_config():
+        config = {**WatershedWorkflow.get_config(), **ProblemWorkflow.get_config()}
+        return config
+
 
 class MulticutSegmentationWorkflow(SegmentationWorkflowBase):
     # number of jobs used for sub multicuts
     max_jobs_multicut = luigi.IntParameter(default=1)
     # number of scales
     n_scales = luigi.IntParameter()
-    # path to random forest (if available)
-    rf_path = luigi.Parameter(default='')
-    # node label dict: dictionary for additional node labels used in costs
-    node_label_dict = luigi.DictParameter(default={})
 
     def _multicut_tasks(self, dep):
         dep = MulticutWorkflow(tmp_folder=self.tmp_folder,
@@ -176,11 +225,8 @@ class MulticutSegmentationWorkflow(SegmentationWorkflowBase):
 
     @staticmethod
     def get_config():
-        config = {**WatershedWorkflow.get_config(),
-                  **GraphWorkflow.get_config(),
-                  **EdgeFeaturesWorkflow.get_config(),
-                  **EdgeCostsWorkflow.get_config(),
-                  **MulticutWorkflow.get_config()}
+        config = super(MulticutSegmentationWorkflow, MulticutSegmentationWorkflow).get_config()
+        config.update(MulticutWorkflow.get_config())
         return config
 
 
@@ -189,10 +235,7 @@ class LiftedMulticutSegmentationWorkflow(SegmentationWorkflowBase):
     max_jobs_multicut = luigi.IntParameter(default=1)
     # number of scales
     n_scales = luigi.IntParameter()
-    # path to random forest (if available)
-    rf_path = luigi.Parameter(default='')
-    # node label dict: dictionary for additional node labels used in costs
-    node_label_dict = luigi.DictParameter(default={})
+
     # node labels for lifted milticut
     lifted_labels_path = luigi.Parameter()
     lifted_labels_key = luigi.Parameter()
@@ -245,17 +288,15 @@ class LiftedMulticutSegmentationWorkflow(SegmentationWorkflowBase):
 
     @staticmethod
     def get_config():
-        config = {**WatershedWorkflow.get_config(),
-                  **GraphWorkflow.get_config(),
-                  **EdgeFeaturesWorkflow.get_config(),
-                  **EdgeCostsWorkflow.get_config(),
-                  **LiftedFeaturesFromNodeLabelsWorkflow.get_config(),
-                  **LiftedMulticutWorkflow.get_config()}
+        config = super(LiftedMulticutSegmentationWorkflow,
+                       LiftedMulticutSegmentationWorkflow).get_config()
+        config.update({**LiftedFeaturesFromNodeLabelsWorkflow.get_config(),
+                       **LiftedMulticutWorkflow.get_config()})
         return config
 
 
 # TODO support vanilla agglomerative clustering
-class AgglomerativeClusteringWorkflow(MulticutSegmentationWorkflow):
+class AgglomerativeClusteringWorkflow(SegmentationWorkflowBase):
     threshold = luigi.FloatParameter()
 
     def _agglomerate_task(self, dep):
@@ -289,7 +330,6 @@ class AgglomerativeClusteringWorkflow(MulticutSegmentationWorkflow):
         return configs
 
 
-# TODO support vanilla agglomerative clustering
 class SimpleStitchingWorkflow(MulticutSegmentationWorkflow):
     edge_size_threshold = luigi.FloatParameter()
 
@@ -329,6 +369,8 @@ class SimpleStitchingWorkflow(MulticutSegmentationWorkflow):
     def get_config():
         configs = super(SimpleStitchingWorkflow,
                         SimpleStitchingWorkflow).get_config()
-        # configs.update({'agglomerative_clustering':
-        #                 agglomerate_tasks.AgglomerativeClusteringLocal.default_task_config()})
+        configs.update({'simple_stitch_edges':
+                        simple_stitch_tasks.SimpleStitchEdgesLocal.default_task_config(),
+                        'simple_stitch_assignments':
+                        stitch_assignment_tasks.SimpleStitchAssignmentsLocal.default_task_config()})
         return configs
