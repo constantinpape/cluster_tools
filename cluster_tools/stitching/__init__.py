@@ -1,1 +1,1 @@
-from .stitch_faces import StitchFacesLocal, StitchFacesLSF, StitchFacesSlurm
+from .stitching_workflows import StitchingAssignmentsWorkflow

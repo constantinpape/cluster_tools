@@ -20,8 +20,7 @@ from . import write as write_tasks
 
 #
 from .agglomerative_clustering import agglomerative_clustering as agglomerate_tasks
-from .stitching import simple_stitch_edges as simple_stitch_tasks
-from .stitching import simple_stitch_assignments as stitch_assignment_tasks
+from .stitching import StitchingAssignmentsWorkflow
 
 
 # TODO add options to choose which features to use
@@ -331,31 +330,16 @@ class AgglomerativeClusteringWorkflow(SegmentationWorkflowBase):
 
 
 class SimpleStitchingWorkflow(MulticutSegmentationWorkflow):
-    edge_size_threshold = luigi.FloatParameter()
+    edge_size_threshold = luigi.IntParameter()
 
     def _simple_stitcher(self, dep):
-        simple_stitch_task = getattr(simple_stitch_tasks,
-                                     self._get_task_name('SimpleStitchEdges'))
-        dep = simple_stitch_task(tmp_folder=self.tmp_folder,
-                                 max_jobs=self.max_jobs,
-                                 config_dir=self.config_dir,
-                                 graph_path=self.problem_path,
-                                 labels_path=self.ws_path,
-                                 labels_key=self.ws_key,
-                                 dependency=dep)
-        # from simple stitch edges to assignments
-        stitch_assignment_task = getattr(stitch_assignment_tasks,
-                                         self._get_task_name('SimpleStitchAssignments'))
-        dep = stitch_assignment_task(tmp_folder=self.tmp_folder,
-                                     max_jobs=self.max_jobs,
-                                     config_dir=self.config_dir,
-                                     problem_path=self.problem_path,
-                                     graph_key=self.graph_key,
-                                     features_key=self.features_key,
-                                     edge_size_threshold=self.edge_size_threshold,
-                                     assignments_path=self.output_path,
-                                     assignments_key=self.node_labels_key,
-                                     dependency=dep)
+        dep = StitchingAssignmentsWorkflow(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
+                                           max_job=self.max_jobs, target=self.target, dependency=dep,
+                                           problem_path=self.problem_path,
+                                           labels_path=self.ws_path, labels_key=self.ws_key,
+                                           assignment_path=self.output_path, assignments_key=self.node_labels_key,
+                                           features_key=self.features_key, graph_key=self.graph_key,
+                                           edge_size_threshold=self.edge_size_threshold)
         return dep
 
     def requires(self):
@@ -369,8 +353,5 @@ class SimpleStitchingWorkflow(MulticutSegmentationWorkflow):
     def get_config():
         configs = super(SimpleStitchingWorkflow,
                         SimpleStitchingWorkflow).get_config()
-        configs.update({'simple_stitch_edges':
-                        simple_stitch_tasks.SimpleStitchEdgesLocal.default_task_config(),
-                        'simple_stitch_assignments':
-                        stitch_assignment_tasks.SimpleStitchAssignmentsLocal.default_task_config()})
+        configs.update(StitchingAssignmentsWorkflow.get_config())
         return configs

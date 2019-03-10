@@ -30,7 +30,8 @@ class SimpleStitchAssignmentsBase(luigi.Task):
     graph_key = luigi.Parameter()
     assignments_path = luigi.Parameter()
     assignments_key = luigi.Parameter()
-    edge_size_threshold = luigi.IntParameter()
+    edge_size_threshold = luigi.IntParameter(default=0)
+    serialize_edges = luigi.BoolParameter(default=False)
     # task that is required before running this task
     dependency = luigi.TaskParameter()
 
@@ -56,6 +57,7 @@ class SimpleStitchAssignmentsBase(luigi.Task):
                        'assignments_path': self.assignments_path,
                        'assignments_key': self.assignments_key,
                        'edge_size_threshold': self.edge_size_threshold,
+                       'serialize_edges': self.serialize_edges,
                        'n_jobs': n_jobs})
 
         with vu.file_reader(tmp_file) as f:
@@ -108,6 +110,7 @@ def simple_stitch_assignments(job_id, config_path):
     assignments_key = config['assignments_key']
     edge_size_threshold = config['edge_size_threshold']
     n_jobs = config['n_jobs']
+    serialize_edges = config['serialize_edges']
 
     # load the edge results of the first
     f = vu.file_reader(input_path, 'r')
@@ -123,6 +126,17 @@ def simple_stitch_assignments(job_id, config_path):
     f = vu.file_reader(problem_path, 'r')
     edge_sizes = f[features_key][:, -1].squeeze()
     merge_edges = np.logical_and(merge_edges, edge_sizes > edge_size_threshold)
+
+    # check if we only serialize the edges
+    if serialize_edges:
+        with vu.file_reader(assignments_path) as f:
+            chunks = (min(int(1e6), len(merge_edges)),)
+            ds = f.require_dataset(assignments_key, shape=merge_edges.shape,
+                                   compression='gzip',
+                                   chunks=chunks, dtype='uint8')
+            ds[:] = merge_edges.astype('uint8')
+        fu.log_job_success(job_id)
+        return
 
     # load the uv-ids
     uv_key = '%s/%s' % (graph_key, 'edges')
