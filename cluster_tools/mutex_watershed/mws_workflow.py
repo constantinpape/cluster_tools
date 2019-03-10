@@ -6,9 +6,53 @@ from .. import write as write_tasks
 
 from .import two_pass_mws as two_pass_tasks
 from .import two_pass_assignments as assignmnent_tasks
+from .import mws_blocks as mws_tasks
+
+
+class MwsWorkflow(WorkflowBase):
+    """ Simple MWS Workflow without any stitching.
+
+    Arguments:
+    """
+    input_path = luigi.Parameter()
+    input_key = luigi.Parameter()
+    output_path = luigi.Parameter()
+    output_key = luigi.Parameter()
+    offsets = luigi.ListParameter()
+    halo = luigi.ListParameter(default=None)
+    mask_path = luigi.Parameter(default='')
+    mask_key = luigi.Parameter(default='')
+
+    relabel_key = 'assignments/mws_relabel'
+
+    def requires(self):
+        mws_task = getattr(mws_tasks, self._get_task_name('MwsBlocks'))
+        dep = mws_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                       config_dir=self.config_dir, dependency=self.dependency,
+                       input_path=self.input_path, input_key=self.input_key,
+                       output_path=self.output_path, output_key=self.output_key,
+                       mask_path=self.mask_path, mask_key=self.mask_key,
+                       offsets=self.offsets, halo=self.halo)
+        dep = RelabelWorkflow(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
+                              max_jobs=self.max_jobs, target=self.target, dependency=dep,
+                              input_path=self.output_path, input_key=self.output_key,
+                              assignment_path=self.output_path, assignment_key=self.relabel_key)
+        return dep
+
+    @staticmethod
+    def get_config():
+        configs = super(MwsWorkflow, MwsWorkflow).get_config()
+        configs.update()
+        return configs
 
 
 class TwoPassMwsWorkflow(WorkflowBase):
+    """ Mutex watershed workflow with stitching via two-pass
+    processing in checkerboard pattern.
+
+    Arguments:
+        input_path [str]
+    """
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
