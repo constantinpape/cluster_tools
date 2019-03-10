@@ -2,8 +2,6 @@
 
 import os
 import sys
-import argparse
-import pickle
 import json
 import subprocess
 
@@ -32,6 +30,13 @@ class PredictionBase(luigi.Task):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter(default=None)
     n_channels = luigi.IntParameter(default=1)
+
+    @staticmethod
+    def default_task_config():
+        # we use this to get also get the common default config
+        config = LocalTask.default_task_config()
+        config.update({'dtype': 'float32'})
+        return config
 
     def run_impl(self):
         # get the global config and init configs
@@ -62,9 +67,11 @@ class PredictionBase(luigi.Task):
             if self.n_channels > 1:
                 shape = (self.n_channels,) + shape
                 chunks = (1,) + chunks
+
+            dtype = config.get('dtype', 'float32')
             with vu.file_reader(self.output_path) as f:
                 f.require_dataset(self.output_key, shape=shape, chunks=chunks,
-                                  dtype='float32', compression='gzip')
+                                  dtype=dtype, compression='gzip')
 
         n_jobs = min(len(block_list), self.max_jobs)
         # prime and run the jobs
@@ -162,6 +169,18 @@ def _predict_block(block_id, blocking,
     fu.log_block_success(block_id)
 
 
+# TODO implement more dtype conversion
+def _to_dtype(input_, dtype):
+    idtype = input_.dtype
+    if np.dtype(dtype) == idtype:
+        return input_
+    elif dtype == 'uint8':
+        input_ *= 255.
+        return input_.astype('uint8')
+    else:
+        raise NotImplementedError(dtype)
+
+
 def _predict_and_serialize_block(block_id, blocking, input_path, input_key,
                                  output_prefix, halo,
                                  ilastik_folder, ilastik_project, ds_out):
@@ -198,9 +217,11 @@ def _predict_and_serialize_block(block_id, blocking, input_path, input_key,
                 pred = pred.transpose((3, 0, 1, 2))
             else:
                 assert pred.shape[0] == n_channels,\
-                    "Expected first axis to be channel axis with %i channels, but got shape %s" % (n_channels, str(pred.shape))
+                    "Expected first axis to be channel axis with %i channels, but got shape %s" % (n_channels,
+                                                                                                   str(pred.shape))
 
     pred = pred[inner_bb]
+    pred = _to_dtype(pred, ds_out.dtype)
     ds_out[bb] = pred
     # os.remove(path)
     fu.log_block_success(block_id)
@@ -257,6 +278,7 @@ def prediction(job_id, config_path):
         ds_out = vu.file_reader(output_path)[output_key]
         fu.log("predicting blocks and serializing to")
         fu.log("%s:%s" % (output_path, output_key))
+
         for block_id in block_list:
             _predict_and_serialize_block(block_id, blocking, input_path, input_key,
                                          output_prefix, halo,
