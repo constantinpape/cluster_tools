@@ -19,7 +19,7 @@ Supports Slurm, LSF and local execution, easy to extend to more scheduling syste
   - [Bigcat Format](https://github.com/saalfeldlab/bigcat)
 - [Ilastik Prediction](https://www.ilastik.org/)
 - Skeletonization
-- (WIP) Distributed Neural Network Prediction (originally implemented [here](https://github.com/constantinpape/simpleference))
+- Distributed Neural Network Prediction (originally implemented [here](https://github.com/constantinpape/simpleference))
 
 
 ## Installation
