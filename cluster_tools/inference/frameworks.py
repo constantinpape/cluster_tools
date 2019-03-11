@@ -37,7 +37,7 @@ class PytorchPredicter(object):
 
     def crop(self, out):
         shape = out.shape if out.ndim == 3 else out.shape[1:]
-        bb = tuple(slice(ha, sh - ha) for ha, sh in zip(shape, shape))
+        bb = tuple(slice(ha, sh - ha) for ha, sh in zip(self.halo, shape))
         if out.ndim == 4:
             bb = (slice(None),) + bb
         return out[bb]

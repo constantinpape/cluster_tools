@@ -59,6 +59,7 @@ def multicut_decomposition(graph, costs, time_limit=None, n_threads=1,
     cc_labels, max_id, _ = relabelConsecutive(cc_labels, start_label=0,
                                               keep_zeros=False)
 
+    # TODO use c++ (Thorsten already has impl ?!)
     # TODO check that relabelConsecutive lifts gil ....
     # solve a component sub-problem
     def solve_component(component_id):

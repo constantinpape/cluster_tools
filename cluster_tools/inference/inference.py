@@ -12,8 +12,9 @@ import nifty.tools as nt
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
+from cluster_tools.utils.task_utils import DummyTask
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
-from .frameworks import get_predictor, get_preprocessor
+from cluster_tools.inference.frameworks import get_predictor, get_preprocessor
 
 
 #
@@ -32,15 +33,14 @@ class InferenceBase(luigi.Task):
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
-    output_key = luigi.Parameter()
+    output_key = luigi.DictParameter()
     checkpoint_path = luigi.Parameter()
     halo = luigi.ListParameter()
     mask_path = luigi.Parameter(default='')
     mask_key = luigi.Parameter(default='')
-    n_channels = luigi.IntParameter(default=1)
     framework = luigi.Parameter(default='pytorch')
     #
-    dependency = luigi.TaskParameter()
+    dependency = luigi.TaskParameter(default=DummyTask())
 
     def requires(self):
         return self.dependency
@@ -50,14 +50,14 @@ class InferenceBase(luigi.Task):
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
         config.update({'dtype': 'uint8', 'compression': 'gzip', 'chunks': None,
-                       'gpu_type': '2080Ti'})
+                       'gpu_type': '2080Ti', 'set_visible_device': False})
         return config
 
     def clean_up_for_retry(self, block_list):
         super().clean_up_for_retry(block_list)
         # TODO remove any output of failed blocks because it might be corrupted
 
-    def run(self):
+    def run_impl(self):
         # TODO support more frameworks
         # assert self.framework in ('pytorch', 'tensorflow', 'caffe', 'inferno')
         assert self.framework in ('pytorch', 'inferno')
@@ -76,26 +76,38 @@ class InferenceBase(luigi.Task):
 
         # get shapes and chunks
         shape = vu.get_shape(self.input_path, self.input_key)
-        chunks = tuple(self.chunks) if self.chunks is not None else tuple(bs // 2 for bs in block_shape)
+        chunks = tuple(chunks) if chunks is not None else tuple(bs // 2 for bs in block_shape)
         # make sure block shape can be divided by chunks
-        assert all(ch % bs == 0 for ch, bs in zip(chunks, block_shape))
+        assert all(bs % ch == 0 for ch, bs in zip(chunks, block_shape)),\
+            "%s, %s" % (str(chunks), block_shape)
 
-        if self.n_channels > 1:
-            out_shape = (self.n_channels,) + shape
-            chunks = (1,) + chunks
-        else:
-            out_shape = shape
+        # check if we have single dataset or multi dataset output
+        out_key_dict = self.output_key
+        output_keys = list(out_key_dict.keys())
+        channel_mapping = list(out_key_dict.values())
 
-        # make output volume
+        # make output volumes
         with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, shape=out_shape,
-                              chunks=chunks, dtype=dtype, compression=compression)
+            for out_key, out_channels in zip(output_keys, channel_mapping):
+                assert len(out_channels) == 2
+                n_channels = out_channels[1] - out_channels[0]
+                assert n_channels > 0
+                if n_channels > 1:
+                    out_shape = (n_channels,) + shape
+                    out_chunks = (1,) + chunks
+                else:
+                    out_shape = shape
+                    out_chunks = chunks
+
+                f.require_dataset(out_key, shape=out_shape,
+                                  chunks=out_chunks, dtype=dtype, compression=compression)
 
         # update the config
         config.update({'input_path': self.input_path, 'input_key': self.input_key,
-                       'output_path': self.output_path, 'output_key': self.output_key,
-                       'checkpoint_path': self.checkpoint_path,
-                       'block_shape': block_shape, 'halo': self.halo})
+                       'output_path': self.output_path, 'checkpoint_path': self.checkpoint_path,
+                       'block_shape': block_shape, 'halo': self.halo,
+                       'output_keys': output_keys, 'channel_mapping': channel_mapping,
+                       'framework': self.framework})
         if self.mask_path != '':
             assert self.mask_key != ''
             config.update({'mask_path': self.mask_path, 'mask_key': self.mask_key})
@@ -211,10 +223,12 @@ def _to_uint8(data, float_range=(0., 1.), safe_scale=True):
 
 
 def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
-                   preprocess, predict, n_threads):
+                   preprocess, predict, channel_mapping, n_threads):
 
     block_shape = blocking.blockShape
-    dtype = ds_out.dtype
+    dtypes = [dso.dtype for dso in ds_out]
+    dtype = dtypes[0]
+    assert all(dtp == dtype for dtp in dtypes)
 
     @dask.delayed
     def log1(block_id):
@@ -224,17 +238,29 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
     @dask.delayed
     def load_input(block_id):
         block = blocking.getBlock(block_id)
-        return (block_id, _load_input(ds_in, block.begin, block_shape, halo))
+
+        # if we have a mask, check if this block is in mask
+        if mask is not None:
+            bb = vu.block_to_bb(block)
+            bb_mask = mask[bb]
+            if np.sum(bb_mask) == 0:
+                return block_id, None
+
+        return block_id, _load_input(ds_in, block.begin, block_shape, halo)
 
     @dask.delayed
     def preprocess_impl(inputs):
         block_id, data = inputs
+        if data is None:
+            return block_id, None
         data = preprocess(data)
         return block_id, data
 
     @dask.delayed
     def predict_impl(inputs):
         block_id, data = inputs
+        if data is None:
+            return block_id, None
         data = predict(data)
         return block_id, data
 
@@ -242,26 +268,18 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
     def write_output(inputs):
         block_id, output = inputs
 
-        out_shape = output.shape
-        if len(out_shape) == 4:
-            assert ds_out.ndim == 4
-            n_channels = ds_out.shape[0]
-            assert out_shape[1:] == block_shape
-            assert out_shape[0] >= n_channels
-        else:
-            assert out_shape == block_shape
+        if output is None:
+            return block_id
 
+        out_shape = output.shape
+        if len(out_shape) == 3:
+            assert len(ds_out) == 1
         bb = vu.block_to_bb(blocking.getBlock(block_id))
 
-        # adjust bounding box to multi-channel output
-        if output.ndim == 4:
-            output = output[:n_channels]
-            bb = (slice(None),) + bb
-
         # check if we need to crop the output
-        actual_shape = tuple(b.stop - b.start for b in bb)
+        actual_shape = [b.stop - b.start for b in bb]
         if actual_shape != block_shape:
-            block_bb = tuple(slice(0, bsh - ash) for bsh, ash in zip(block_shape, actual_shape))
+            block_bb = tuple(slice(0, ash) for ash in actual_shape)
             if output.ndim == 4:
                 block_bb = (slice(None),) + block_bb
             output = output[block_bb]
@@ -270,7 +288,23 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
         if dtype == 'uint8':
             output = _to_uint8(output)
 
-        ds_out[bb] = output
+        # write the output to our output dataset(s)
+        for dso, chann_mapping in zip(ds_out, channel_mapping):
+            chan_start, chan_stop = chann_mapping
+
+            if dso.ndim == 3:
+                assert chan_stop - chan_start == 1
+                out_bb = bb
+            else:
+                assert output.ndim == 4
+                assert chan_stop - chan_start == dso.shape[0]
+                out_bb = (slice(None),) + bb
+
+            if output.ndim == 4:
+                outp = output[chan_start:chan_stop].squeeze()
+
+            dso[out_bb] = outp
+
         return block_id
 
     @dask.delayed
@@ -299,19 +333,20 @@ def inference(job_id, config_path):
     input_path = config['input_path']
     input_key = config['input_key']
     output_path = config['output_path']
-    output_key = config['output_key']
     checkpoint_path = config['checkpoint_path']
     block_shape = config['block_shape']
     block_list = config['block_list']
     halo = config['halo']
     framework = config['framework']
-    n_threads = config['n_threads']
+    n_threads = config['threads_per_job']
+
+    output_keys = config['output_keys']
+    channel_mapping = config['channel_mapping']
 
     if config.get('set_visible_device', False):
         os.environ['CUDA_VISIBLE_DEVICES'] = str(job_id)
-        gpu = job_id
-    else:
-        gpu = 0
+        fu.log("setting cuda visible devices to %i" % job_id)
+    gpu = 0
 
     predict = get_predictor(framework)(checkpoint_path, halo, gpu=gpu)
     preprocess = get_preprocessor(framework)
@@ -324,14 +359,14 @@ def inference(job_id, config_path):
     with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
 
         ds_in = f_in[input_key]
-        ds_out = f_out[output_key]
+        ds_out = [f_out[key] for key in output_keys]
 
         if 'mask_path' in config:
             mask = vu.load_mask(config['mask_path'], config['mask_key'], shape)
         else:
             mask = None
         _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
-                       preprocess, predict, n_threads)
+                       preprocess, predict, channel_mapping, n_threads)
     fu.log_job_success(job_id)
 
 
