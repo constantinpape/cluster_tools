@@ -114,9 +114,10 @@ def solve_global(job_id, config_path):
     time_limit = config.get('time_limit_solver', None)
 
     fu.log("using agglomerator %s" % agglomerator_key)
+    fu.log("agglomeration time limit %i" % time_limit)
     agglomerator = su.key_to_agglomerator(agglomerator_key)
 
-    with vu.file_reader(problem_path) as f:
+    with vu.file_reader(problem_path, 'r') as f:
         group = f['s%i' % scale]
         graph_group = group['graph']
         ignore_label = graph_group.attrs['ignoreLabel']
