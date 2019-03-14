@@ -90,6 +90,14 @@ class InsertAffinitiesLSF(InsertAffinitiesBase, LSFTask):
     pass
 
 
+def cast(input_, dtype):
+    if np.dtype(input_.dtype) == np.dtype(dtype):
+        return input_
+    assert dtype == np.dtype('uint8')
+    input_ *= 255.
+    return input_.astype('uint8')
+
+
 def _insert_affinities_block(block_id, blocking, ds, objects, offsets):
     fu.log("start processing block %i" % block_id)
     halo = np.max(np.abs(offsets), axis=0)
@@ -106,7 +114,8 @@ def _insert_affinities_block(block_id, blocking, ds, objects, offsets):
         return
 
     affs, _ = compute_affinities(objs, offsets)
-    ds[inner_bb] += 1. - affs[local_bb]
+    affs = cast(1. - affs, ds.dtype)
+    ds[inner_bb] += affs[local_bb]
     fu.log_block_success(block_id)
 
 
