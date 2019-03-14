@@ -106,7 +106,7 @@ def _insert_affinities_block(block_id, blocking, ds, objects, offsets):
         return
 
     affs, _ = compute_affinities(objs, offsets)
-    ds[inner_bb] = 1. - affs[local_bb]
+    ds[inner_bb] += 1. - affs[local_bb]
     fu.log_block_success(block_id)
 
 
