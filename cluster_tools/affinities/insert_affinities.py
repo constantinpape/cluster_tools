@@ -52,8 +52,8 @@ class InsertAffinitiesBase(luigi.Task):
                        'block_shape': block_shape})
 
         shape = vu.get_shape(self.affinity_path, self.affinity_key)[1:]
-        chunks = vu.file_reader(self.affinity_path)[self.affinity_key][1:]
-        assert all(bs & ch == 0 for bs, ch in zip(block_shape, chunks))
+        chunks = vu.file_reader(self.affinity_path)[self.affinity_key].chunks[1:]
+        assert all(bs % ch == 0 for bs, ch in zip(block_shape, chunks))
 
         block_list = vu.blocks_in_volume(shape, block_shape,
                                          roi_begin, roi_end)
