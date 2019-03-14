@@ -52,6 +52,9 @@ class InsertAffinitiesBase(luigi.Task):
                        'block_shape': block_shape})
 
         shape = vu.get_shape(self.affinity_path, self.affinity_key)[1:]
+        chunks = vu.file_reader(self.affinity_path)[self.affinity_key][1:]
+        assert all(bs & ch == 0 for bs, ch in zip(block_shape, chunks))
+
         block_list = vu.blocks_in_volume(shape, block_shape,
                                          roi_begin, roi_end)
         n_jobs = min(len(block_list), self.max_jobs)
@@ -103,7 +106,7 @@ def _insert_affinities_block(block_id, blocking, ds, objects, offsets):
         return
 
     affs, _ = compute_affinities(objs, offsets)
-    ds[inner_bb] = affs[local_bb]
+    ds[inner_bb] = 1. - affs[local_bb]
     fu.log_block_success(block_id)
 
 
