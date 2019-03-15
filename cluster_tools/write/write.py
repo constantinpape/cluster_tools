@@ -65,6 +65,8 @@ class WriteBase(luigi.Task):
         with vu.file_reader(self.output_path) as f:
             if self.output_key in f:
                 chunks = f[self.output_key].chunks
+            assert all(bs % ch == 0 for bs, ch in zip(block_shape, chunks)), "%s, %s" % (str(block_shape),
+                                                                                         str(chunks))
             f.require_dataset(self.output_key, shape=shape, chunks=chunks,
                               compression='gzip', dtype='uint64')
 
