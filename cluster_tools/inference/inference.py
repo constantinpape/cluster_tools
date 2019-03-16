@@ -160,7 +160,7 @@ class InferenceSlurm(InferenceBase, SlurmTask):
                           "#SBATCH -t %s\n"
                           '#SBATCH -p gpu\n'
                           '#SBATCH -C gpu=%s\n'
-                          '#SBATCH --gres=gpu:1'
+                          '#SBATCH --gres=gpu:1\n'
                           "%s %s") % (groupname, n_threads,
                                       mem_limit, time_limit,
                                       gpu_type,
@@ -340,6 +340,8 @@ def inference(job_id, config_path):
     framework = config['framework']
     n_threads = config['threads_per_job']
 
+    fu.log("run iference with framework %s, with %i threads" % (framework, n_threads))
+
     output_keys = config['output_keys']
     channel_mapping = config['channel_mapping']
 
@@ -348,7 +350,9 @@ def inference(job_id, config_path):
         fu.log("setting cuda visible devices to %i" % job_id)
     gpu = 0
 
+    fu.log("Loading model from %s" % checkpoint_path)
     predict = get_predictor(framework)(checkpoint_path, halo, gpu=gpu)
+    fu.log("Have model")
     preprocess = get_preprocessor(framework)
 
     shape = vu.get_shape(input_path, input_key)
