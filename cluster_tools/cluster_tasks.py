@@ -5,7 +5,7 @@ import json
 import time
 import fileinput
 from concurrent import futures
-from subprocess import call, check_output, CalledProcessError
+from subprocess import call, check_output, CalledProcessError, STDOUT
 from datetime import datetime, timedelta
 from multiprocessing import cpu_count
 
@@ -545,7 +545,16 @@ class LSFTask(BaseClusterTask):
         while True:
             time.sleep(wait_time)
             # parse the output from bjobs
-            outp = check_output(['bjobs | grep $USER'], shell=True).decode()
+            try:
+                outp = check_output(['bjobs | grep $USER'], shell=True, stderr=STDOUT).decode()
+            # check if no jobs are in queue (throws an error we need to capture)
+            except CalledProcessError as e:
+                outp = e.output.decode().rstrip()
+                if outp == 'No unfinished job found':
+                    break
+                else:
+                    raise e
+
             outp = outp.split('\n')
             outp = [out for out in outp if out != '']
             # check how many jobs there are in total, if none, stop waiting
