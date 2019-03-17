@@ -304,7 +304,7 @@ def _ws_block(blocking, block_id, ds_in, ds_out, mask, config):
     # if output_bb != input_bb:
     #     ws = ws[inner_bb]
     #     ws = vigra.analysis.labelVolumeWithBackground(ws)
-    ds_out[output_bb] = ws
+    ds_out[output_bb] = ws[inner_bb]
 
     # log block success
     fu.log_block_success(block_id)

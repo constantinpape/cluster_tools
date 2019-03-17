@@ -6,7 +6,6 @@ import json
 
 import luigi
 import numpy as np
-import vigra
 import nifty.tools as nt
 
 import cluster_tools.utils.volume_utils as vu
@@ -58,10 +57,12 @@ class BackgroundSizeFilterBase(luigi.Task):
 
         n_jobs = min(len(block_list), self.max_jobs)
 
-        # TODO make chunks, compression, dtype parameters
+        chunks = tuple(bs // 2 for bs in block_shape)
         # require the output dataset
         with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, shape=shape, chunks=(25, 256, 256),
+            if self.output_key in f:
+                chunks = f[self.output_key].chunks
+            f.require_dataset(self.output_key, shape=shape, chunks=chunks,
                               dtype='uint64', compression='gzip')
 
         # we don't need any additional config besides the paths

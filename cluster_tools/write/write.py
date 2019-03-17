@@ -59,11 +59,14 @@ class WriteBase(luigi.Task):
         # get shape and make block config
         shape = vu.get_shape(self.input_path, self.input_key)
 
-        # TODO read chunks from config
         # require output dataset
         chunks = tuple(bs // 2 for bs in block_shape)
         chunks = tuple(min(ch, sh) for ch, sh in zip(chunks, shape))
         with vu.file_reader(self.output_path) as f:
+            if self.output_key in f:
+                chunks = f[self.output_key].chunks
+            assert all(bs % ch == 0 for bs, ch in zip(block_shape, chunks)), "%s, %s" % (str(block_shape),
+                                                                                         str(chunks))
             f.require_dataset(self.output_key, shape=shape, chunks=chunks,
                               compression='gzip', dtype='uint64')
 

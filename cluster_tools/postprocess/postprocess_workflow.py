@@ -195,6 +195,7 @@ class FilterByThresholdWorkflow(WorkflowBase):
     seg_out_path = luigi.Parameter()
     seg_out_key = luigi.Parameter()
     threshold = luigi.FloatParameter()
+    relabel = luigi.BoolParameter(default=True)
 
     def requires(self):
         # calculate the region features
@@ -220,6 +221,16 @@ class FilterByThresholdWorkflow(WorkflowBase):
                           input_path=self.seg_in_path, input_key=self.seg_in_key,
                           filter_path=id_filter_path,
                           output_path=self.seg_out_path, output_key=self.seg_out_key)
+        if self.relabel:
+            dep = RelabelWorkflow(tmp_folder=self.tmp_folder,
+                                  max_jobs=self.max_jobs,
+                                  config_dir=self.config_dir,
+                                  target=self.target,
+                                  input_path=self.seg_out_path,
+                                  input_key=self.seg_out_key,
+                                  assignment_path=self.seg_out_path,
+                                  assignment_key='assignments/relabel_filter',
+                                  dependency=dep)
         return dep
 
     @staticmethod

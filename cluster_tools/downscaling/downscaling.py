@@ -61,13 +61,15 @@ class DownscalingBase(luigi.Task):
         # TODO remove any output of failed blocks because it might be corrupted
 
     def downsample_shape(self, shape):
+        start = 1 if len(shape) == 4 else 0
+
         if isinstance(self.scale_factor, (list, tuple)):
             new_shape = tuple(sh // sf if sh % sf == 0 else sh // sf + (sf - sh % sf)
-                              for sh, sf in zip(shape, self.scale_factor))
+                              for sh, sf in zip(shape[start:], self.scale_factor))
         else:
             sf = self.scale_factor
             new_shape = tuple(sh // sf if sh % sf == 0 else sh // sf + (sf - sh % sf)
-                              for sh in shape)
+                              for sh in shape[start:])
 
         return new_shape
 
@@ -80,7 +82,8 @@ class DownscalingBase(luigi.Task):
         with vu.file_reader(self.input_path, 'r') as f:
             prev_shape = f[self.input_key].shape
             dtype = f[self.input_key].dtype
-        assert len(prev_shape) == 3, "Only support 3d inputs"
+        assert len(prev_shape) in (3, 4), "Only support 3d or 4d inputs"
+        ndim = len(prev_shape)
 
         shape = self.downsample_shape(prev_shape)
         self._write_log('downscaling with factor %s from shape %s to %s' % (str(self.scale_factor),
@@ -124,10 +127,17 @@ class DownscalingBase(luigi.Task):
             assert len(chunks) == 3, "Chunks must be 3d"
         chunks = tuple(min(ch, sh) for sh, ch in zip(shape, chunks))
 
+        if ndim == 4:
+            out_shape = (prev_shape[0],) + shape
+            out_chunks = (1,) + chunks
+        else:
+            out_shape = shape
+            out_chunks = chunks
+
         compression = task_config.pop('compression', 'gzip')
         # require output dataset
         with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, shape=shape, chunks=chunks,
+            f.require_dataset(self.output_key, shape=out_shape, chunks=out_chunks,
                               compression=compression, dtype=dtype)
 
         # update the config with input and output paths and keys
@@ -146,8 +156,8 @@ class DownscalingBase(luigi.Task):
             self._write_log("ROI before scaling: %s to %s" % (str(roi_begin), str(roi_end)))
             if isinstance(effective_scale, int):
                 roi_begin = [rb // effective_scale for rb in roi_begin]
-                roi_end= [re // effective_scale if re is not None else sh
-                          for re, sh in zip(roi_end, shape)]
+                roi_end = [re // effective_scale if re is not None else sh
+                           for re, sh in zip(roi_end, shape)]
             else:
                 roi_begin = [rb // sf for rb, sf in zip(roi_begin, effective_scale)]
                 roi_end = [re // sf if re is not None else sh
@@ -202,6 +212,20 @@ class DownscalingLSF(DownscalingBase, LSFTask):
 #
 
 
+def _ds_vol(x, out_shape, sampler, scale_factor, dtype):
+    if isinstance(scale_factor, int):
+        out = sampler(x, shape=out_shape)
+    else:
+        out = np.zeros(out_shape, dtype='float32')
+        for z in range(out_shape[0]):
+            out[z] = sampler(x[z], shape=out_shape[1:])
+    if np.dtype(dtype) in (np.dtype('uint8'), np.dtype('uint16')):
+        max_val = np.iinfo(np.dtype(dtype)).max
+        np.clip(out, 0, max_val, out=out)
+        np.round(out, out=out)
+    return out.astype(dtype)
+
+
 def _ds_block(blocking, block_id, ds_in, ds_out, scale_factor, halo, sampler):
     fu.log("start processing block %i" % block_id)
 
@@ -221,14 +245,24 @@ def _ds_block(blocking, block_id, ds_in, ds_out, scale_factor, halo, sampler):
         local_bb = vu.block_to_bb(block.innerBlockLocal)
         out_shape = block.outerBlock.shape
 
+    # check if we have channels
+    ndim = ds_in.ndim
+    in_shape = ds_in.shape
+    if ndim == 4:
+        in_shape = in_shape[1:]
+
     # upsample the input bounding box
     if isinstance(scale_factor, int):
         in_bb = tuple(slice(ib.start * scale_factor, min(ib.stop * scale_factor, sh))
-                      for ib, sh in zip(in_bb, ds_in.shape))
+                      for ib, sh in zip(in_bb, in_shape))
     else:
         in_bb = tuple(slice(ib.start * sf, min(ib.stop * sf, sh))
-                      for ib, sf, sh in zip(in_bb, scale_factor, ds_in.shape))
-
+                      for ib, sf, sh in zip(in_bb, scale_factor, in_shape))
+    # load the input
+    if ndim == 4:
+        in_bb = (slice(None),) + in_bb
+        out_bb = (slice(None),) + out_bb
+        local_bb = (slice(None),) + local_bb
     x = ds_in[in_bb]
 
     # don't sample empty blocks
@@ -240,23 +274,17 @@ def _ds_block(blocking, block_id, ds_in, ds_out, scale_factor, halo, sampler):
     if np.dtype(dtype) != np.dtype('float32'):
         x = x.astype('float32')
 
-    if isinstance(scale_factor, int):
-        # out = vigra.sampling.resize(x, shape=out_shape, **library_kwargs)
-        out = sampler(x, shape=out_shape)
+    if ndim == 4:
+        n_channels = x.shape[0]
+        out = np.zeros((n_channels,) + tuple(out_shape), dtype=dtype)
+        for c in range(n_channels):
+            out[c] = _ds_vol(x[c], out_shape, sampler, scale_factor, dtype)
     else:
-        out = np.zeros(out_shape, dtype='float32')
-        for z in range(out_shape[0]):
-            # out[z] = vigra.sampling.resize(x[z], shape=out_shape[1:], **library_kwargs)
-            out[z] = sampler(x[z], shape=out_shape[1:])
-
-    if np.dtype(dtype) in (np.dtype('uint8'), np.dtype('uint16')):
-        max_val = np.iinfo(np.dtype(dtype)).max
-        np.clip(out, 0, max_val, out=out)
-        np.round(out, out=out)
+        out = _ds_vol(x, out_shape, sampler, scale_factor, dtype)
 
     try:
-        ds_out[out_bb] = out[local_bb].astype(dtype)
-    except IndexError as e:
+        ds_out[out_bb] = out[local_bb]
+    except IndexError:
         raise(IndexError("%s, %s, %s" % (str(out_bb), str(local_bb), str(out.shape))))
 
     # log block success
@@ -269,6 +297,8 @@ def _submit_blocks(ds_in, ds_out, block_shape, block_list,
 
     # get the blocking
     shape = ds_out.shape
+    if len(shape) == 4:
+        shape = shape[1:]
     blocking = nt.blocking([0, 0, 0], shape, block_shape)
     sampler = partial(vigra.sampling.resize, **library_kwargs)
 
@@ -313,14 +343,14 @@ def downscaling(job_id, config_path):
     # because hdf5 does not like opening files twice
     if input_path == output_path:
         with vu.file_reader(output_path) as f:
-            ds_in  = f[input_key]
+            ds_in = f[input_key]
             ds_out = f[output_key]
             _submit_blocks(ds_in, ds_out, block_shape, block_list, scale_factor, halo,
                            library, library_kwargs, n_threads)
 
     else:
         with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
-            ds_in  = f_in[input_key]
+            ds_in = f_in[input_key]
             ds_out = f_out[output_key]
             _submit_blocks(ds_in, ds_out, block_shape, block_list, scale_factor, halo,
                            library, library_kwargs, n_threads)

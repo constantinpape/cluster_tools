@@ -1,5 +1,4 @@
 import os
-import json
 import xml.etree.ElementTree as ET
 from copy import deepcopy
 from datetime import datetime
@@ -39,6 +38,7 @@ class WriteDownscalingMetadata(luigi.Task):
     metadata_format = luigi.Parameter(default='paintera')
     metadata_dict = luigi.DictParameter(default={})
     output_key_prefix = luigi.Parameter(default='')
+    scale_offset = luigi.IntParameter(default=0)
 
     def requires(self):
         return self.dependency
@@ -54,7 +54,8 @@ class WriteDownscalingMetadata(luigi.Task):
             ds.attrs['downsamplingFactors'] = effective_scale[::-1]
 
     def _copy_max_id(self, f):
-        attrs0 = f['%s/s0' % self.output_key_prefix].attrs
+        level0 = 's%i' % self.scale_offset
+        attrs0 = f['%s/%s' % (self.output_key_prefix, level0)].attrs
         if 'maxId' in attrs0:
             f[self.output_key_prefix].attrs['maxId'] = attrs0['maxId']
 
@@ -63,7 +64,7 @@ class WriteDownscalingMetadata(luigi.Task):
         for scale, scale_factor in enumerate(self.scale_factors):
             # we offset the scale by 1 because
             # 's0' indicates the original resoulution
-            prefix = 's%i' % (scale + 1,)
+            prefix = 's%i' % (scale + self.scale_offset + 1,)
             out_key = os.path.join(self.output_key_prefix, prefix)
             # write metadata for this scale level,
             # most importantly the effective downsampling factor
@@ -223,6 +224,7 @@ class DownscalingWorkflow(WorkflowBase):
     metadata_dict = luigi.DictParameter(default={})
     output_key_prefix = luigi.Parameter(default='')
     skip_existing_levels = luigi.BoolParameter(default=False)
+    scale_offset = luigi.IntParameter(default=0)
 
     @staticmethod
     def validate_scale_factors(scale_factors):
@@ -231,7 +233,7 @@ class DownscalingWorkflow(WorkflowBase):
 
     @staticmethod
     def validate_halos(halos, n_scales):
-        assert len(halos) == n_scales
+        assert len(halos) == n_scales, "%i, %i" % (len(halos), n_scales)
         # normalize halos to be correc input
         halos = [[] if halo is None else list(halo) for halo in halos]
         # check halos for correctness
@@ -292,7 +294,7 @@ class DownscalingWorkflow(WorkflowBase):
         ds_task = getattr(downscale_tasks,
                           self._get_task_name('Downscaling'))
 
-        in_key = self.get_scale_key(-1)
+        in_key = self.get_scale_key(-1 + self.scale_offset)
         if self.metadata_format == 'bdv':
             self._link_scale_zero_h5(in_key)
         elif self.metadata_format == 'paintera':
@@ -301,6 +303,7 @@ class DownscalingWorkflow(WorkflowBase):
 
         effective_scale = [1, 1, 1]
         for scale, scale_factor in enumerate(self.scale_factors):
+            scale += self.scale_offset
             out_key = self.get_scale_key(scale)
 
             if isinstance(scale_factor, int):
@@ -321,7 +324,7 @@ class DownscalingWorkflow(WorkflowBase):
                         output_path=self.input_path, output_key=out_key,
                         scale_factor=scale_factor, scale_prefix=prefix,
                         effective_scale_factor=effective_scale,
-                        halo=halos[scale],
+                        halo=halos[scale - self.scale_offset],
                         dependency=t_prev)
 
             t_prev = t
@@ -334,6 +337,7 @@ class DownscalingWorkflow(WorkflowBase):
                                           metadata_format=self.metadata_format,
                                           metadata_dict=self.metadata_dict,
                                           scale_factors=self.scale_factors,
+                                          scale_offset=self.scale_offset,
                                           dependency=t_prev)
         return t_meta
 
@@ -368,7 +372,9 @@ class PainteraToBdvWorkflow(WorkflowBase):
     def get_scales(self):
 
         def _to_scale(path, scale_file):
-            if not os.path.isdir(os.path.join(path, scale_file)):
+            scale_path = os.path.join(path, scale_file)
+            is_scae_level = os.path.isdir(scale_path) or os.path.islink(scale_path)
+            if not is_scae_level:
                 return None
             try:
                 return int(scale_file[1:])
@@ -401,10 +407,9 @@ class PainteraToBdvWorkflow(WorkflowBase):
                 if isinstance(effective_scale, int):
                     effective_scale = 3 * [effective_scale]
 
+            prev_scale = deepcopy(effective_scale)
             if scale > 0:
                 scale_factors.append([eff / prev for eff, prev in zip(effective_scale, prev_scale)])
-
-            prev_scale = deepcopy(effective_scale)
 
             if self.skip_existing_levels:
                 with file_reader(self.output_path) as f:
