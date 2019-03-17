@@ -1,17 +1,15 @@
 #! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env/bin/python
 
 import os
-import sys
 import json
-
-import numpy as np
 import luigi
 
 from cluster_tools import MulticutSegmentationWorkflow
 
 
 def run_mc(sample, tmp_folder, max_jobs,
-           n_scales=1, have_watershed=True, target='local'):
+           n_scales=1, have_watershed=True, target='local',
+           from_affinities=True):
     """ Run multicut on cremi sample or similar data.
 
     Args:
@@ -20,11 +18,14 @@ def run_mc(sample, tmp_folder, max_jobs,
         max_jobs: maximal number of jobs
         n_scales: number of scales for hierarchical solver (0 will perform vanilla multicut)
         have_watershed: flag to indicate if the watershed is computed already
-        target: target platform, either 'local' (= computation on local host), 'slurm' (cluster running slurm)
-            or 'lsf' (cluster running lsf)
+        target: target platform, either 'local' (computation on local host),
+                                        'slurm' (cluster running slurm)
+                                     or 'lsf' (cluster running lsf)
+        from_affinities: whether to use affinity maps or boundary maps
     """
 
-    # input path: n5 or hdf5 container which holds the input data (= boundary maps or affinity maps)
+    # input path: n5 or hdf5 container which holds the input data
+    # (= boundary maps or affinity maps)
     input_path = '/g/kreshuk/data/cremi/realigned/sample%s_small.n5' % sample
     # path with the watershed data, can be the same as input_path
     ws_path = input_path
@@ -44,7 +45,7 @@ def run_mc(sample, tmp_folder, max_jobs,
     mask_path = ''
     mask_key = ''
 
-    # n5 (!) container for intermediate results like graph-structure or features
+    # n5 container for intermediate results like graph-structure or features
     exp_path = 'sample%s_exp.n5' % sample
 
     # config folder holds configurations for workflow steps stored as json
@@ -54,7 +55,7 @@ def run_mc(sample, tmp_folder, max_jobs,
         os.mkdir(config_folder)
 
     # global workflow config
-    # python interpreter of conda environment with dependencies, cf.
+    # python interpreter of conda environment with dependencies, see
     # https://github.com/constantinpape/cluster_tools/blob/master/environment.yml
     shebang = "#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env/bin/python"
     # block shape used for parallelization
@@ -67,10 +68,10 @@ def run_mc(sample, tmp_folder, max_jobs,
     # config for edge feature calculation
     feat_config = configs['block_edge_features']
     # specify offsets if you have affinity features.
-    # for regular boundary maps, you can leave out this config
-    feat_config.update({'offsets': [[-1, 0, 0], [0, -1, 0], [0, 0, -1]]})
+    if from_affinities:
+        feat_config.update({'offsets': [[-1, 0, 0], [0, -1, 0], [0, 0, -1]]})
     with open('./config_mc/block_edge_features.config', 'w') as f:
-        json.dump(feat_config ,f)
+        json.dump(feat_config, f)
 
     # config for converting edge probabilities to edge costs
     costs_config = configs['probs_to_costs']
@@ -87,43 +88,18 @@ def run_mc(sample, tmp_folder, max_jobs,
         with open('./config_mc/%s.config' % tt, 'w') as f:
             json.dump(config, f)
 
-    ret = luigi.build([MulticutSegmentationWorkflow(input_path=input_path, input_key=input_key,
-                                                    ws_path=ws_path, ws_key=ws_key,
-                                                    mask_path=mask_path, mask_key=mask_key,
-                                                    problem_path=exp_path,
-                                                    node_labels_key='node_labels',
-                                                    output_path=out_path, output_key=out_key,
-                                                    use_decomposition_multicut=use_decomposer,
-                                                    n_scales=n_scales,
-                                                    config_dir='./config_mc',
-                                                    tmp_folder=tmp_folder,
-                                                    target=target,
-                                                    skip_ws=have_watershed,
-                                                    max_jobs=max_jobs)], local_scheduler=True)
-    # Optional: view the results if we are local and the
-    # tasks were successfull
-    # if ret and target == 'local':
-    #     print("Starting viewer")
-    #     from cremi_tools.viewer.volumina import view
-    #     import z5py
-
-    #     with z5py.File(input_path) as f:
-    #         ds = f[input_key]
-    #         ds.n_threads = max_jobs
-    #         affs = ds[:]
-    #         if affs.ndim == 4:
-    #             affs = affs.transpose((1, 2, 3, 0))
-
-    #         ds = f['segmentation/watershed']
-    #         ds.n_threads = max_jobs
-    #         ws = ds[:]
-
-    #     with z5py.File(exp_path) as f:
-    #         ds = f['segmentation/multicut']
-    #         ds.n_threads = max_jobs
-    #         seg = ds[:]
-
-    #     view([affs, ws, seg], ['affs', 'ws', 'mc-seg'])
+    luigi.build([MulticutSegmentationWorkflow(input_path=input_path, input_key=input_key,
+                                              ws_path=ws_path, ws_key=ws_key,
+                                              mask_path=mask_path, mask_key=mask_key,
+                                              problem_path=exp_path,
+                                              node_labels_key='node_labels',
+                                              output_path=out_path, output_key=out_key,
+                                              n_scales=n_scales,
+                                              config_dir='./config_mc',
+                                              tmp_folder=tmp_folder,
+                                              target=target,
+                                              skip_ws=have_watershed,
+                                              max_jobs=max_jobs)], local_scheduler=True)
 
 
 if __name__ == '__main__':
