@@ -515,6 +515,8 @@ class LSFTask(BaseClusterTask):
         #
         script_path = os.path.join(self.tmp_folder, self.task_name + '.py')
         assert os.path.exists(script_path), script_path
+
+        self.bsub_ids = []
         job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name,
                                                                         job_prefix)
 
@@ -530,16 +532,28 @@ class LSFTask(BaseClusterTask):
                                                                               job_id, time_limit,
                                                                               log_file, err_file,
                                                                               command)
-            call([bsub_command], shell=True)
+            # call([bsub_command], shell=True)
+            # submit job and get the bsub job id from its output
+            outp = check_output([bsub_command], shell=True).decode().rstrip()
+            bsub_id = int(outp.split()[1].lstrip('<').rstrip('>'))
+            self.bsub_ids.append(bsub_id)
+            print(outp)
 
     def wait_for_jobs(self, job_prefix=None):
         # TODO move to some config
         wait_time = 10
         while True:
             time.sleep(wait_time)
-            # TODO filter for job name pattern
-            n_running = check_output(['bjobs | grep $USER | wc -l'], shell=True).decode()
-            n_running = int(n_running.strip('\n'))
+            # parse the output from bjobs
+            outp = check_output(['bjobs | grep $USER'], shell=True).decode()
+            outp = outp.split('\n')
+            outp = [out for out in outp if out != '']
+            # check how many jobs there are in total, if none, stop waiting
+            n_running = len(outp)
+            if n_running == 0:
+                break
+            # if we have jobs, check how many belong to this task
+            n_running = sum([int(out.split()[0]) in self.bsub_ids for out in outp])
             if n_running == 0:
                 break
 
