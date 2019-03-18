@@ -131,7 +131,7 @@ class BaseClusterTask(luigi.Task):
             retry = (self.n_retries < max_num_retries) and self.allow_retry
             # have at least 50 % of the jobs passed?
             # we use this as heuristic to determine if something is fundementally broken.
-            retrty = retry and len(failed_jobs) / n_jobs < 0.5
+            retry = retry and len(failed_jobs) / n_jobs < 0.5
 
             if retry:
                 failed_blocks = self.get_failed_blocks(n_jobs, success_list, job_prefix)
@@ -157,7 +157,7 @@ class BaseClusterTask(luigi.Task):
                                                                         job_prefix)
         # for the jobs that have completely passed, we can add the block list from the config
         passed_blocks = []
-        for job_id in passed_blokcs:
+        for job_id in passed_blocks:
             config_path = self._config_path(job_id, job_prefix)
             with open(config_path, 'r') as f:
                 passed_blocks.extend(json.load(f)['block_list'])
@@ -432,24 +432,44 @@ class SlurmTask(BaseClusterTask):
         job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name,
                                                                         job_prefix)
         script_path = os.path.join(self.tmp_folder, 'slurm_%s.sh' % job_name)
+        self.slurm_ids = []
         for job_id in range(n_jobs):
             out_file = os.path.join(self.tmp_folder, 'logs', '%s_%i.log' % (job_name, job_id))
             err_file = os.path.join(self.tmp_folder, 'error_logs', '%s_%i.err' % (job_name,
                                                                                   job_id))
-            call(['sbatch', '-o', out_file, '-e', err_file,
-                  '-J', '%s_%i' % (job_name, job_id),
-                  script_path, str(job_id)])
+            command = ['sbatch', '-o', out_file, '-e', err_file, '-J',
+                       '%s_%i' % (job_name, job_id), script_path, str(job_id)]
+            # call(command)
+            outp = check_output(command).decode().rstrip()
+            # get the slurm job-id
+            slurm_id = int(outp.split()[-1])
+            self.slurm_ids.append(slurm_id)
+            # print slurm message
+            print(outp)
 
     def wait_for_jobs(self, job_prefix=None):
         # TODO move to some config
         wait_time = 10
         while True:
             time.sleep(wait_time)
-            # TODO filter for job name pattern
-            n_running = check_output(['squeue -u $USER | wc -l'], shell=True).decode()
-            # n_running = check_output(['squeue -u $USER | grep %f | wc -l' % self.task_name], shell=True).decode()
-            # need to substract 1 due to header # TODO drop this once we filter for job-name
-            n_running = int(n_running.strip('\n')) - 1
+
+            try:
+                outp = check_output(['squeue -u $USER | grep $USER'], shell=True).decode()
+            except CalledProcessError as e:
+                # handle error for empty queue
+                outp = e.output.decode().rstrip()
+                if outp == '':
+                    break
+                else:
+                    raise e
+
+            outp = [out for out in outp.split('\n') if out != '']
+            # check how many jobs there are in total, if none, stop waiting
+            n_running = len(outp)
+            if n_running == 0:
+                break
+            # if we have jobs, check how many belong to this task
+            n_running = sum([int(out.split()[0]) in self.slurm_ids for out in outp])
             if n_running == 0:
                 break
 
@@ -486,8 +506,8 @@ class LocalTask(BaseClusterTask):
 
     def submit_jobs(self, n_jobs, job_prefix=None):
         assert n_jobs <= self.max_local_jobs,\
-            "Trying to submit %i local jobs but limit is %i. Did you forget to set the target to slurm or lsf?" % (n_jobs,
-                                                                                                                   self.max_local_jobs)
+            "Trying to submit %i local jobs but limit is %i. Did you forget to set the target to slurm or lsf?" %\
+            (n_jobs, self.max_local_jobs)
         with futures.ProcessPoolExecutor(n_jobs) as pp:
             tasks = [pp.submit(self._submit, job_id, job_prefix) for job_id in range(n_jobs)]
             [t.result() for t in tasks]

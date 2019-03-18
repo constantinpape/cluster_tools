@@ -114,7 +114,10 @@ def solve_global(job_id, config_path):
     time_limit = config.get('time_limit_solver', None)
 
     fu.log("using agglomerator %s" % agglomerator_key)
-    fu.log("agglomeration time limit %i" % time_limit)
+    if time_limit is None:
+        fu.log("agglomeration without time limit")
+    else:
+        fu.log("agglomeration time limit %i" % time_limit)
     agglomerator = su.key_to_agglomerator(agglomerator_key)
 
     with vu.file_reader(problem_path, 'r') as f:
