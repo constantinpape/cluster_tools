@@ -1,4 +1,4 @@
-#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env/bin/python
+#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python
 
 import os
 import json
@@ -9,8 +9,11 @@ from cluster_tools import MulticutSegmentationWorkflow
 
 def run_mc(sample, tmp_folder, max_jobs,
            n_scales=1, have_watershed=True, target='local',
-           from_affinities=True):
+           from_affinities=False, invert_inputs=False):
     """ Run multicut on cremi sample or similar data.
+
+    You can obtain the data used for this examle from
+    https://drive.google.com/open?id=1E6j77gV0iwquSxd7KmmuXghgFcyuP7WW
 
     Args:
         sample: which cremi sample to use (more general, what's our input data)
@@ -22,11 +25,14 @@ def run_mc(sample, tmp_folder, max_jobs,
                                         'slurm' (cluster running slurm)
                                      or 'lsf' (cluster running lsf)
         from_affinities: whether to use affinity maps or boundary maps
+        invert_inputs: whether to invert the inputs; this needs to be set to true
+            if HIGH boundary evidence correponds to LOWER values in boundary /
+            affinity maps
     """
 
     # input path: n5 or hdf5 container which holds the input data
     # (= boundary maps or affinity maps)
-    input_path = '/g/kreshuk/data/cremi/realigned/sample%s_small.n5' % sample
+    input_path = '/g/kreshuk/data/cremi/example/sample%s.n5' % sample
     # path with the watershed data, can be the same as input_path
     ws_path = input_path
 
@@ -46,20 +52,19 @@ def run_mc(sample, tmp_folder, max_jobs,
     mask_key = ''
 
     # n5 container for intermediate results like graph-structure or features
-    exp_path = 'sample%s_exp.n5' % sample
+    exp_path = './sample%s_exp.n5' % sample
 
     # config folder holds configurations for workflow steps stored as json
     configs = MulticutSegmentationWorkflow.get_config()
     config_folder = 'config_mc'
-    if not os.path.exists(config_folder):
-        os.mkdir(config_folder)
+    os.makedirs(config_folder, exist_ok=True)
 
     # global workflow config
     # python interpreter of conda environment with dependencies, see
     # https://github.com/constantinpape/cluster_tools/blob/master/environment.yml
-    shebang = "#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env/bin/python"
+    shebang = "#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python"
     # block shape used for parallelization
-    block_shape = [25, 256, 256]
+    block_shape = [30, 256, 256]
     global_config = configs['global']
     global_config.update({'shebang': shebang, 'block_shape': block_shape})
     with open('./config_mc/global.config', 'w') as f:
@@ -75,7 +80,7 @@ def run_mc(sample, tmp_folder, max_jobs,
 
     # config for converting edge probabilities to edge costs
     costs_config = configs['probs_to_costs']
-    costs_config.update({'threads_per_job': max_jobs, 'weight_edges': True})
+    costs_config.update({'threads_per_job': max_jobs, 'weight_edges': True, 'invert_inputs': invert_inputs})
     with open('./config_mc/probs_to_costs.config', 'w') as f:
         json.dump(costs_config, f)
 
@@ -106,7 +111,7 @@ if __name__ == '__main__':
     sample = 'A'
     tmp_folder = './tmp_mc_%s' % sample
 
-    target = 'local'
-    max_jobs = 8
+    target = 'slurm'
+    max_jobs = 16
 
-    run_mc(sample, tmp_folder, max_jobs, target=target)
+    run_mc(sample, tmp_folder, max_jobs, target=target, from_affinities=True)
