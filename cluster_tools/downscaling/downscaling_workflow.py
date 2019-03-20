@@ -373,8 +373,8 @@ class PainteraToBdvWorkflow(WorkflowBase):
 
         def _to_scale(path, scale_file):
             scale_path = os.path.join(path, scale_file)
-            is_scae_level = os.path.isdir(scale_path) or os.path.islink(scale_path)
-            if not is_scae_level:
+            is_scale_level = os.path.isdir(scale_path) or os.path.islink(scale_path)
+            if not is_scale_level:
                 return None
             try:
                 return int(scale_file[1:])
@@ -396,6 +396,7 @@ class PainteraToBdvWorkflow(WorkflowBase):
         scales = self.get_scales()
 
         dep = self.dependency
+        prev_scale = None
         scale_factors = []
         for scale in scales:
             in_key = self.get_scale_key(scale, 'paintera')
@@ -407,9 +408,10 @@ class PainteraToBdvWorkflow(WorkflowBase):
                 if isinstance(effective_scale, int):
                     effective_scale = 3 * [effective_scale]
 
-            prev_scale = deepcopy(effective_scale)
             if scale > 0:
+                assert prev_scale is not None
                 scale_factors.append([eff / prev for eff, prev in zip(effective_scale, prev_scale)])
+            prev_scale = deepcopy(effective_scale)
 
             if self.skip_existing_levels:
                 with file_reader(self.output_path) as f:
