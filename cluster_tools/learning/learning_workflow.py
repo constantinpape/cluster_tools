@@ -91,8 +91,8 @@ class LearningWorkflow(WorkflowBase):
                             dependency=node_labels_task,
                             graph_path=graph_out,
                             graph_key='graph',
-                            overlap_path=node_labels_out,
-                            overlap_key='node_labels',
+                            node_labels_path=node_labels_out,
+                            node_labels_key='node_labels',
                             output_path=edge_labels_out,
                             output_key='edge_labels')
             prev_dep = label_task
