@@ -410,7 +410,7 @@ class SlurmTask(BaseClusterTask):
         slurm_template = ("#!/bin/bash\n"
                           "#SBATCH -A %s\n"
                           "#SBATCH -N 1\n"
-                          "#SBATCH -n %i\n"
+                          "#SBATCH -c %i\n"
                           "#SBATCH --mem %s\n"
                           "#SBATCH -t %s\n"
                           "#SBATCH --qos=%s\n"
