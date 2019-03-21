@@ -24,8 +24,8 @@ class EdgeLabelsBase(luigi.Task):
     allow_retry = False
 
     # input and output volumes
-    overlap_path = luigi.Parameter()
-    overlap_key = luigi.Parameter()
+    node_labels_path = luigi.Parameter()
+    node_labels_key = luigi.Parameter()
     graph_path = luigi.Parameter()
     graph_key = luigi.Parameter()
     output_path = luigi.Parameter()
@@ -51,7 +51,7 @@ class EdgeLabelsBase(luigi.Task):
         config = self.get_task_config()
 
         # update the task config
-        config.update({'overlap_path': self.overlap_path, 'overlap_key': self.overlap_key,
+        config.update({'node_labels_path': self.node_labels_path, 'node_labels_key': self.node_labels_key,
                        'output_path': self.output_path, 'output_key': self.output_key,
                        'graph_path': self.graph_path, 'graph_key': self.graph_key})
 
@@ -99,13 +99,13 @@ def edge_labels(job_id, config_path):
     output_key = config['output_key']
     graph_path = config['graph_path']
     graph_key = config['graph_key']
-    overlap_path = config['overlap_path']
-    overlap_key = config['overlap_key']
+    node_labels_path = config['node_labels_path']
+    node_labels_key = config['node_labels_key']
     ignore_label_gt = config.get('ignore_label_gt', False)
 
-    # load the node overlaps
-    with vu.file_reader(overlap_path, 'r') as f:
-        node_labels = f[overlap_key][:]
+    # load the node labels
+    with vu.file_reader(node_labels_path, 'r') as f:
+        node_labels = f[node_labels_key][:]
 
     # load the uv ids and check
     with vu.file_reader(graph_path, 'r') as f:
