@@ -6,7 +6,7 @@ from ..cluster_tasks import WorkflowBase
 # TODO Region features
 from ..features import EdgeFeaturesWorkflow
 from ..graph import GraphWorkflow
-from ..node_overlaps import NodeOverlapWorkflow
+from ..node_labels import NodeLabelWorkflow
 from . import edge_labels as label_tasks
 from . import learn_rf as learn_tasks
 
@@ -50,6 +50,7 @@ class LearningWorkflow(WorkflowBase):
                                        input_path=labels_path[0],
                                        input_key=labels_path[1],
                                        graph_path=graph_out,
+                                       output_key='graph',
                                        n_scales=n_scales)
 
             features_out = os.path.join(tmp_folder, 'features.n5')
@@ -68,18 +69,18 @@ class LearningWorkflow(WorkflowBase):
                                              output_key='features')
             features_dict[key] = (features_out, 'features')
 
-            ovlp_out = os.path.join(tmp_folder, 'gt_overlaps.n5')
-            ovlp_task = NodeOverlapWorkflow(tmp_folder=tmp_folder,
+            node_labels_out = os.path.join(tmp_folder, 'gt_node_labels.n5')
+            node_labels_task = NodeLabelWorkflow(tmp_folder=tmp_folder,
                                             max_jobs=self.max_jobs,
                                             config_dir=self.config_dir,
                                             target=self.target,
                                             dependency=feat_task,
-                                            labels_path=labels_path[0],
-                                            labels_key=labels_path[1],
+                                            ws_path=labels_path[0],
+                                            ws_key=labels_path[1],
                                             input_path=gt_path[0],
                                             input_key=gt_path[1],
-                                            output_path=ovlp_out,
-                                            output_key='overlaps')
+                                            output_path=node_labels_out,
+                                            output_key='node_labels')
 
             edge_labels_out = os.path.join(tmp_folder, 'edge_labels.n5')
             lt = getattr(label_tasks,
@@ -87,11 +88,11 @@ class LearningWorkflow(WorkflowBase):
             label_task = lt(tmp_folder=tmp_folder,
                             max_jobs=self.max_jobs,
                             config_dir=self.config_dir,
-                            dependency=ovlp_task,
+                            dependency=node_labels_task,
                             graph_path=graph_out,
                             graph_key='graph',
-                            overlap_path=ovlp_out,
-                            overlap_key='overlaps',
+                            overlap_path=node_labels_out,
+                            overlap_key='node_labels',
                             output_path=edge_labels_out,
                             output_key='edge_labels')
             prev_dep = label_task
