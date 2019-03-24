@@ -1,2 +1,3 @@
 from .embedding_distances import EmbeddingDistancesLSF, EmbeddingDistancesLocal, EmbeddingDistancesSlurm
 from .gradients import GradientsLSF, GradientsLocal, GradientsSlurm
+from .insert_affinities_workflow import InsertAffinitiesWorkflow

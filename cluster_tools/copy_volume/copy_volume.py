@@ -62,8 +62,6 @@ class CopyVolumeBase(luigi.Task):
             shape = f[self.input_key].shape
             ds_dtype = f[self.input_key].dtype
             ds_chunks = f[self.input_key].chunks
-        # TODO generalize to ND
-        assert len(shape) == 3, "Only support 3d inputs"
 
         # load the config
         task_config = self.get_task_config()
@@ -72,12 +70,13 @@ class CopyVolumeBase(luigi.Task):
         # - scale the roi to the effective scale, if effective scale is given
         # - shrink the shape to the roi, if fit_to_roi is True
         if roi_begin is not None:
+            assert len(shape) == 3, "Don't support roi for 4d yet"
             assert roi_end is not None
             if self.effective_scale_factor:
                 roi_begin = [int(rb // sf)
                              for rb, sf in zip(roi_begin, self.effective_scale_factor)]
                 roi_end = [int(re // sf)
-                           for re, sf in zip(roi_end, effective_scale)]
+                           for re, sf in zip(roi_end, self.effective_scale_factor)]
 
             if self.fit_to_roi:
                 out_shape = tuple(roie - roib for roib, roie in zip(roi_begin, roi_end))
@@ -107,6 +106,9 @@ class CopyVolumeBase(luigi.Task):
         task_config.update({'input_path': self.input_path, 'input_key': self.input_key,
                             'output_path': self.output_path, 'output_key': self.output_key,
                             'block_shape': block_shape, 'dtype': dtype})
+
+        if len(shape) == 4:
+            shape = shape[1:]
 
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
@@ -156,15 +158,17 @@ class CopyVolumeLSF(CopyVolumeBase, LSFTask):
 
 
 # TODO this will fail if casting to float !
-# TODO wiill yield incorrect results for signed types ...
+# TODO will yield incorrect results for signed types ...
 def cast_type(data, dtype):
     if np.dtype(data.dtype) == np.dtype(dtype):
         return data
     else:
         type_info1 = np.iinfo(np.dtype(dtype))
         dmin1, dmax1 = type_info1.min, type_info1.max
+
         type_info2 = np.iinfo(np.dtype(data.dtype))
-        dmin2, dmax2 = type_info2.min, type_info2.max
+        _, dmax2 = type_info2.min, type_info2.max
+
         data = data.astype('float64')
         data *= (dmax1 / dmax2)
         data = np.clip(data, dmin1, dmax1)
@@ -175,10 +179,13 @@ def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin):
     dtype = ds_out.dtype
     for block_id in block_list:
         fu.log("start processing block %i" % block_id)
+
         block = blocking.getBlock(block_id)
         bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
-        data = ds_in[bb]
+        if ds_in.ndim == 4:
+            bb = (slice(None),) + bb
 
+        data = ds_in[bb]
         # don't write empty blocks
         if sum(data).sum() == 0:
             fu.log_block_success(block_id)
@@ -218,14 +225,15 @@ def copy_volume(job_id, config_path):
 
     # submit blocks
     with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
-        ds_in  = f_in[input_key]
+        ds_in = f_in[input_key]
         ds_in.n_threads = n_threads
         ds_out = f_out[output_key]
         ds_out.n_threads = n_threads
 
         shape = list(ds_in.shape)
+        if len(shape) == 4:
+            shape = shape[1:]
         blocking = nt.blocking([0, 0, 0], shape, block_shape)
-
         _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin)
 
     # log success
