@@ -156,6 +156,7 @@ def _apply_watershed_with_seeds(input_, dt, initial_seeds, config, mask, offset)
             hmap = _make_hmap(input_[z], dtz, alpha, sigma_weights)
             wsz, max_id = vu.watershed(hmap, seeds=seeds, size_filter=size_filter,
                                        exclude=initial_seeds_z)
+            wsz = wsz.astype('uint64')
             # mask the result if we have a mask
             if mask is not None:
                 wsz[mask[z]] = 0
@@ -196,6 +197,7 @@ def _apply_watershed_with_seeds(input_, dt, initial_seeds, config, mask, offset)
         hmap = _make_hmap(input_, dt, alpha, sigma_weights)
         ws, max_id = vu.watershed(hmap, seeds=seeds, size_filter=size_filter,
                                   exclude=initial_seed_ids)
+        ws = ws.astype('uint64')
         ws = nt.takeDict(new_to_old, ws)
         if mask is not None:
             ws[mask] = 0

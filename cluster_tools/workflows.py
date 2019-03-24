@@ -135,6 +135,8 @@ class SegmentationWorkflowBase(WorkflowBase):
     skip_ws = luigi.BoolParameter(default=False)
     # run agglomeration immediately after watersheds
     agglomerate_ws = luigi.BoolParameter(default=False)
+    # run two-pass watershed
+    two_pass_ws = luigi.BoolParameter(default=False)
     # run some sanity checks for intermediate results
     sanity_checks = luigi.BoolParameter(default=False)
 
@@ -160,6 +162,7 @@ class SegmentationWorkflowBase(WorkflowBase):
                                     output_key=self.ws_key,
                                     mask_path=self.mask_path,
                                     mask_key=self.mask_key,
+                                    two_pass=self.two_pass_ws,
                                     agglomeration=self.agglomerate_ws)
             return dep
 

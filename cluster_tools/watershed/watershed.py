@@ -189,7 +189,7 @@ def _make_seeds(dt, config):
 
 
 # apply watershed
-def _apply_watershed(input_, dt, offset, config, mask=None):
+def _apply_watershed(input_, dt, config, mask=None):
     apply_2d = config.get('apply_ws_2d', True)
     sigma_weights = config.get('sigma_weights', 2.)
     size_filter = config.get('size_filter', 25)
@@ -197,7 +197,8 @@ def _apply_watershed(input_, dt, offset, config, mask=None):
 
     # apply the watersheds in 2d
     if apply_2d:
-        ws = np.zeros_like(input_, dtype='uint64')
+        ws = np.zeros_like(input_, dtype='uint32')
+        offset = 0
         for z in range(ws.shape[0]):
             # run watershed for this slice
             dtz = dt[z]
@@ -221,7 +222,6 @@ def _apply_watershed(input_, dt, offset, config, mask=None):
         seeds = _make_seeds(dt, config)
         hmap = _make_hmap(input_, dt, alpha, sigma_weights)
         ws, max_id = vu.watershed(hmap, seeds, size_filter=size_filter)
-        ws += offset
         # check if we have a mask
         if mask is not None:
             ws[mask] = 0
@@ -291,22 +291,25 @@ def _ws_block(blocking, block_id, ds_in, ds_out, mask, config):
         fu.log_block_success(block_id)
         return
 
+    # -> apply ws and write the results to the inner volume
+    ws = _apply_watershed(input_, dt, config, inv_mask)
+
+    # if we have a halo, we need to run connected components
+    if output_bb != input_bb:
+        ws = ws[inner_bb]
+        ws = vigra.analysis.labelVolumeWithBackground(ws)
+    ws = ws.astype('uint64')
+
     # get offset to make new seeds unique between blocks
     # (we need to relabel later to make processing efficient !)
     offset = block_id * np.prod(blocking.blockShape)
+    if mask is None:
+        ws += offset
+    else:
+        ws[mask] += offset
 
-    # -> apply ws and write the results to the inner volume
-    ws = _apply_watershed(input_, dt, offset, config, inv_mask)
-
-    # FIXME this does not work yet because uint64 is not exported in vigra
-    # really need this though ...
-    # # if we had a halo, we need to run connected components
-    # if output_bb != input_bb:
-    #     ws = ws[inner_bb]
-    #     ws = vigra.analysis.labelVolumeWithBackground(ws)
-    ds_out[output_bb] = ws[inner_bb]
-
-    # log block success
+    # write result and log block success
+    ds_out[output_bb] = ws
     fu.log_block_success(block_id)
 
 

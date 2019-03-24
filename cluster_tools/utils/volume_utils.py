@@ -121,7 +121,7 @@ def watershed(input_, seeds, size_filter=0, exclude=None):
     if size_filter > 0:
         ws, max_id = apply_size_filter(ws, input_, size_filter,
                                        exclude=exclude)
-    return ws.astype('uint64'), max_id
+    return ws, max_id
 
 
 def apply_size_filter(segmentation, input_, size_filter, exclude=None):
@@ -221,6 +221,7 @@ class InterpolatedVolume(object):
 
         self.interpol_function = partial(vigra.sampling.resize, order=spline_order)
 
+    # TODO this does not support singleton dimension, need to somehow catch this
     def _interpolate(self, data, shape):
         data = self.interpol_function(data.astype('float32'), shape=shape)
         np.clip(data, self.min, self.max, out=data)

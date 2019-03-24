@@ -63,6 +63,7 @@ class WatershedWorkflow(WorkflowBase):
     def get_config():
         configs = super(WatershedWorkflow, WatershedWorkflow).get_config()
         configs.update({'watershed': watershed_tasks.WatershedLocal.default_task_config(),
+                        'two_pass_watershed': two_pass_tasks.TwoPassWatershedLocal.default_task_config(),
                         'agglomerate': agglomerate_tasks.AgglomerateLocal.default_task_config(),
                         **RelabelWorkflow.get_config()})
         return configs
