@@ -95,6 +95,12 @@ class CopyVolumeBase(luigi.Task):
         if chunks is None:
             chunks = ds_chunks
         chunks = tuple(min(chnk, osh) for chnk, osh in zip(chunks, out_shape))
+        if len(chunks) == 3:
+            assert all(bs % ch == 0 for bs, ch in zip(block_shape, chunks)), "%s, %s" % (str(block_shape),
+                                                                                         str(chunks))
+        else:
+            assert all(bs % ch == 0 for bs, ch in zip(block_shape, chunks[1:])), "%s, %s" % (str(block_shape),
+                                                                                             str(chunks))
 
         # require output dataset
         with vu.file_reader(self.output_path) as f:
