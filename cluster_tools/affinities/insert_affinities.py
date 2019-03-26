@@ -6,8 +6,7 @@ import json
 
 import luigi
 import numpy as np
-import vigra
-from scipy.ndimage.morphology import binary_erosion
+from scipy.ndimage.morphology import binary_dilation
 import nifty.tools as nt
 from affogato.affinities import compute_affinities
 
@@ -29,8 +28,10 @@ class InsertAffinitiesBase(luigi.Task):
     src_file = os.path.abspath(__file__)
     allow_retry = False
 
-    affinity_path = luigi.Parameter()
-    affinity_key = luigi.Parameter()
+    input_path = luigi.Parameter()
+    input_key = luigi.Parameter()
+    output_path = luigi.Parameter()
+    output_key = luigi.Parameter()
     objects_path = luigi.Parameter()
     objects_key = luigi.Parameter()
     offsets = luigi.ListParameter(default=[[-1, 0, 0],
@@ -41,7 +42,8 @@ class InsertAffinitiesBase(luigi.Task):
     @staticmethod
     def default_task_config():
         config = LocalTask.default_task_config()
-        config.update({'erode_by': 10, 'zero_objects_list': None})
+        config.update({'erode_by': 6, 'zero_objects_list': None,
+                       'chunks': None})
         return config
 
     def requires(self):
@@ -52,17 +54,27 @@ class InsertAffinitiesBase(luigi.Task):
         self.init(shebang)
 
         config = self.get_task_config()
-        config.update({'affinity_path': self.affinity_path,
-                       'affinity_key': self.affinity_key,
+        config.update({'input_path': self.input_path,
+                       'input_key': self.input_key,
+                       'output_path': self.output_path,
+                       'output_key': self.output_key,
                        'objects_path': self.objects_path,
                        'objects_key': self.objects_key,
                        'offsets': self.offsets,
                        'block_shape': block_shape})
 
-        shape = vu.get_shape(self.affinity_path, self.affinity_key)[1:]
-        chunks = vu.file_reader(self.affinity_path)[self.affinity_key].chunks[1:]
-        assert all(bs % ch == 0 for bs, ch in zip(block_shape, chunks))
+        shape = vu.get_shape(self.input_path, self.input_key)
+        dtype = vu.file_reader(self.input_path, 'r')[self.input_key].dtype
 
+        chunks = config['chunks']
+        if chunks is None:
+            chunks = vu.file_reader(self.input_path, 'r')[self.input_key].chunks
+        assert all(bs % ch == 0 for bs, ch in zip(block_shape, chunks[1:]))
+        with vu.file_reader(self.output_path) as f:
+            f.require_dataset(self.output_key, shape=shape, chunks=chunks,
+                              dtype=dtype, compression='gzip')
+
+        shape = shape[1:]
         block_list = vu.blocks_in_volume(shape, block_shape,
                                          roi_begin, roi_end)
         n_jobs = min(len(block_list), self.max_jobs)
@@ -106,40 +118,34 @@ def cast(input_, dtype):
     return input_.astype('uint8')
 
 
-def fit_to_hmap(objs, hmap, erode_by):
-    obj_ids = np.unique(objs)
-    if 0 in obj_ids:
-        obj_ids = obj_ids[1:]
-    bg_id = obj_ids[-1] + 1
+def _insert_affinities(affs, objs, offsets):
+    dtype = affs.dtype
+    # compute affinities to objs and bring them to our aff convention
+    affs_insert, mask = compute_affinities(objs, offsets)
+    mask = mask == 0
+    affs_insert = 1. - affs_insert
+    affs_insert[mask] = 0
 
-    background = objs == 0
-    seeds = bg_id * binary_erosion(background, iterations=erode_by)
-    seeds = seeds.astype('uint32')
+    # dilate affinity channels
+    for c in range(affs_insert.shape[0]):
+        affs_insert[c] = binary_dilation(affs_insert[c], iterations=1)
 
-    for obj_id in obj_ids:
-        obj_seeds = binary_erosion(objs == obj_id, iterations=erode_by)
-        seeds[obj_seeds] = obj_id
-
-    # apply dt and smooth hmap before watershed
-    hmap = vu.normalize(hmap)
-    threshold = .3
-    threshd = (hmap > threshold).astype('uint32')
-    dt = vigra.filters.distanceTransform(threshd)
-    dt = vu.normalize(dt)
-    alpha = .75
-    hmap = alpha * hmap + (1. - alpha) * dt
-
-    objs = vigra.analysis.watershedsNew(hmap, seeds=seeds)[0]
-    objs[objs == bg_id] = 0
-    return objs, obj_ids
+    # insert affinities
+    affs = vu.normalize(affs)
+    affs += affs_insert
+    affs = np.clip(affs, 0., 1.)
+    affs = cast(affs, dtype)
+    return affs
 
 
-def _insert_affinities_block(block_id, blocking, ds, objects, offsets,
+def _insert_affinities_block(block_id, blocking, ds_in, ds_out, objects, offsets,
                              erode_by, zero_objects_list):
     fu.log("start processing block %i" % block_id)
-    halo = np.max(np.abs(offsets), axis=0)
+    halo = np.max(np.abs(offsets), axis=0).tolist()
+    halo = [ha if axis == 0 else max(ha, erode_by)
+            for axis, ha in enumerate(halo)]
 
-    block = blocking.getBlockWithHalo(block_id, halo.tolist())
+    block = blocking.getBlockWithHalo(block_id, halo)
     outer_bb = vu.block_to_bb(block.outerBlock)
     inner_bb = (slice(None),) + vu.block_to_bb(block.innerBlock)
     local_bb = (slice(None),) + vu.block_to_bb(block.innerBlockLocal)
@@ -148,31 +154,29 @@ def _insert_affinities_block(block_id, blocking, ds, objects, offsets,
     # catch run-time error for singleton dimension
     try:
         objs = objects[outer_bb]
+        obj_sum = objs.sum()
     except RuntimeError:
-        fu.log_block_success(block_id)
-        return
+        obj_sum = 0
 
-    if objs.sum() == 0:
+    # if we don't have objs, just copy the affinities
+    if obj_sum == 0:
+        ds_out[inner_bb] = ds_in[inner_bb]
         fu.log_block_success(block_id)
         return
 
     outer_bb = (slice(None),) + outer_bb
-    # print(outer_bb)
-    affs = ds[outer_bb]
-    max_aff = 255 if np.dtype(affs.dtype) == np.dtype('uint8') else 1.
+    affs = ds_in[outer_bb]
 
     # fit object to hmap derived from affinities via shrinking and watershed
     if erode_by > 0:
-        objs, obj_ids = fit_to_hmap(objs, affs[0].copy(), erode_by)
+        objs, obj_ids = vu.fit_to_hmap(objs, affs[0].copy(), erode_by)
     else:
         obj_ids = np.unique(objs)
         if 0 in obj_ids:
             obj_ids = obj_ids[1:]
 
-    affs_insert, _ = compute_affinities(objs.astype('uint64'), offsets)
-    affs_insert = cast(1. - affs_insert, ds.dtype)
-    affs += affs_insert
-    affs = np.clip(affs, 0, max_aff)
+    # insert affinities to objs into the original affinities
+    affs = _insert_affinities(affs, objs.astype('uint64'), offsets)
 
     # zero out some affs if necessary
     if zero_objects_list is not None:
@@ -182,7 +186,7 @@ def _insert_affinities_block(block_id, blocking, ds, objects, offsets,
                 zero_mask = objs == zero_id
                 affs[:, zero_mask] = 0
 
-    ds[inner_bb] = affs[local_bb]
+    ds_out[inner_bb] = affs[local_bb]
     fu.log_block_success(block_id)
 
 
@@ -193,8 +197,10 @@ def insert_affinities(job_id, config_path):
 
     with open(config_path, 'r') as f:
         config = json.load(f)
-    affinity_path = config['affinity_path']
-    affinity_key = config['affinity_key']
+    input_path = config['input_path']
+    input_key = config['input_key']
+    output_path = config['output_path']
+    output_key = config['output_key']
     objects_path = config['objects_path']
     objects_key = config['objects_key']
 
@@ -205,16 +211,18 @@ def insert_affinities(job_id, config_path):
     block_shape = config['block_shape']
     offsets = config['offsets']
 
-    with vu.file_reader(affinity_path) as f_in, vu.file_reader(objects_path) as f_obj:
-        ds = f_in[affinity_key]
-        shape = ds.shape[1:]
+    with vu.file_reader(input_path) as f_in, vu.file_reader(output_path) as f_out,\
+            vu.file_reader(objects_path) as f_obj:
+        ds_in = f_in[input_key]
+        ds_out = f_out[output_key]
+        shape = ds_in.shape[1:]
 
         # TODO actually check that objects are on a lower scale
         ds_objs = f_obj[objects_key]
         objects = vu.InterpolatedVolume(ds_objs, shape)
 
         blocking = nt.blocking([0, 0, 0], list(shape), block_shape)
-        [_insert_affinities_block(block_id, blocking, ds, objects, offsets,
+        [_insert_affinities_block(block_id, blocking, ds_in, ds_out, objects, offsets,
                                   erode_by, zero_objects_list)
          for block_id in block_list]
 
