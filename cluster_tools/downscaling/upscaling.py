@@ -141,12 +141,12 @@ class UpscalingBase(luigi.Task):
             self._write_log("ROI before scaling: %s to %s" % (str(roi_begin), str(roi_end)))
             if isinstance(effective_scale, int):
                 roi_begin = [rb * effective_scale for rb in roi_begin]
-                roi_end= [re * effective_scale if re is not None else sh
-                          for re, sh in zip(roi_end, shape)]
+                roi_end = [re * effective_scale if re is not None else sh
+                           for re, sh in zip(roi_end, shape)]
             else:
                 roi_begin = [rb * sf for rb, sf in zip(roi_begin, effective_scale)]
-                roi_end= [re * sf if re is not None else sh
-                          for re, sf, sh in zip(roi_end, effective_scale, shape)]
+                roi_end = [re * sf if re is not None else sh
+                           for re, sf, sh in zip(roi_end, effective_scale, shape)]
             roi_begin = map(int, roi_begin)
             roi_end = map(int, roi_end)
             self._write_log("ROI after scaling: %s to %s" % (str(roi_begin), str(roi_end)))
@@ -243,7 +243,7 @@ def _upsample_block(blocking, block_id, ds_in, ds_out, scale_factor, sampler):
 
     try:
         ds_out[out_bb] = out[local_bb].astype(dtype)
-    except IndexError as e:
+    except IndexError:
         raise(IndexError("%s, %s, %s" % (str(out_bb), str(local_bb), str(out.shape))))
 
     # log block success
@@ -300,14 +300,14 @@ def upscaling(job_id, config_path):
     # because hdf5 does not like opening files twice
     if input_path == output_path:
         with vu.file_reader(output_path) as f:
-            ds_in  = f[input_key]
+            ds_in = f[input_key]
             ds_out = f[output_key]
             _submit_blocks(ds_in, ds_out, block_shape, block_list, scale_factor,
                            library, library_kwargs, n_threads)
 
     else:
         with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
-            ds_in  = f_in[input_key]
+            ds_in = f_in[input_key]
             ds_out = f_out[output_key]
             _submit_blocks(ds_in, ds_out, block_shape, block_list, scale_factor,
                            library, library_kwargs, n_threads)

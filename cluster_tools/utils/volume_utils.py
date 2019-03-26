@@ -8,6 +8,7 @@ import numpy as np
 import h5py
 import z5py
 import vigra
+from scipy.ndimage.morphology import binary_erosion
 
 # use vigra filters as fallback if we don't have
 # fastfilters available
@@ -350,3 +351,67 @@ def mask_corners(input_, halo):
         input_[corner_bb] = 0
 
     return input_
+
+
+def preserving_erosion(mask, erode_by):
+    eroded = binary_erosion(mask, iterations=erode_by)
+    n_foreground = eroded.sum()
+    while n_foreground == 0:
+        if erode_by == 1:
+            return mask
+        erode_by //= 2
+        eroded = binary_erosion(mask, iterations=erode_by)
+        n_foreground = eroded.sum()
+    return eroded
+
+
+def fit_to_hmap(objs, hmap, erode_by):
+    # get object ids (excluding 0) and the new background id
+    obj_ids = np.unique(objs)
+    if 0 in obj_ids:
+        obj_ids = obj_ids[1:]
+    bg_id = obj_ids[-1] + 1
+
+    # make seeds for one slice
+    def seeds_z(objsz):
+        background = objsz == 0
+        seeds = bg_id * binary_erosion(background, iterations=erode_by)
+        seeds = seeds.astype('uint32')
+        # insert seeds for the objects
+        for obj_id in obj_ids:
+            obj_mask = objsz == obj_id
+            if obj_mask.sum() == 0:
+                continue
+            # erode the object mask for seeds, but preserve small seeds
+            obj_seeds = preserving_erosion(obj_mask, erode_by)
+            seeds[obj_seeds] = obj_id
+        return seeds
+
+    # make the seeds by binary erosion of background and foreground
+    seeds = np.zeros_like(hmap, dtype='uint32')
+    for z in range(seeds.shape[0]):
+        seeds[z] = seeds_z(objs[z])
+
+    # apply dt before watershed
+    hmap = normalize(hmap)
+    threshold = .3
+    threshd = (hmap > threshold).astype('uint32')
+
+    # 2d
+    dt = np.zeros_like(hmap, dtype='float32')
+    for z in range(dt.shape[0]):
+        dt[z] = vigra.filters.distanceTransform(threshd[z])
+
+    # normalize distances and add up with hmap
+    dt = 1. - normalize(dt)
+    alpha = .5
+    hmap = alpha * hmap + (1. - alpha) * dt
+
+    # 2d
+    objs_new = np.zeros_like(objs, dtype='uint32')
+    for z in range(objs_new.shape[0]):
+        objs_new[z] = vigra.analysis.watershedsNew(hmap[z], seeds=seeds[z])[0]
+
+    # set background to 0
+    objs_new[objs_new == bg_id] = 0
+    return objs_new, obj_ids
