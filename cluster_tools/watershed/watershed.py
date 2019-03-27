@@ -8,7 +8,14 @@ import luigi
 import numpy as np
 import vigra
 import nifty.tools as nt
-from nifty.filters import nonMaximumDistanceSuppression
+
+# nonMaximumDistanceSuppression is only implemented on my latest nifty master:
+# https://github.com/constantinpape/nifty
+# if you want to use it, please install that nifty version from source, otherwise it will be skipped
+try:
+    from nifty.filters import nonMaximumDistanceSuppression
+except ImportError:
+    nonMaximumDistanceSuppression = None
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -163,6 +170,9 @@ def _points_to_vol(points, shape):
 def _make_seeds(dt, config):
     sigma_seeds = config.get('sigma_seeds', 2.)
     apply_nonmax_suppression = config.get('non_maximum_suppression', True)
+    if apply_nonmax_suppression and nonMaximumDistanceSuppression is None:
+        fu.log("non-maximum suppression was activated, but is not available")
+        apply_nonmax_suppression = False
 
     # find local maxima of the distance transform
     max_fu = vigra.analysis.localMaxima if dt.ndim == 2 else vigra.analysis.localMaxima3D
