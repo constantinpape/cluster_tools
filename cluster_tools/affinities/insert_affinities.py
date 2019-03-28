@@ -6,7 +6,7 @@ import json
 
 import luigi
 import numpy as np
-from scipy.ndimage.morphology import binary_dilation
+from scipy.ndimage.morphology import binary_dilation, binary_erosion
 import nifty.tools as nt
 from affogato.affinities import compute_affinities
 
@@ -183,7 +183,8 @@ def _insert_affinities_block(block_id, blocking, ds_in, ds_out, objects, offsets
         zero_ids = np.in1d(obj_ids, zero_objects_list)
         if zero_ids.size:
             for zero_id in zero_ids:
-                zero_mask = objs == zero_id
+                # erode the mask to avoid ugly boundary artifacts
+                zero_mask = binary_erosion(objs == zero_id, iterations=4)
                 affs[:, zero_mask] = 0
 
     ds_out[inner_bb] = affs[local_bb]
