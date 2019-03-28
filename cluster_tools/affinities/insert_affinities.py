@@ -180,7 +180,7 @@ def _insert_affinities_block(block_id, blocking, ds_in, ds_out, objects, offsets
 
     # zero out some affs if necessary
     if zero_objects_list is not None:
-        zero_ids = np.in1d(obj_ids, zero_objects_list)
+        zero_ids = obj_ids[np.in1d(obj_ids, zero_objects_list)]
         if zero_ids.size:
             for zero_id in zero_ids:
                 # erode the mask to avoid ugly boundary artifacts
