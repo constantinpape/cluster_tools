@@ -83,6 +83,10 @@ class WatershedBase(luigi.Task):
         ws_config.update({'input_path': self.input_path, 'input_key': self.input_key,
                           'output_path': self.output_path, 'output_key': self.output_key,
                           'block_shape': block_shape})
+        if self.mask_path != '':
+            assert self.mask_key != ''
+            ws_config.update({'mask_path': self.mask_path, 'mask_key': self.mask_key})
+
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end,
                                              block_list_path=block_list_path)
@@ -215,15 +219,17 @@ def _apply_watershed(input_, dt, config, mask=None):
             seeds = _make_seeds(dtz, config)
             hmap = _make_hmap(input_[z], dtz, alpha, sigma_weights)
             wsz, max_id = vu.watershed(hmap, seeds=seeds, size_filter=size_filter)
+
             # mask seeds if we have a mask
             if mask is None:
                 wsz += offset
             else:
-                wsz[mask[z]] = 0
-                inv_mask = np.logical_not(mask[z])
+                maskz = mask[z]
+                wsz[np.logical_not(maskz)] = 0
                 # NOTE we might have no pixels in the mask for this slice
-                max_id = int(wsz[inv_mask].max()) if inv_mask.sum() > 0 else 0
-                wsz[inv_mask] += offset
+                max_id = int(wsz[maskz].max()) if maskz.sum() > 0 else 0
+                wsz[maskz] += offset
+
             ws[z] = wsz
             offset += max_id
 
@@ -234,7 +240,7 @@ def _apply_watershed(input_, dt, config, mask=None):
         ws, max_id = vu.watershed(hmap, seeds, size_filter=size_filter)
         # check if we have a mask
         if mask is not None:
-            ws[mask] = 0
+            ws[np.logical_not(mask)] = 0
     return ws
 
 
@@ -277,22 +283,19 @@ def _ws_block(blocking, block_id, ds_in, ds_out, mask, config):
                                              config)
     # get the mask and check if we have any pixels
     if mask is None:
-        in_mask = out_mask = None
+        in_mask = None
     else:
         in_mask = mask[input_bb].astype('bool')
         out_mask = in_mask[inner_bb]
         if np.sum(out_mask) == 0:
             fu.log_block_success(block_id)
             return
+
     # read the input
     input_ = _read_data(ds_in, input_bb, config)
-
-    if mask is None:
-        inv_mask = None
-    else:
+    if in_mask is not None:
         # mask the input
-        inv_mask = np.logical_not(in_mask)
-        input_[inv_mask] = 1
+        input_[np.logical_not(in_mask)] = 1
 
     # apply distance transform
     dt = _apply_dt(input_, config)
@@ -302,7 +305,7 @@ def _ws_block(blocking, block_id, ds_in, ds_out, mask, config):
         return
 
     # -> apply ws and write the results to the inner volume
-    ws = _apply_watershed(input_, dt, config, inv_mask)
+    ws = _apply_watershed(input_, dt, config, in_mask)
 
     # if we have a halo, we need to run connected components
     if output_bb != input_bb:
@@ -313,10 +316,10 @@ def _ws_block(blocking, block_id, ds_in, ds_out, mask, config):
     # get offset to make new seeds unique between blocks
     # (we need to relabel later to make processing efficient !)
     offset = block_id * np.prod(blocking.blockShape)
-    if mask is None:
+    if in_mask is None:
         ws += offset
     else:
-        ws[mask] += offset
+        ws[in_mask] += offset
 
     # write result and log block success
     ds_out[output_bb] = ws

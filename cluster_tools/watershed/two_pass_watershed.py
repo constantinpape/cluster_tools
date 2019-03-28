@@ -82,6 +82,9 @@ class TwoPassWatershedBase(luigi.Task):
         ws_config.update({'input_path': self.input_path, 'input_key': self.input_key,
                           'output_path': self.output_path, 'output_key': self.output_key,
                           'block_shape': block_shape})
+        if self.mask_path != '':
+            assert self.mask_key != ''
+            ws_config.update({'mask_path': self.mask_path, 'mask_key': self.mask_key})
 
         blocking = nt.blocking([0, 0, 0], list(shape), list(block_shape))
         block_lists = vu.make_checkerboard_block_lists(blocking, roi_begin, roi_end)
