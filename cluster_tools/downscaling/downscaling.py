@@ -10,6 +10,7 @@ import numpy as np
 import luigi
 import vigra
 import nifty.tools as nt
+from skimage.measure import block_reduce
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -94,8 +95,9 @@ class DownscalingBase(luigi.Task):
 
         # make sure that we have order 0 downscaling if our datatype is not interpolatable
         library = task_config.get('library', 'vigra')
-        assert library == 'vigra', "Downscaling is only supported with vigra"
+        assert library in ('vigra', 'skimage'), "Downscaling is only supported with vigra or skimage"
         if dtype not in self.interpolatable_types:
+            assert library == 'vigra', "datatype %s is not interpolatable, set library to vigra" % dtype
             opts = task_config.get('library_kwargs', {})
             opts = {} if opts is None else opts
             order = opts.get('order', None)
@@ -213,12 +215,8 @@ class DownscalingLSF(DownscalingBase, LSFTask):
 
 
 def _ds_vol(x, out_shape, sampler, scale_factor, dtype):
-    if isinstance(scale_factor, int):
-        out = sampler(x, shape=out_shape)
-    else:
-        out = np.zeros(out_shape, dtype='float32')
-        for z in range(out_shape[0]):
-            out[z] = sampler(x[z], shape=out_shape[1:])
+    sample_2d = not isinstance(scale_factor, int)
+    out = sampler(x, out_shape, sample_2d)
     if np.dtype(dtype) in (np.dtype('uint8'), np.dtype('uint16')):
         max_val = np.iinfo(np.dtype(dtype)).max
         np.clip(out, 0, max_val, out=out)
@@ -291,6 +289,22 @@ def _ds_block(blocking, block_id, ds_in, ds_out, scale_factor, halo, sampler):
     fu.log_block_success(block_id)
 
 
+# wrap vigra.sampling.resize
+def _ds_vigra(inp, output_shape, sample_2d, **vigra_kwargs):
+    if sample_2d:
+        out = np.zeros(output_shape, dtype='float32')
+        for z in range(output_shape[0]):
+            out[z] = vigra.sampling.resize(inp[z], shape=output_shape[1:], **vigra_kwargs)
+        return out
+    else:
+        return vigra.sampling.resize(inp, output_shape, **vigra_kwargs)
+
+
+# wrap skimage block_reduce
+def _ds_skimage(inp, output_shape, sample_2d, block_size, func):
+    return block_reduce(inp, block_size=block_size, func=func)
+
+
 def _submit_blocks(ds_in, ds_out, block_shape, block_list,
                    scale_factor, halo, library,
                    library_kwargs, n_threads):
@@ -300,7 +314,15 @@ def _submit_blocks(ds_in, ds_out, block_shape, block_list,
     if len(shape) == 4:
         shape = shape[1:]
     blocking = nt.blocking([0, 0, 0], shape, block_shape)
-    sampler = partial(vigra.sampling.resize, **library_kwargs)
+    if library == 'vigra':
+        sampler = partial(_ds_vigra, **library_kwargs)
+    elif library == 'skimage':
+        sk_scale = (scale_factor,) * 3 if isinstance(scale_factor, int) else tuple(scale_factor)
+        ds_function = library_kwargs.get('function', 'mean')
+        ds_function = getattr(np, ds_function)
+        sampler = partial(_ds_skimage, block_size=sk_scale, func=ds_function)
+    else:
+        raise ValueError("Invalid library %s, only vigra and skimage are supported" % library)
 
     if n_threads <= 1:
         for block_id in block_list:

@@ -278,8 +278,7 @@ class DownscalingWorkflow(WorkflowBase):
                 os.makedirs(os.path.split(os.path.join(self.input_path, trgt))[0], exist_ok=True)
                 src_path = os.path.abspath(os.path.realpath(os.path.join(self.input_path, self.input_key)))
                 trgt_path = os.path.abspath(os.path.realpath(os.path.join(self.input_path, trgt)))
-                os.symlink(src_path,
-                           trgt_path)
+                os.symlink(src_path, trgt_path)
 
     def _have_scale(self, scale):
         key = self.get_scale_key(scale)
