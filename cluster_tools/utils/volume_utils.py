@@ -222,10 +222,23 @@ class InterpolatedVolume(object):
 
         self.interpol_function = partial(vigra.sampling.resize, order=spline_order)
 
-    # TODO this does not support singleton dimension, need to somehow catch this
     def _interpolate(self, data, shape):
+        # vigra can't deal with singleton dimensions, so we need to handle this seperately
+        have_squeezed = False
+        # check for singleton axes
+        singletons = tuple(sh == 1 for sh in data.shape)
+        if any(singletons):
+            assert all(sh == 1 for is_single, sh in zip(singletons, shape) if is_single)
+            inflate = tuple(slice(None) if sh > 1 else None for sh in data.shape)
+            data = data.squeeze()
+            shape = tuple(sh for is_single, sh in zip(singletons, shape) if not is_single)
+            have_squeezed = True
+
         data = self.interpol_function(data.astype('float32'), shape=shape)
         np.clip(data, self.min, self.max, out=data)
+
+        if have_squeezed:
+            data = data[inflate]
         return data.astype(self.dtype)
 
     def _normalize_index(self, index):
@@ -249,10 +262,15 @@ class InterpolatedVolume(object):
         ret_shape = tuple(ind.stop - ind.start for ind in index)
         index_ = tuple(slice(int(floor(ind.start * sc)),
                              int(ceil(ind.stop * sc))) for ind, sc in zip(index, self.scale))
-        # vigra can't deal with singleton dimension
+
+        # check if we have a singleton in the return shape
+        singletons = tuple(sh == 1 for sh in ret_shape)
+
         data_shape = tuple(idx.stop - idx.start for idx in index_)
-        index_ = tuple(slice(idx.start, idx.stop) if sh > 1 else
-                       slice(idx.start, idx.stop + 1) for idx, sh in zip(index_, data_shape))
+        # remove singletons from data iff axis is not singleton in return data
+        index_ = tuple(slice(idx.start, idx.stop) if sh > 1 or is_single else
+                       slice(idx.start, idx.stop + 1)
+                       for idx, sh, is_single in zip(index_, data_shape, singletons))
         data = self.volume[index_]
 
         # speed ups for empty blocks and masks
