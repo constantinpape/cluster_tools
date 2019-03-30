@@ -259,12 +259,18 @@ class InterpolatedVolume(object):
 
     def __getitem__(self, index):
         index = self._normalize_index(index)
+        # get the return shape and singletons
         ret_shape = tuple(ind.stop - ind.start for ind in index)
-        index_ = tuple(slice(int(floor(ind.start * sc)),
-                             int(ceil(ind.stop * sc))) for ind, sc in zip(index, self.scale))
+        singletons = tuple(sh == 1 for sh in ret_shape)
+
+        # get the donwsampled index; respecting singletons
+        starts = tuple(int(floor(ind.start * sc)) for ind, sc in zip(index, self.scale))
+        stops = tuple(sta + 1 if is_single else int(ceil(ind.stop * sc))
+                      for ind, sc, sta, is_single in zip(index, self.scale,
+                                                         starts, singletons))
+        index_ = tuple(slice(sta, sto) for sta, sto in zip(starts, stops))
 
         # check if we have a singleton in the return shape
-        singletons = tuple(sh == 1 for sh in ret_shape)
 
         data_shape = tuple(idx.stop - idx.start for idx in index_)
         # remove singletons from data iff axis is not singleton in return data
