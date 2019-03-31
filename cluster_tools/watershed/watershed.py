@@ -51,7 +51,7 @@ class WatershedBase(luigi.Task):
                        'sigma_weights': 2., 'halo': [0, 0, 0],
                        'channel_begin': 0, 'channel_end': None,
                        'agglomerate_channels': 'mean', 'alpha': 0.8,
-                       'invert_inputs': False, 'non_maximum_suppression': True})
+                       'invert_inputs': False, 'non_maximum_suppression': False})
         return config
 
     def clean_up_for_retry(self, block_list):
