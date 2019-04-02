@@ -163,21 +163,15 @@ class CopyVolumeLSF(CopyVolumeBase, LSFTask):
 #
 
 
-# TODO this will fail if casting to float !
-# TODO will yield incorrect results for signed types ...
 def cast_type(data, dtype):
     if np.dtype(data.dtype) == np.dtype(dtype):
         return data
+    # special casting for uint8
+    elif np.dtype(dtype) == 'uint8':
+        data = vu.normalize(data)
+        data *= 255
+        return data.astype('uint8')
     else:
-        type_info1 = np.iinfo(np.dtype(dtype))
-        dmin1, dmax1 = type_info1.min, type_info1.max
-
-        type_info2 = np.iinfo(np.dtype(data.dtype))
-        _, dmax2 = type_info2.min, type_info2.max
-
-        data = data.astype('float64')
-        data *= (dmax1 / dmax2)
-        data = np.clip(data, dmin1, dmax1)
         return data.astype(dtype)
 
 

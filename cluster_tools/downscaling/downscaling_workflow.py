@@ -353,6 +353,7 @@ class PainteraToBdvWorkflow(WorkflowBase):
     input_path = luigi.Parameter()
     input_key_prefix = luigi.Parameter()
     output_path = luigi.Parameter()
+    dtype = luigi.Parameter(default=None)
     metadata_dict = luigi.DictParameter(default={})
     skip_existing_levels = luigi.BoolParameter(default=True)
 
@@ -424,7 +425,7 @@ class PainteraToBdvWorkflow(WorkflowBase):
                             input_path=self.input_path, input_key=in_key,
                             output_path=self.output_path, output_key=out_key,
                             prefix=prefix, effective_scale_factor=effective_scale,
-                            dependency=dep)
+                            dtype=self.dtype, dependency=dep)
 
         # get the metadata for this dataset
         # if we have the `resolution` or `offset` attribute
