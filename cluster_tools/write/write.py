@@ -239,7 +239,13 @@ def _load_assignments(path, key, n_threads):
             # if we have 2d node_labels, these correspond to an assignment table
             # and we turn them into a dict for efficient downstream processing
             if node_labels.ndim == 2:
-                node_labels = dict(zip(node_labels[:, 0], node_labels[:, 1]))
+                if node_labels.shape[1] == 2:
+                    node_labels = dict(zip(node_labels[:, 0], node_labels[:, 1]))
+                elif node_labels.shape[0] == 2:
+                    node_labels = dict(zip(node_labels[0, :], node_labels[1, :]))
+                else:
+                    raise ValueError("Invalid shape for 2d node labels")
+
     return node_labels
 
 
