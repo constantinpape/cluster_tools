@@ -50,7 +50,8 @@ class InferenceBase(luigi.Task):
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
         config.update({'dtype': 'uint8', 'compression': 'gzip', 'chunks': None,
-                       'gpu_type': '2080Ti', 'set_visible_device': False})
+                       'gpu_type': '2080Ti', 'device_mapping': None,
+                       'tda_config': {}})
         return config
 
     def clean_up_for_retry(self, block_list):
@@ -345,13 +346,20 @@ def inference(job_id, config_path):
     output_keys = config['output_keys']
     channel_mapping = config['channel_mapping']
 
-    if config.get('set_visible_device', False):
-        os.environ['CUDA_VISIBLE_DEVICES'] = str(job_id)
-        fu.log("setting cuda visible devices to %i" % job_id)
+    device_mapping = config.get('device_mapping', None)
+    if device_mapping is not None:
+        device_id = device_mapping[str(job_id)]
+        os.environ['CUDA_VISIBLE_DEVICES'] = str(device_id)
+        fu.log("setting cuda visible devices to %i" % device_id)
     gpu = 0
 
+    tda_config = config.get('tda_config', {})
+    if tda_config:
+        fu.log("Using test-time-data-augmentation with config:")
+        fu.log(str(tda_config))
+
     fu.log("Loading model from %s" % checkpoint_path)
-    predict = get_predictor(framework)(checkpoint_path, halo, gpu=gpu)
+    predict = get_predictor(framework)(checkpoint_path, halo, gpu=gpu, **tda_config)
     fu.log("Have model")
     preprocess = get_preprocessor(framework)
 

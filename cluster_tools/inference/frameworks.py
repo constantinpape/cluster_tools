@@ -18,13 +18,24 @@ try:
 except ImportError:
     Trainer = None
 
+try:
+    from neurofire.inference.test_time_augmentation import TestTimeAugmenter
+except ImportError:
+    TestTimeAugmenter = None
+
 
 #
 # Prediction classes
 #
 
 class PytorchPredicter(object):
-    def __init__(self, model_path, halo, gpu=0, prep_model=None):
+
+    @staticmethod
+    def build_augmenter(augmentation_mode, augmentation_dim):
+        return TestTimeAugmenter.default_tda(augmentation_dim, augmentation_mode)
+
+    def __init__(self, model_path, halo, gpu=0, prep_model=None, **augmentation_kwargs):
+        # load the model and prep it if specified
         assert os.path.exists(model_path), model_path
         self.model = torch.load(model_path)
         self.model.eval()
@@ -32,8 +43,16 @@ class PytorchPredicter(object):
         self.model.cuda(self.gpu)
         if prep_model is not None:
             self.model = prep_model(self.model)
+        #
         self.halo = halo
         self.lock = threading.Lock()
+        # build the test-time-augmenter if we have augmentation kwargs
+        if augmentation_kwargs:
+            assert TestTimeAugmenter is not None, "Need neurofire for test-time-augmentation"
+            self.offsets = augmentation_kwargs.pop('offsets', None)
+            self.augmenter = self.build_augmenter(**augmentation_kwargs)
+        else:
+            self.augmenter = None
 
     def crop(self, out):
         shape = out.shape if out.ndim == 3 else out.shape[1:]
@@ -42,29 +61,33 @@ class PytorchPredicter(object):
             bb = (slice(None),) + bb
         return out[bb]
 
-    def __call__(self, input_data):
-        assert isinstance(input_data, np.ndarray)
-        assert input_data.ndim == 3
-        # Note: in the code that follows, the GPU is locked for the 3 steps:
-        # CPU -> GPU, GPU inference, GPU -> CPU. It may well be that we get
-        # better performance by only locking in step 2, or steps 1-2, or steps
-        # 2-3. We should perform this experiment and then choose the best
-        # option for our hardware (and then remove this comment! ;)
+    def apply_model(self, input_data):
         with self.lock, torch.no_grad():
-            # 1. Transfer the data to the GPU
             torch_data = torch.from_numpy(input_data[None, None]).cuda(self.gpu)
-            # 2. Run the model
             predicted_on_gpu = self.model(torch_data)
             if isinstance(predicted_on_gpu, tuple):
                 predicted_on_gpu = predicted_on_gpu[0]
-            # 3. Transfer the results to the CPU
             out = predicted_on_gpu.cpu().numpy().squeeze()
+        return out
+
+    def apply_model_with_augmentations(self, input_data):
+        out = self.augmenter(input_data, self.apply_model, self.offsets)
+        return out
+
+    def __call__(self, input_data):
+        assert isinstance(input_data, np.ndarray)
+        assert input_data.ndim == 3
+        if self.augmenter is None:
+            out = self.apply_model(input_data)
+        else:
+            out = self.apply_model_with_augmentations(input_data)
         out = self.crop(out)
         return out
 
 
 class InfernoPredicter(PytorchPredicter):
-    def __init__(self, model_path, halo, gpu=0, use_best=True, prep_model=None):
+    def __init__(self, model_path, halo, gpu=0, use_best=True, prep_model=None, **augmentation_kwargs):
+        # load the model and prep it if specified
         assert os.path.exists(model_path), model_path
         trainer = Trainer().load(from_directory=model_path, best=use_best)
         self.model = trainer.model.cuda(gpu)
@@ -74,6 +97,15 @@ class InfernoPredicter(PytorchPredicter):
         self.gpu = gpu
         self.halo = halo
         self.lock = threading.Lock()
+
+        # build the test-time-augmenter if we have augmentation kwargs
+        if augmentation_kwargs:
+            assert TestTimeAugmenter is not None, "Need neurofire for test-time-augmentation"
+            self.offsets = augmentation_kwargs.pop('offsets', None)
+            print(augmentation_kwargs)
+            self.augmenter = self.build_augmenter(**augmentation_kwargs)
+        else:
+            self.augmenter = None
 
 
 # TODO
