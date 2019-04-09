@@ -51,7 +51,7 @@ class InferenceBase(luigi.Task):
         config = LocalTask.default_task_config()
         config.update({'dtype': 'uint8', 'compression': 'gzip', 'chunks': None,
                        'gpu_type': '2080Ti', 'device_mapping': None,
-                       'tda_config': {}})
+                       'use_best': True, 'tda_config': {}})
         return config
 
     def clean_up_for_retry(self, block_list):
@@ -340,6 +340,7 @@ def inference(job_id, config_path):
     halo = config['halo']
     framework = config['framework']
     n_threads = config['threads_per_job']
+    use_best = config.get('use_best', True)
 
     fu.log("run iference with framework %s, with %i threads" % (framework, n_threads))
 
@@ -359,7 +360,8 @@ def inference(job_id, config_path):
         fu.log(str(tda_config))
 
     fu.log("Loading model from %s" % checkpoint_path)
-    predict = get_predictor(framework)(checkpoint_path, halo, gpu=gpu, **tda_config)
+    predict = get_predictor(framework)(checkpoint_path, halo, gpu=gpu,
+                                       use_best=use_best, **tda_config)
     fu.log("Have model")
     preprocess = get_preprocessor(framework)
 
