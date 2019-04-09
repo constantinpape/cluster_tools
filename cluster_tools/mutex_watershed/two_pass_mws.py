@@ -174,6 +174,7 @@ def _mws_block_pass1(block_id, blocking,
     # get the state of the segmentation of this block
     grid_graph = su.compute_grid_graph(seg.shape, mask=bb_mask)
     affs = affs[(slice(None),) + local_bb]
+    # FIXME this function yields incorrect uv-ids !
     state_uvs, state_weights, state_attractive = grid_graph.compute_state_for_segmentation(affs, seg, offsets,
                                                                                            n_attractive_channels=3,
                                                                                            ignore_label=True)

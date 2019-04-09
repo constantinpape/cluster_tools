@@ -8,7 +8,10 @@ import numpy as np
 import h5py
 import z5py
 import vigra
+
 from scipy.ndimage.morphology import binary_erosion
+from nifty.tools import blocking
+from .knossos_wrapper import KnossosFile
 
 # use vigra filters as fallback if we don't have
 # fastfilters available
@@ -16,8 +19,6 @@ try:
     import fastfilters as ff
 except ImportError:
     import vigra.filters as ff
-
-from nifty.tools import blocking
 
 
 def is_z5(path):
@@ -36,8 +37,11 @@ def file_reader(path, mode='a'):
     elif is_h5(path):
         return h5py.File(path, mode=mode)
     else:
-        ext = os.path.splitext(path)[1][1:].lower()
-        raise RuntimeError("Invalid file format %s" % ext)
+        try:
+            return KnossosFile(path)
+        except RuntimeError:
+            ext = os.path.splitext(path)[1][1:].lower()
+            raise RuntimeError("Invalid file format %s" % ext)
 
 
 def get_shape(path, key):
