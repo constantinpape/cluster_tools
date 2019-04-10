@@ -12,6 +12,7 @@ import nifty.tools as nt
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
+from cluster_tools.utils.task_utils import DummyTask
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
@@ -38,7 +39,7 @@ class WriteBase(luigi.Task):
     assignment_path = luigi.Parameter()
     assignment_key = luigi.Parameter(default=None)
     # the task we depend on
-    dependency = luigi.TaskParameter()
+    dependency = luigi.TaskParameter(default=DummyTask())
     # we may have different write tasks,
     # so we need an identifier to keep them apart
     identifier = luigi.Parameter()
@@ -46,6 +47,13 @@ class WriteBase(luigi.Task):
 
     def requires(self):
         return self.dependency
+
+    @staticmethod
+    def default_task_config():
+        # we use this to get also get the common default config
+        config = LocalTask.default_task_config()
+        config.update({'chunks': None})
+        return config
 
     def clean_up_for_retry(self, block_list, prefix):
         super().clean_up_for_retry(block_list, prefix)
@@ -56,12 +64,16 @@ class WriteBase(luigi.Task):
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 
-        # get shape and make block config
+        # get shape and chunks
         shape = vu.get_shape(self.input_path, self.input_key)
 
+        config = self.get_task_config()
+        chunks = config.pop('chunks', None)
+        if chunks is None:
+            chunks = tuple(bs // 2 for bs in block_shape)
+            chunks = tuple(min(ch, sh) for ch, sh in zip(chunks, shape))
+
         # require output dataset
-        chunks = tuple(bs // 2 for bs in block_shape)
-        chunks = tuple(min(ch, sh) for ch, sh in zip(chunks, shape))
         with vu.file_reader(self.output_path) as f:
             if self.output_key in f:
                 chunks = f[self.output_key].chunks
@@ -69,8 +81,6 @@ class WriteBase(luigi.Task):
                                                                                          str(chunks))
             f.require_dataset(self.output_key, shape=shape, chunks=chunks,
                               compression='gzip', dtype='uint64')
-
-        n_threads = self.get_task_config().get('threads_per_core', 1)
 
         # check if input and output datasets are identical
         in_place = (self.input_path == self.output_path) and (self.input_key == self.output_key)
@@ -81,9 +91,8 @@ class WriteBase(luigi.Task):
 
         # update the config with input and output paths and keys
         # as well as block shape
-        config = {'input_path': self.input_path, 'input_key': self.input_key,
-                  'block_shape': block_shape, 'n_threads': n_threads,
-                  'assignment_path': self.assignment_path, 'assignment_key': self.assignment_key}
+        config.update({'input_path': self.input_path, 'input_key': self.input_key, 'block_shape': block_shape,
+                       'assignment_path': self.assignment_path, 'assignment_key': self.assignment_key})
         if self.offset_path != '':
             config.update({'offset_path': self.offset_path})
         # we only add output path and key if we do not write in place
@@ -280,7 +289,7 @@ def write(job_id, config_path):
 
     block_shape = config['block_shape']
     block_list = config['block_list']
-    n_threads = config['n_threads']
+    n_threads = config.get('threads_per_core', 1)
 
     # read node assignments
     assignment_path = config['assignment_path']
