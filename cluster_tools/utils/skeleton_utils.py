@@ -209,6 +209,8 @@ def write_n5(ds, skel_id, skel_vol, coordinate_offset=None):
 #
 # nml parser
 #
+# based on:
+# https://github.com/knossos-project/knossos_utils/blob/master/knossos_utils/skeleton.py
 
 
 def parse_attributes(xml_elem, parse_input):
