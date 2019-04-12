@@ -207,7 +207,7 @@ def write_n5(ds, skel_id, skel_vol, coordinate_offset=None):
 
 
 #
-# nml parser
+# nml / nmx parser
 #
 # based on:
 # https://github.com/knossos-project/knossos_utils/blob/master/knossos_utils/skeleton.py
@@ -257,10 +257,25 @@ def read_coords_from_nml(nml):
     return skeleton_coordinates
 
 
+# TODO read and return tree structure, comments etc.
+def parse_nml(nml_str):
+    # TODO figure this out
+    # read the pixel size
+    # try:
+    #     param = nml_str.getElementsByTagName("parameters")[0].getElementsByTagName("scale")[0]
+    #     file_scaling = parse_attributes(param,
+    #                                     [["x", float], ["y", float], ["z", float]])
+    # except IndexError:
+    #     # file_scaling = [1, 1, 1]
+    #     pass
+    coord_dict = read_coords_from_nml(nml_str)
+    return coord_dict
+
+
 # TODO return additional annotations etc
 # TODO figure out scaling
 def read_nml(input_path):
-    """ Read skeleton stored in nml format
+    """ Read skeleton stored in nml or nmx format
 
     NML format used by Knossos
     For details on the nml format see .
@@ -268,27 +283,32 @@ def read_nml(input_path):
     Arguments:
         input_path [str]: path to swc file
     """
-    # parse the nml format
+    # from knossos zip
     if input_path.endswith('k.zip'):
         zipper = zipfile.ZipFile(input_path)
         if 'annotation.xml' not in zipper.namelist():
             raise Exception("k.zip file does not contain annotation.xml")
         xml_string = zipper.read('annotation.xml')
         nml = minidom.parseString(xml_string)
+        out = parse_nml(nml)
+
+    # from nmx (pyKnossos)
+    elif input_path.endswith('nmx'):
+
+        out = {}
+        with zipfile.ZipFile(input_path, 'r') as zf:
+            for ff in zf.namelist():
+                if not ff.endswith('.nml'):
+                    continue
+                nml = minidom.parseString(zf.read(ff))
+                out[ff] = parse_nml(nml)
+
+    # from nml
     else:
         nml = minidom.parse(input_path)
+        out = parse_nml(nml)
 
-    # read the pixel size
-    try:
-        param = nml.getElementsByTagName("parameters")[0].getElementsByTagName("scale")[0]
-        file_scaling = parse_attributes(param,
-                                        [["x", float], ["y", float], ["z", float]])
-    except IndexError:
-        file_scaling = [1, 1, 1]
-
-    skeleton_dict = read_coords_from_nml(nml)
-    # TODO read and return tree structure
-    return skeleton_dict
+    return out
 
 
 def write_nml():
