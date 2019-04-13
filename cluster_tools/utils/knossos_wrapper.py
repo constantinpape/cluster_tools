@@ -64,6 +64,54 @@ class KnossosDataset(object):
         data = np.array(imageio.imread(path)).reshape(self._chunks)
         return data
 
+    def coords_in_roi(self, grid_id, roi):
+        # block begins and ends
+        block_begin = [gid * self.block_size for gid in grid_id]
+        block_end = [beg + ch for beg, ch in zip(block_begin, self.chunks)]
+
+        # get roi begins and ends
+        roi_begin = [rr.start for rr in roi]
+        roi_end = [rr.stop for rr in roi]
+
+        tile_bb, out_bb = [], []
+        # iterate over dimensions and find the bb coordinates
+        for dim in range(3):
+            # calculate the difference between the block begin / end
+            # and the roi begin / end
+            off_diff = block_begin[dim] - roi_begin[dim]
+            end_diff = roi_end[dim] - block_end[dim]
+
+            # if the offset difference is negative, we are at a starting block
+            # that is not completely overlapping
+            # -> set all values accordingly
+            if off_diff < 0:
+                begin_in_roi = 0  # start block -> no local offset
+                begin_in_block = -off_diff
+                # if this block is the beginning block as well as the end block,
+                # we need to adjust the local shape accordingly
+                shape_in_roi = block_end[dim] - roi_begin[dim]\
+                    if block_end[dim] <= roi_end[dim] else roi_end[dim] - roi_begin[dim]
+
+            # if the end difference is negative, we are at a last block
+            # that is not completely overlapping
+            # -> set all values accordingly
+            elif end_diff < 0:
+                begin_in_roi = block_begin[dim] - roi_begin[dim]
+                begin_in_block = 0
+                shape_in_roi = roi_end[dim] - block_begin[dim]
+
+            # otherwise we are at a completely overlapping block
+            else:
+                begin_in_roi = block_begin[dim] - roi_begin[dim]
+                begin_in_block = 0
+                shape_in_roi = self.chunks[dim]
+
+            # append to bbs
+            tile_bb.append(slice(begin_in_block, begin_in_block + shape_in_roi))
+            out_bb.append(slice(begin_in_roi, begin_in_roi + shape_in_roi))
+
+        return tuple(tile_bb), tuple(out_bb)
+
     def _load_roi(self, roi):
         # snap roi to grid
         ranges = [range(rr.start // self.block_size,
@@ -77,44 +125,8 @@ class KnossosDataset(object):
         data = np.zeros(roi_shape, dtype='uint8')
 
         def load_tile(grid_id):
-
-            grid_pos = [gid * self.block_size for gid in grid_id]
             tile_data = self.load_block(grid_id)
-            # check how the tile-date fits into data
-            left_offset = [rr.start - gp for rr, gp in zip(roi, grid_pos)]
-            has_left_offset = [0 < lo < self.block_size for lo in left_offset]
-
-            right_offset = [(gp + self.block_size) - rr.stop for rr, gp in zip(roi, grid_pos)]
-            has_right_offset = [0 < ro < self.block_size for ro in right_offset]
-            complete_overlap = not (any(has_left_offset) or any(has_right_offset))
-
-            # 1.) complete overlap
-            if complete_overlap:
-                tile_bb = np.s_[:]
-                out_bb = tuple(slice(gp - rr.start, gp + self.block_size - rr.start)
-                               for rr, gp in zip(roi, grid_pos))
-            # 2.) partial overlap
-            else:
-                tile_bb = []
-                out_bb = []
-                for ii in range(3):
-                    if has_left_offset[ii]:
-                        off = left_offset[ii]
-                        tile_bb.append(slice(off, self.block_size))
-                        out_bb.append(slice(0, self.block_size - off))
-                    elif has_right_offset[ii]:
-                        off = right_offset[ii]
-                        dimlen = roi_shape[ii]
-                        tile_bb.append(slice(0, off))
-                        out_bb.append(slice(dimlen - off, dimlen))
-                    else:
-                        tile_bb.append(slice(None))
-                        out_start = grid_pos[ii] - roi[ii].start
-                        out_bb.append(slice(out_start, out_start + self.block_size))
-
-                tile_bb = tuple(tile_bb)
-                out_bb = tuple(out_bb)
-
+            tile_bb, out_bb = self.coords_in_roi(grid_id, roi)
             data[out_bb] = tile_data[tile_bb]
 
         if self.n_threads > 1:
