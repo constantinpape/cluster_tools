@@ -1,4 +1,5 @@
 import os
+from functools import partial
 import threading
 import numpy as np
 
@@ -142,12 +143,21 @@ def normalize(data, eps=1e-4, mean=None, std=None, filter_zeros=True):
     return (data - mean) / (std + eps)
 
 
+def normalize01(data, eps=1e-4):
+    min_ = data.min()
+    max_ = data.max()
+    return (data - min_) / (max_ + eps)
+
+
 def cast(data, dtype='float32'):
     return data.astype(dtype, copy=False)
 
 
-def preprocess_torch(data, mean=None, std=None):
-    return normalize(cast(data), mean=mean, std=std)
+def preprocess_torch(data, mean=None, std=None,
+                     use_zero_mean_unit_variance=True):
+    normalizer = partial(normalize, mean=mean, std=std)\
+        if use_zero_mean_unit_variance else normalize01
+    return normalizer(cast(data))
 
 
 # TODO
