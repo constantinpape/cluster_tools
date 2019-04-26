@@ -155,7 +155,7 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
     if len(inner_edges) == 0:
         if len(nodes) > 1:
             assert removed_ignore_label,\
-			    "Can only have trivial sub-graphs for more than one node if we removed ignore label"
+                "Can only have trivial sub-graphs for more than one node if we removed ignore label"
         cut_edge_ids = outer_edges
         sub_result = None
         fu.log("Block %i: has no inner edges" % block_id)

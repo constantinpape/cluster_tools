@@ -3,7 +3,6 @@
 import os
 import sys
 import json
-import pickle
 
 import luigi
 import numpy as np
@@ -40,6 +39,13 @@ class BlockComponentsBase(luigi.Task):
     channel = luigi.Parameter(default=None)
 
     threshold_modes = ('greater', 'less', 'equal')
+
+    @staticmethod
+    def default_task_config():
+        # we use this to get also get the common default config
+        config = LocalTask.default_task_config()
+        config.update({'sigma_prefilter': 0})
+        return config
 
     def requires(self):
         return self.dependency
@@ -136,13 +142,13 @@ class BlockComponentsLSF(BlockComponentsBase, LSFTask):
 
 def _cc_block(block_id, blocking,
               ds_in, ds_out, threshold,
-              threshold_mode, channel):
+              threshold_mode, channel, sigma):
     fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
 
     bb = vu.block_to_bb(block)
     if channel is None:
-        input_ = input_[bb]
+        input_ = vu.normalize(ds_in[bb])
     else:
         block_shape = tuple(b.stop - b.start for b in bb)
         input_ = np.zeros(block_shape, dtype=ds_in.dtype)
@@ -150,6 +156,10 @@ def _cc_block(block_id, blocking,
         for chan in channel_:
             bb_inp = (slice(chan, chan + 1),) + bb
             input_ += ds_in[bb_inp].squeeze()
+
+    if sigma > 0:
+        input_ = vu.apply_filter(input_, 'gaussianSmoothing', sigma)
+        input_ = vu.normalize(input_)
 
     if threshold_mode == 'greater':
         input_ = input_ > threshold
@@ -173,7 +183,7 @@ def _cc_block(block_id, blocking,
 def _cc_block_with_mask(block_id, blocking,
                         ds_in, ds_out, threshold,
                         threshold_mode, mask,
-                        channel):
+                        channel, sigma):
     fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
@@ -186,7 +196,7 @@ def _cc_block_with_mask(block_id, blocking,
 
     bb = vu.block_to_bb(block)
     if channel is None:
-        input_ = input_[bb]
+        input_ = ds_in[bb]
     else:
         block_shape = tuple(b.stop - b.start for b in bb)
         input_ = np.zeros(block_shape, dtype=ds_in.dtype)
@@ -194,6 +204,11 @@ def _cc_block_with_mask(block_id, blocking,
         for chan in channel_:
             bb_inp = (slice(chan, chan + 1),) + bb
             input_ += ds_in[bb_inp].squeeze()
+
+    if sigma > 0:
+        input_ = vu.normalize(input_)
+        input_ = vu.apply_filter(input_, 'gaussianSmoothing', sigma)
+        input_ = vu.normalize(input_)
 
     if threshold_mode == 'greater':
         input_ = input_ > threshold
@@ -232,6 +247,8 @@ def block_components(job_id, config_path):
     threshold = config['threshold']
     threshold_mode = config['threshold_mode']
 
+    sigma = config.get('sigma_prefilter', 0)
+
     mask_path = config.get('mask_path', '')
     mask_key = config.get('mask_key', '')
 
@@ -239,8 +256,7 @@ def block_components(job_id, config_path):
 
     fu.log("Applying threshold %f with mode %s" % (threshold, threshold_mode))
 
-    with vu.file_reader(input_path, 'r') as f_in,\
-        vu.file_reader(output_path) as f_out:
+    with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
 
         ds_in = f_in[input_key]
         ds_out = f_out[output_key]
@@ -259,12 +275,13 @@ def block_components(job_id, config_path):
             mask = vu.load_mask(mask_path, mask_key, shape)
             offsets = [_cc_block_with_mask(block_id, blocking,
                                            ds_in, ds_out, threshold,
-                                           threshold_mode, mask, channel) for block_id in block_list]
+                                           threshold_mode, mask, channel,
+                                           sigma) for block_id in block_list]
 
         else:
             offsets = [_cc_block(block_id, blocking,
                                  ds_in, ds_out, threshold,
-                                 threshold_mode, channel) for block_id in block_list]
+                                 threshold_mode, channel, sigma) for block_id in block_list]
 
     offset_dict = {block_id: off for block_id, off in zip(block_list, offsets)}
     save_path = os.path.join(tmp_folder,

@@ -42,7 +42,8 @@ class FilterBlocksBase(luigi.Task):
 
     def run_impl(self):
         # get the global config and init configs
-        shebang, block_shape, roi_begin, roi_end = self.global_config_values()
+        shebang, block_shape, roi_begin, roi_end, block_list_path\
+            = self.global_config_values(with_block_list_path=True)
         self.init(shebang)
 
         # load the task config
@@ -63,8 +64,8 @@ class FilterBlocksBase(luigi.Task):
                               compression='gzip')
 
         if self.n_retries == 0:
-            block_list = vu.blocks_in_volume(shape, block_shape,
-                                             roi_begin, roi_end)
+            block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end,
+                                             block_list_path=block_list_path)
         else:
             block_list = self.block_list
             self.clean_up_for_retry(block_list)

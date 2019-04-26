@@ -49,7 +49,8 @@ class MwsBlocksBase(luigi.Task):
         return self.dependency
 
     def run_impl(self):
-        shebang, block_shape, roi_begin, roi_end = self.global_config_values()
+        shebang, block_shape, roi_begin, roi_end, block_list_path\
+            = self.global_config_values(with_block_list_path=True)
         self.init(shebang)
 
         # get shape and make block config
@@ -86,7 +87,8 @@ class MwsBlocksBase(luigi.Task):
             f.require_dataset(self.output_key,  shape=shape, dtype='uint64',
                               compression=compression, chunks=chunks)
 
-        block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+        block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end,
+                                         block_list_path=block_list_path)
 
         n_jobs = min(len(block_list), self.max_jobs)
         # prime and run the jobs
