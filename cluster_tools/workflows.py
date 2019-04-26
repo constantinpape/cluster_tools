@@ -244,6 +244,7 @@ class LiftedMulticutSegmentationWorkflow(SegmentationWorkflowBase):
     lifted_prefix = luigi.Parameter()
     # graph depth for lifted neighborhood
     nh_graph_depth = luigi.IntParameter(default=4)
+    node_ignore_label = luigi.IntParameter(default=None)
 
     # TODO different options for lifted problems
     def _lifted_problem_tasks(self, dep):
@@ -264,7 +265,8 @@ class LiftedMulticutSegmentationWorkflow(SegmentationWorkflowBase):
                                                    graph_path=self.problem_path,
                                                    graph_key=self.graph_key,
                                                    prefix=self.lifted_prefix,
-                                                   nh_graph_depth=self.nh_graph_depth)
+                                                   nh_graph_depth=self.nh_graph_depth,
+                                                   ignore_label=self.node_ignore_label)
         return dep
 
     def _lifted_multicut_tasks(self, dep):

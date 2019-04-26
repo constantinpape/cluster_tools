@@ -1,9 +1,6 @@
-import os
-import json
 import luigi
 
 from .. cluster_tasks import WorkflowBase
-from ..utils import volume_utils as vu
 from ..node_labels import NodeLabelWorkflow
 from . import sparse_lifted_neighborhood as nh_tasks
 from . import costs_from_node_labels as cost_tasks
@@ -21,6 +18,7 @@ class LiftedFeaturesFromNodeLabelsWorkflow(WorkflowBase):
     feat_out_key = luigi.Parameter()
     prefix = luigi.Parameter()
     nh_graph_depth = luigi.IntParameter(default=4)
+    ignore_label = luigi.IntParameter(default=None)
 
     def requires(self):
         # 1.) get the node labels from overlapping labels from `labels_path`
@@ -32,7 +30,8 @@ class LiftedFeaturesFromNodeLabelsWorkflow(WorkflowBase):
                                 ws_path=self.ws_path, ws_key=self.ws_key,
                                 input_path=self.labels_path, input_key=self.labels_key,
                                 prefix=self.prefix, output_path=self.output_path,
-                                output_key=labels_key, max_overlap=True)
+                                output_key=labels_key, max_overlap=True,
+                                ignore_label=self.ignore_label)
         # 2.) find the sparse lifted neighborhood based on the node overlaps
         # and the neighborhood graph depth
         nh_task = getattr(nh_tasks,
