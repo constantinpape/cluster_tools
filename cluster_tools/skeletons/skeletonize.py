@@ -8,11 +8,12 @@ from concurrent import futures
 import numpy as np
 import luigi
 import nifty.tools as nt
+# TODO use skeletor.skeletonize instead
 from skimage.morphology import skeletonize_3d
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
-import cluster_tools.utils.skeleton_utils as su
+import skeletor.io as su
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 from cluster_tools.utils.task_utils import DummyTask
 
@@ -284,6 +285,7 @@ def _skeletonize_to_n5(seg, output_path, output_key, config):
 #
 # main function
 #
+
 
 def skeletonize(job_id, config_path):
     fu.log("start processing job %i" % job_id)
