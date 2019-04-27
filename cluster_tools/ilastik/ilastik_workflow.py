@@ -1,11 +1,15 @@
 import os
-import json
 import luigi
 
 import cluster_tools.utils.volume_utils as vu
+from ..graph import GraphWorkflow
 from ..cluster_tasks import WorkflowBase
+from ..features import EdgeFeaturesWorkflow
+from .. import copy_volume as copy_tasks
+
 from . import prediction as predict_tasks
 from . import merge_predictions as merge_tasks
+from .carving import WriteCarving
 
 
 class IlastikPredictionWorkflow(WorkflowBase):
@@ -62,4 +66,64 @@ class IlastikPredictionWorkflow(WorkflowBase):
                         predict_tasks.PredictionLocal.default_task_config(),
                         'merge_predictions':
                         merge_tasks.MergePredictionsLocal.default_task_config()})
+        return configs
+
+
+class IlastikCarvingWorkflow(WorkflowBase):
+    """ Make carving project with watershed and graph
+    """
+    input_path = luigi.Parameter()
+    input_key = luigi.Parameter()
+    watershed_path = luigi.Parameter()
+    watershed_key = luigi.Parameter()
+    output_path = luigi.Parameter()
+
+    def requires(self):
+        tmp_path = os.path.join(self.tmp_folder, 'exp_data.n5')
+        graph_key = 'graph'
+        feat_key = 'feats'
+        # TODO make param ?
+        max_jobs_merge = 1
+        dep = GraphWorkflow(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
+                            max_jobs=self.max_jobs, dependency=self.dependency,
+                            input_path=self.watershed_path, input_key=self.watershed_key,
+                            graph_path=tmp_path, output_key=graph_key)
+        dep = EdgeFeaturesWorkflow(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
+                                   max_jobs=self.max_jobs, dependency=dep,
+                                   input_path=self.input_path, input_key=self.input_key,
+                                   labels_path=self.watershed_path,
+                                   labels_key=self.watershed_key,
+                                   graph_path=tmp_path, graph_key=graph_key,
+                                   output_path=tmp_path, output_key=feat_key,
+                                   max_jobs_merge=max_jobs_merge)
+        dep = WriteCarving(input_path=tmp_path, graph_key=graph_key, features_key=feat_key,
+                           output_path=self.output_path, dependency=dep)
+
+        copy_task = getattr(copy_tasks, self._get_task_name('CopyVolume'))
+
+        # copy the watershed segmentation to ilastik file
+        ilastik_seg_key = 'preprocessing/graph/labels'
+        ilastik_seg_dtype = 'uint32'  # TODO is uint32 correct ?
+        dep = copy_task(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
+                        max_jobs=1, dependency=dep,
+                        input_path=self.watershed_path, input_key=self.watershed_key,
+                        output_path=self.output_path, output_key=ilastik_seg_key,
+                        dtype=ilastik_seg_dtype)
+
+        # copy the input map to ilastik file
+        ilastik_inp_key = ''  # TODO
+        ilastik_inp_dtype = 'float32'  # TODO is float32 correct ?
+        dep = copy_task(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
+                        max_jobs=1, dependency=dep,
+                        input_path=self.input_path, input_key=self.input_key,
+                        output_path=self.output_path, output_key=ilastik_inp_key,
+                        dtype=ilastik_inp_dtype)
+        return dep
+
+    @staticmethod
+    def get_config():
+        configs = super(IlastikCarvingWorkflow, IlastikCarvingWorkflow).get_config()
+        configs.update({"copy_volume": copy_tasks.CopyVolumeLocal.default_task_config(),
+                        **EdgeFeaturesWorkflow.get_config(),
+                        **GraphWorkflow.get_config()})
         return configs
