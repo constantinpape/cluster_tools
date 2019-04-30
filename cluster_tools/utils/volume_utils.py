@@ -28,7 +28,7 @@ def is_z5(path):
 
 def is_h5(path):
     ext = os.path.splitext(path)[1][1:].lower()
-    return ext in ('h5', 'hdf5', 'hdf')
+    return ext in ('h5', 'hdf5', 'hdf', 'ilp')
 
 
 def file_reader(path, mode='a'):

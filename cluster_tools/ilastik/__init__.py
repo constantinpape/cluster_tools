@@ -1,2 +1,2 @@
-from .ilastik_workflow import IlastikPredictionWorkflow
+from .ilastik_workflow import IlastikPredictionWorkflow, IlastikCarvingWorkflow
 from .stack_predictions import StackPredictionsLocal, StackPredictionsSlurm, StackPredictionsLSF
