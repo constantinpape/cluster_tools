@@ -1,5 +1,6 @@
 import os
 import luigi
+import uuid
 
 import cluster_tools.utils.volume_utils as vu
 from ..graph import GraphWorkflow
@@ -99,9 +100,10 @@ class IlastikCarvingWorkflow(WorkflowBase):
                                    max_jobs_merge=max_jobs_merge)
 
         # write the carving graph data and metadata
+        uid = str(uuid.uuid1())
         dep = WriteCarving(input_path=tmp_path, graph_key=graph_key, features_key=feat_key,
-                           raw_path=self.input_path, raw_key=self.input_key,
-                           output_path=self.output_path, dependency=dep)
+                           raw_path=self.input_path, raw_key=self.input_key, uid=uid,
+                           output_path=self.output_path, copy_inputs=self.copy_inputs, dependency=dep)
 
         copy_task = getattr(copy_tasks, self._get_task_name('CopyVolume'))
         # copy the watershed segmentation to ilastik file
@@ -115,9 +117,8 @@ class IlastikCarvingWorkflow(WorkflowBase):
 
         # copy the input map to ilastik file
         if self.copy_inputs:
-            raise NotImplementedError("Copying inputs to project not implemented")
-            ilastik_inp_key = ''  # TODO
-            ilastik_inp_dtype = 'float32'  # TODO is float32 correct ?
+            ilastik_inp_key = 'Input Data/local_data/%s' % uid
+            ilastik_inp_dtype = 'float32'  # is float32 correct ?
             dep = copy_task(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
                             max_jobs=1, dependency=dep,
                             input_path=self.input_path, input_key=self.input_key,

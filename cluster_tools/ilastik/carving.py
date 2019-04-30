@@ -1,4 +1,5 @@
 import os
+import time
 import numpy as np
 import luigi
 import z5py
@@ -14,8 +15,9 @@ class WriteCarving(luigi.Task):
     features_key = luigi.Parameter()
     output_path = luigi.Parameter()
     dependency = luigi.TaskParameter()
-    raw_path = luigi.Parameter(default=None)
-    raw_key = luigi.Parameter(default=None)
+    raw_path = luigi.Parameter()
+    raw_key = luigi.Parameter()
+    uid = luigi.Parameter()
     copy_inputs = luigi.BoolParameter(default=False)
 
     def requires(self):
@@ -34,7 +36,7 @@ class WriteCarving(luigi.Task):
         n_nodes = graph.numberOfNodes
         n_edges = graph.numberOfEdges
         serialization = [np.array([n_nodes, n_edges,
-                                   n_nodes - 1, n_edges - 1], dtype='uint32')]
+                                   graph.maxNodeId, graph.maxEdgeId], dtype='uint32')]
         # second element: uv-ids
         serialization.append(uv_ids.flatten())
         # third element: node neighborhoods (implemented convinience function in cpp for this)
@@ -48,13 +50,14 @@ class WriteCarving(luigi.Task):
             f.create_dataset(ilastk_graph_key, data=serialization,
                              compression='gzip')
             # initialize node seed labels and result labels with zeros
-            f.create_dataset(ilastik_seed_key, shape=(n_nodes,), dtype='uint8')
-            f.create_dataset(ilastik_res_key, shape=(n_nodes,), dtype='uint8')
+            f.create_dataset(ilastik_seed_key, shape=(graph.maxNodeId + 1,), dtype='uint8')
+            f.create_dataset(ilastik_res_key, shape=(graph.maxNodeId + 1,), dtype='uint8')
+            f['preprocessing/graph'].attrs['numNodes'] = n_nodes
 
     def _write_features(self):
         f = z5py.File(self.input_path, 'r')
         ds = f[self.features_key]
-        feats = ds[:, 0]
+        feats = ds[:, 0].squeeze()
 
         # carving features have val-range 0 - 255
         feats *= 255
@@ -64,38 +67,46 @@ class WriteCarving(luigi.Task):
             f.create_dataset(ilastk_feat_key, data=feats,
                              compression='gzip')
 
-    # TODO adapt for copy_inputs = True
     def _write_input_metadata(self):
         with h5py.File(self.output_path) as f:
+            g = f.create_group('Input Data')
+            g.create_dataset('Role Names', data=[b'Raw Data', b'Overlay'])
+            g.create_dataset('StorageVersion', data='0.2')
+            g.create_group('local_data')
+
             g = f.create_group('Input Data/infos/lane0000/Raw Data')
             g.create_dataset('allowLabels', data=True)
-            g.create_dataset('axisorder', data='zyx')
+            g.create_dataset('axisorder', data=b'zyx')
+            g.create_dataset('fromstack', data=False)
+
             # PLEASE PLEASE PLEASE let this be optional
             # g.create_dataset('axistags', data=self.default_axis_tags
-            # g.create_dataset('datasetId', data=)
-            g.create_dataset('display_mode', data='default')
 
-            # TODO implement
+            g.create_dataset('datasetId', data=self.uid.encode('utf-8'))
+            g.create_dataset('display_mode', data=b'default')
+
+            path = os.path.join(self.raw_path, self.raw_key)
+            g.create_dataset('filePath', data=path.encode('utf-8'))
             if self.copy_inputs:
-                pass
+                g.create_dataset('location', data=b'ProjectInternal')
             else:
-                assert self.raw_path is not None
-                assert self.raw_key is not None
-                path = os.path.join(self.raw_path, self.raw_key)
-                g.create_dataset('filePath', data=path)
-                g.create_dataset('location', data='fileSystem')
-            g.create_dataset('nickname', data='Input')
+                g.create_dataset('location', data=b'FileSystem')
+            g.create_dataset('nickname', data=b'Input')
 
     def _write_metadata(self):
         with h5py.File(self.output_path) as f:
             # general metadata
             # name of the workflow
-            f.create_dataset('workflowName', data='Carving')
+            f.create_dataset('workflowName', data=b'Carving')
             # ilastik version
-            f.create_dataset('ilastikVersion', data='1.3.0b2')
+            f.create_dataset('ilastikVersion', data=b'1.3.0b2')
             # current applet: set to carving applet TODO find correct number
             f.create_dataset('currentApplet', data=2)
+            # time stamp
+            f.create_dataset('time', data=time.ctime().encode('utf-8'))
 
+    def _write_carving_metadata(self):
+        with h5py.File(self.output_path) as f:
             # preprocessing metadata
             f.create_dataset('preprocessing/StorageVersion', data='0.1')
             # filter id (set to gaussian) and sugma
@@ -103,13 +114,18 @@ class WriteCarving(luigi.Task):
             f.create_dataset('preprocessing/sigma', data=1.)
             # don't know what these values mean and if they are even still necessary
             f.create_dataset('preprocessing/invert_watershed_source', data=False)
-            f.create_dataset('preprocessing/watershed_source', data='filtered')
+            f.create_dataset('preprocessing/watershed_source', data=b'filtered')
+
+            # carving metadata
+            f.create_dataset('carving/StorageVersion', data='0.1')
+            f.create_group('carving/objects')
 
     def run(self):
         self._write_graph()
         self._write_features()
-        self._write_input_metadata()
         self._write_metadata()
+        self._write_input_metadata()
+        self._write_carving_metadata()
 
     def output(self):
         return luigi.LocalTarget(self.output_path)
