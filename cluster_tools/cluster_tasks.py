@@ -219,6 +219,7 @@ class BaseClusterTask(luigi.Task):
                 "roi_begin": None,
                 "roi_end": None,
                 "groupname": "kreshuk",
+                "partition": None,
                 "max_num_retries": 0,
                 "block_list_path": None}
 
@@ -394,7 +395,9 @@ class SlurmTask(BaseClusterTask):
             return "%iM" % int(mem_limit * 1000)
 
     def _write_slurm_file(self, job_prefix=None):
-        groupname = self.get_global_config().get('groupname', 'kreshuk')
+        global_config = self.get_global_config()
+        groupname = global_config.get('groupname', 'kreshuk')
+        partition = global_config.get('partition', None)
         # read and parse the relevant task config
         task_config = self.get_task_config()
         n_threads = task_config.get("threads_per_job", 1)
@@ -406,17 +409,30 @@ class SlurmTask(BaseClusterTask):
         trgt_file = os.path.join(self.tmp_folder, self.task_name + '.py')
         config_tmpl = self._config_path('$1', job_prefix)
         job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
-        # TODO set the job-name so that we can parse the squeue output properly
-        slurm_template = ("#!/bin/bash\n"
-                          "#SBATCH -A %s\n"
-                          "#SBATCH -N 1\n"
-                          "#SBATCH -c %i\n"
-                          "#SBATCH --mem %s\n"
-                          "#SBATCH -t %s\n"
-                          "#SBATCH --qos=%s\n"
-                          "%s %s") % (groupname, n_threads,
-                                      mem_limit, time_limit, qos,
-                                      trgt_file, config_tmpl)
+        if partition is None:
+            slurm_template = ("#!/bin/bash\n"
+                              "#SBATCH -A %s\n"
+                              "#SBATCH -N 1\n"
+                              "#SBATCH -c %i\n"
+                              "#SBATCH --mem %s\n"
+                              "#SBATCH -t %s\n"
+                              "#SBATCH --qos=%s\n"
+                              "%s %s") % (groupname, n_threads,
+                                          mem_limit, time_limit, qos,
+                                          trgt_file, config_tmpl)
+        else:
+            slurm_template = ("#!/bin/bash\n"
+                              "#SBATCH -A %s\n"
+                              "#SBATCH -N 1\n"
+                              "#SBATCH -c %i\n"
+                              "#SBATCH --mem %s\n"
+                              "#SBATCH -t %s\n"
+                              "#SBATCH --qos=%s\n"
+                              "#SBATCH -p=%s\n"
+                              "%s %s") % (groupname, n_threads,
+                                          mem_limit, time_limit, qos,
+                                          partition,
+                                          trgt_file, config_tmpl)
         script_path = os.path.join(self.tmp_folder, 'slurm_%s.sh' % job_name)
         with open(script_path, 'w') as f:
             f.write(slurm_template)
