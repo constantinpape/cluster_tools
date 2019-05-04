@@ -89,7 +89,7 @@ def run_mc(sample, tmp_folder, max_jobs,
              'solve_subproblems', 'reduce_problem', 'solve_global']
     for tt in tasks:
         config = configs[tt]
-        config.update({'threads_per_job': max_jobs})
+        config.update({'threads_per_job': max_jobs, 'mem_limit': 8})
         with open('./config_mc/%s.config' % tt, 'w') as f:
             json.dump(config, f)
 
