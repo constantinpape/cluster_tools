@@ -146,7 +146,8 @@ class KnossosDataset(object):
 class KnossosFile(object):
     """ Wrapper for knossos file structure
     """
-    def __init__(self, path, load_png=True):
+    # NOTE: the file mode is a dummy parameter to be consistent with other file impls
+    def __init__(self, path, mode='r', load_png=True):
         if not os.path.exists(os.path.join(path, 'mag1')):
             raise RuntimeError("Not a knossos file structure")
         self.path = path
