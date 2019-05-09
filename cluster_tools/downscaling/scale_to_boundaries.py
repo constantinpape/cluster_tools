@@ -33,7 +33,7 @@ class ScaleToBoundariesBase(luigi.Task):
     output_key = luigi.Parameter()
     boundaries_path = luigi.Parameter()
     boundaries_key = luigi.Parameter()
-    output_id = luigi.IntParameter(default=1)
+    offset = luigi.IntParameter(default=0)
     dependency = luigi.TaskParameter(default=DummyTask())
 
     allow_retry = False
@@ -70,10 +70,10 @@ class ScaleToBoundariesBase(luigi.Task):
         chunks = config.pop('chunks')
         if chunks is None:
             chunks = tuple(bs // 2 for bs in block_shape)
-        assert all(bs % ch == 0 for bs, ch in zip(block_shape, chunks))
+        assert all(bs % ch == 0 for bs, ch in zip(block_shape, chunks)), "%s, %s" % (str(block_shape), str(chunks))
         self._write_log("requiring output dataset @ %s:%s" % (self.output_path, self.output_key))
         with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, shape=shape, chunks=chunks,
+            f.require_dataset(self.output_key, shape=shape, chunks=tuple(chunks),
                               compression='gzip', dtype=dtype)
 
         # update the config with input and output paths and keys
@@ -81,12 +81,12 @@ class ScaleToBoundariesBase(luigi.Task):
         config.update({'input_path': self.input_path, 'input_key': self.input_key,
                        'output_path': self.output_path, 'output_key': self.output_key,
                        'boundaries_path': self.boundaries_path, 'boundaries_key': self.boundaries_key,
-                       'output_id': self.output_id, 'block_shape': block_shape})
+                       'offset': self.offset, 'block_shape': block_shape})
 
         block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
         self._write_log("scheduled %i blocks to run" % len(block_list))
 
-        prefix = 'obj%i' % self.output_id
+        prefix = 'offset%i' % self.offset
         # prime and run the jobs
         n_jobs = min(len(block_list), self.max_jobs)
         self.prepare_jobs(n_jobs, block_list, config, prefix)
@@ -97,7 +97,7 @@ class ScaleToBoundariesBase(luigi.Task):
         self.check_jobs(n_jobs, prefix)
 
     def output(self):
-        prefix = 'obj%i' % self.output_id
+        prefix = 'offset%i' % self.offset
         return luigi.LocalTarget(os.path.join(self.tmp_folder,
                                               self.task_name + '_%s.log' % prefix))
 
@@ -130,11 +130,16 @@ class ScaleToBoundariesLSF(ScaleToBoundariesBase, LSFTask):
 
 def _scale_block(block_id, blocking,
                  ds_in, ds_bd, ds_out,
-                 output_id, erode_by, channel):
+                 offset, erode_by, channel):
     fu.log("start processing block %i" % block_id)
 
     # load the block with halo set to 'erode_by'
-    halo = [0, erode_by, erode_by]
+    if isinstance(erode_by, int):
+        halo = [0, erode_by, erode_by]
+    else:
+        assert isinstance(erode_by, dict), 'Need int or dict'
+        max_erode = max(erode_by.values())
+        halo = [0, max_erode, max_erode]
     block = blocking.getBlockWithHalo(block_id, halo)
     in_bb = vu.block_to_bb(block.outerBlock)
     out_bb = vu.block_to_bb(block.innerBlock)
@@ -151,11 +156,14 @@ def _scale_block(block_id, blocking,
         in_bb = (slice(channel, channel + 1),) + in_bb
     hmap = ds_bd[in_bb].squeeze()
     obj, _ = vu.fit_to_hmap(obj, hmap, erode_by)
-    obj = obj[local_bb].astype('bool')
+    obj = obj[local_bb]
+
+    fg_mask = obj != 0
+    obj[fg_mask] += offset
 
     # load previous output volume, insert obj into it and save again
     out = ds_out[out_bb]
-    out[obj] = output_id
+    out[fg_mask] += obj[fg_mask]
     ds_out[out_bb] = out
     # log block success
     fu.log_block_success(block_id)
@@ -174,7 +182,7 @@ def scale_to_boundaries(job_id, config_path):
     output_key = config['output_key']
     boundaries_path = config['boundaries_path']
     boundaries_key = config['boundaries_key']
-    output_id = config['output_id']
+    offset = config['offset']
 
     # additional config
     erode_by = config['erode_by']
@@ -198,7 +206,7 @@ def scale_to_boundaries(job_id, config_path):
         for block_id in block_list:
             _scale_block(block_id, blocking,
                          ds_in, ds_bd, ds_out,
-                         output_id, erode_by, channel)
+                         offset, erode_by, channel)
 
     # log success
     fu.log_job_success(job_id)
