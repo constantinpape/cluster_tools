@@ -150,7 +150,11 @@ def _mws_block(block_id, blocking,
             return
 
     aff_bb = (slice(None),) + in_bb
-    affs = vu.normalize(ds_in[aff_bb])
+    affs = ds_in[aff_bb]
+    if affs.sum() == 0:
+        fu.log_block_success(block_id)
+        return
+    affs = vu.normalize(affs)
 
     seg = su.mutex_watershed(affs, offsets, strides=strides, mask=bb_mask,
                              randomize_strides=randomize_strides,
