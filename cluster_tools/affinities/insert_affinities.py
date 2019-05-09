@@ -43,7 +43,7 @@ class InsertAffinitiesBase(luigi.Task):
     def default_task_config():
         config = LocalTask.default_task_config()
         config.update({'erode_by': 6, 'zero_objects_list': None,
-                       'chunks': None})
+                       'chunks': None, 'dilate_by': 2})
         return config
 
     def requires(self):
@@ -118,7 +118,7 @@ def cast(input_, dtype):
     return input_.astype('uint8')
 
 
-def _insert_affinities(affs, objs, offsets):
+def _insert_affinities(affs, objs, offsets, dilate_by):
     dtype = affs.dtype
     # compute affinities to objs and bring them to our aff convention
     affs_insert, mask = compute_affinities(objs, offsets)
@@ -128,7 +128,7 @@ def _insert_affinities(affs, objs, offsets):
 
     # dilate affinity channels
     for c in range(affs_insert.shape[0]):
-        affs_insert[c] = binary_dilation(affs_insert[c], iterations=1)
+        affs_insert[c] = binary_dilation(affs_insert[c], iterations=dilate_by)
 
     # insert affinities
     affs = vu.normalize(affs)
@@ -139,7 +139,7 @@ def _insert_affinities(affs, objs, offsets):
 
 
 def _insert_affinities_block(block_id, blocking, ds_in, ds_out, objects, offsets,
-                             erode_by, zero_objects_list):
+                             erode_by, zero_objects_list, dilate_by):
     fu.log("start processing block %i" % block_id)
     halo = np.max(np.abs(offsets), axis=0).tolist()
     halo = [ha if axis == 0 else max(ha, erode_by)
@@ -176,7 +176,7 @@ def _insert_affinities_block(block_id, blocking, ds_in, ds_out, objects, offsets
             obj_ids = obj_ids[1:]
 
     # insert affinities to objs into the original affinities
-    affs = _insert_affinities(affs, objs.astype('uint64'), offsets)
+    affs = _insert_affinities(affs, objs.astype('uint64'), offsets, dilate_by)
 
     # zero out some affs if necessary
     if zero_objects_list is not None:
@@ -207,6 +207,7 @@ def insert_affinities(job_id, config_path):
 
     erode_by = config['erode_by']
     zero_objects_list = config['zero_objects_list']
+    dilate_by = config.get('dilate_by', 2)
 
     block_list = config['block_list']
     block_shape = config['block_shape']
@@ -224,7 +225,7 @@ def insert_affinities(job_id, config_path):
 
         blocking = nt.blocking([0, 0, 0], list(shape), block_shape)
         [_insert_affinities_block(block_id, blocking, ds_in, ds_out, objects, offsets,
-                                  erode_by, zero_objects_list)
+                                  erode_by, zero_objects_list, dilate_by)
          for block_id in block_list]
 
     fu.log_job_success(job_id)
