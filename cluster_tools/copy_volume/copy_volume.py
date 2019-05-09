@@ -42,7 +42,8 @@ class CopyVolumeBase(luigi.Task):
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'chunks': None, 'compression': 'gzip'})
+        config.update({'chunks': None, 'compression': 'gzip',
+                       'reduce_channels': None})
         return config
 
     def requires(self):
@@ -87,6 +88,9 @@ class CopyVolumeBase(luigi.Task):
                 out_shape = shape
         else:
             out_shape = shape
+
+        if task_config.get('reduce_channels', None) is not None and len(out_shape) == 4:
+            out_shape = out_shape[1:]
 
         compression = task_config.pop('compression', 'gzip')
         dtype = str(ds_dtype) if self.dtype is None else self.dtype
@@ -175,7 +179,7 @@ def cast_type(data, dtype):
         return data.astype(dtype)
 
 
-def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin):
+def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin, reduce_function):
     dtype = ds_out.dtype
     for block_id in block_list:
         fu.log("start processing block %i" % block_id)
@@ -197,6 +201,11 @@ def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin):
         if roi_begin is not None:
             bb = tuple(slice(b.start - off, b.stop - off)
                        for b, off in zip(bb, roi_begin))
+
+        if reduce_function is not None and data.ndim == 4:
+            data = reduce_function(data[0:3], axis=0)
+            bb = bb[1:]
+
         ds_out[bb] = cast_type(data, dtype)
         fu.log_block_success(block_id)
 
@@ -221,6 +230,11 @@ def copy_volume(job_id, config_path):
     # check if we offset by roi
     roi_begin = config.get('roi_begin', None)
 
+    # check if we reduce channels
+    reduce_function = config.get('reduce_channels', None)
+    if reduce_function is not None:
+        reduce_function = getattr(np, reduce_function)
+
     n_threads = config.get('threads_per_job', 1)
 
     # submit blocks
@@ -234,7 +248,8 @@ def copy_volume(job_id, config_path):
         if len(shape) == 4:
             shape = shape[1:]
         blocking = nt.blocking([0, 0, 0], shape, block_shape)
-        _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin)
+        _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin,
+                     reduce_function)
 
     # log success
     fu.log_job_success(job_id)
