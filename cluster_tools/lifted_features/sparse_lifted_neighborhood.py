@@ -31,26 +31,26 @@ class SparseLiftedNeighborhoodBase(luigi.Task):
     output_key = luigi.Parameter()
     prefix = luigi.Parameter()
     nh_graph_depth = luigi.IntParameter()
+    node_ignore_label = luigi.IntParameter(default=0)
+    # different modes for adding lifted edges:
+    # "all": add lifted edges between all nodes that have a label
+    # "same": add lifted edges only between nodes with the same label
+    # "different": add lifted edges only between nodes with different labels
+    mode = luigi.Parameter(default='all')
     #
     dependency = luigi.TaskParameter()
 
+    modes = ('all', 'same', 'different')
+
     def requires(self):
         return self.dependency
-
-    @staticmethod
-    def default_task_config():
-        config = LocalTask.default_task_config()
-        # different modes for adding lifted edges:
-        # "all": add lifted edges between all nodes that have a label
-        # "same": add lifted edges only between nodes with the same label
-        # "different": add lifted edges only between nodes with different labels
-        config.update({'mode': 'all'})
-        return config
 
     def run_impl(self):
         # get the global config and init configs
         shebang = self.global_config_values()[0]
         self.init(shebang)
+
+        assert self.mode in self.modes, "Invalid mode %s" % self.mode
 
         # load the task config
         config = self.get_task_config()
@@ -63,7 +63,9 @@ class SparseLiftedNeighborhoodBase(luigi.Task):
                        'node_label_key': self.node_label_key,
                        'output_path': self.output_path,
                        'output_key': self.output_key,
-                       'nh_graph_depth': self.nh_graph_depth})
+                       'nh_graph_depth': self.nh_graph_depth,
+                       'node_ignore_label': self.node_ignore_label,
+                       'mode': self.mode})
 
         # prime and run the jobs
         self.prepare_jobs(1, None, config, self.prefix)
@@ -119,6 +121,7 @@ def sparse_lifted_neighborhood(job_id, config_path):
 
     n_threads = config.get('threads_per_job', 1)
     graph_depth = config['nh_graph_depth']
+    node_ignore_label = config['node_ignore_label']
 
     mode = config.get('mode', 'all')
     fu.log("lifted nh mode set to %s, depth set to %i" % (mode, graph_depth))
@@ -127,7 +130,7 @@ def sparse_lifted_neighborhood(job_id, config_path):
     ndist.computeLiftedNeighborhoodFromNodeLabels(os.path.join(graph_path, graph_key),
                                                   os.path.join(node_label_path, node_label_key),
                                                   os.path.join(output_path, output_key),
-                                                  graph_depth, n_threads, mode)
+                                                  graph_depth, n_threads, mode, node_ignore_label)
 
     fu.log_job_success(job_id)
 

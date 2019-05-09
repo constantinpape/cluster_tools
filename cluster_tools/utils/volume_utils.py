@@ -400,18 +400,29 @@ def fit_to_hmap(objs, hmap, erode_by):
         obj_ids = obj_ids[1:]
     bg_id = obj_ids[-1] + 1
 
+    if isinstance(erode_by, int):
+        max_erode = erode_by
+    else:
+        max_erode = max(erode_by.values())
+        # json always casts keys to str, so we reverse this here
+        erode_by = {int(k): v for k, v in erode_by.items()}
+
     # make seeds for one slice
     def seeds_z(objsz):
         background = objsz == 0
-        seeds = bg_id * binary_erosion(background, iterations=erode_by)
+        seeds = bg_id * binary_erosion(background, iterations=max_erode)
         seeds = seeds.astype('uint32')
         # insert seeds for the objects
         for obj_id in obj_ids:
             obj_mask = objsz == obj_id
             if obj_mask.sum() == 0:
                 continue
-            # erode the object mask for seeds, but preserve small seeds
-            obj_seeds = preserving_erosion(obj_mask, erode_by)
+            # erode the erode_byobject mask for seeds, but preserve small seeds
+            if isinstance(erode_by, int):
+                erode_obj = erode_by
+            else:
+                erode_obj = erode_by[obj_id]
+            obj_seeds = preserving_erosion(obj_mask, erode_obj)
             seeds[obj_seeds] = obj_id
         return seeds
 

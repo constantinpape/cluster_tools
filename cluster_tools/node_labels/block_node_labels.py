@@ -3,7 +3,6 @@
 import os
 import sys
 import json
-import numpy as np
 
 import luigi
 import nifty.tools as nt
@@ -32,6 +31,7 @@ class BlockNodeLabelsBase(luigi.Task):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     ignore_label = luigi.IntParameter(default=None)
+    prefix = luigi.Parameter(default='')
     #
     dependency = luigi.TaskParameter()
 
@@ -78,12 +78,17 @@ class BlockNodeLabelsBase(luigi.Task):
         n_jobs = min(len(block_list), self.max_jobs)
 
         # prime and run the jobs
-        self.prepare_jobs(n_jobs, block_list, config)
-        self.submit_jobs(n_jobs)
+        self.prepare_jobs(n_jobs, block_list, config, self.prefix)
+        self.submit_jobs(n_jobs, self.prefix)
 
         # wait till jobs finish and check for job success
         self.wait_for_jobs()
-        self.check_jobs(n_jobs)
+        self.check_jobs(n_jobs, self.prefix)
+
+    # part of the luigi API
+    def output(self):
+        return luigi.LocalTarget(os.path.join(self.tmp_folder,
+                                              self.task_name + '_%s.log' % self.prefix))
 
 
 class BlockNodeLabelsLocal(BlockNodeLabelsBase, LocalTask):

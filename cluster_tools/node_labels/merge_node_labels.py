@@ -3,8 +3,6 @@
 import os
 import sys
 import json
-import numpy as np
-from concurrent import futures
 
 import luigi
 import nifty.tools as nt
@@ -34,6 +32,7 @@ class MergeNodeLabelsBase(luigi.Task):
     max_overlap = luigi.BoolParameter(default=True)
     ignore_label = luigi.IntParameter(default=None)
     serialize_counts = luigi.BoolParameter(default=False)
+    prefix = luigi.Parameter(default='')
     #
     dependency = luigi.TaskParameter()
 
@@ -75,6 +74,7 @@ class MergeNodeLabelsBase(luigi.Task):
 
         # prime and run the jobs
         prefix = 'max_ol' if self.max_overlap else 'all_ol'
+        prefix += '_%s' % self.prefix
         n_jobs = min(self.max_jobs, len(block_list))
         self.prepare_jobs(n_jobs, block_list, config, prefix)
         self.submit_jobs(n_jobs, prefix)
@@ -86,6 +86,7 @@ class MergeNodeLabelsBase(luigi.Task):
     # part of the luigi API
     def output(self):
         max_ol_str = 'max_ol' if self.max_overlap else 'all_ol'
+        max_ol_str += '_%s' % self.prefix
         return luigi.LocalTarget(os.path.join(self.tmp_folder,
                                               self.task_name + '_%s.log' % max_ol_str))
 

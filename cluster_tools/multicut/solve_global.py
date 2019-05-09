@@ -124,6 +124,7 @@ def solve_global(job_id, config_path):
         group = f['s%i' % scale]
         graph_group = group['graph']
         ignore_label = graph_group.attrs['ignoreLabel']
+        n_nodes = graph_group.attrs['numberOfNodes']
 
         ds = graph_group['edges']
         ds.n_threads = n_threads
@@ -142,7 +143,6 @@ def solve_global(job_id, config_path):
         costs = ds[:]
         assert len(costs) == n_edges, "%i, %i" (len(costs), n_edges)
 
-    n_nodes = int(uv_ids.max()) + 1
     fu.log("creating graph with %i nodes an %i edges" % (n_nodes, len(uv_ids)))
     graph = nifty.graph.undirectedGraph(n_nodes)
     graph.insertEdges(uv_ids)

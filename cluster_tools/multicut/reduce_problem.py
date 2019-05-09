@@ -203,11 +203,13 @@ def _merge_nodes(problem_path, scale, blocking,
 def _get_new_edges(uv_ids, node_labeling, costs, accumulation_method, n_threads):
     edge_mapping = nt.EdgeMapping(uv_ids, node_labeling, numberOfThreads=n_threads)
     new_uv_ids = edge_mapping.newUvIds()
+    # NOTE this fails for unconnected nodes ...
+    # assert new_uv_ids.max() == node_labeling.max(), "%i, %i" % (new_uv_ids.max(),
+    #                                                             node_labeling.max())
+
     edge_labeling = edge_mapping.edgeMapping()
     new_costs = edge_mapping.mapEdgeValues(costs, accumulation_method,
                                            numberOfThreads=n_threads)
-    assert new_uv_ids.max() == node_labeling.max(), "%i, %i" % (new_uv_ids.max(),
-                                                                node_labeling.max())
     assert len(new_uv_ids) == len(new_costs)
     assert len(edge_labeling) == len(uv_ids)
 

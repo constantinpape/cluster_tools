@@ -18,7 +18,8 @@ class LiftedFeaturesFromNodeLabelsWorkflow(WorkflowBase):
     feat_out_key = luigi.Parameter()
     prefix = luigi.Parameter()
     nh_graph_depth = luigi.IntParameter(default=4)
-    ignore_label = luigi.IntParameter(default=None)
+    ignore_label = luigi.IntParameter(default=0)
+    mode = luigi.Parameter(default='all')
 
     def requires(self):
         # 1.) get the node labels from overlapping labels from `labels_path`
@@ -41,8 +42,8 @@ class LiftedFeaturesFromNodeLabelsWorkflow(WorkflowBase):
                       graph_path=self.graph_path, graph_key=self.graph_key,
                       node_label_path=self.output_path, node_label_key=labels_key,
                       output_path=self.output_path, output_key=self.nh_out_key,
-                      nh_graph_depth=self.nh_graph_depth,
-                      prefix=self.prefix)
+                      nh_graph_depth=self.nh_graph_depth, mode=self.mode,
+                      prefix=self.prefix, node_ignore_label=self.ignore_label)
 
         # 3.) find the lifted features based on neighborhood and node labels
         cost_task = getattr(cost_tasks,

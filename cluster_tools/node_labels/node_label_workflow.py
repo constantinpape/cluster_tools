@@ -1,9 +1,6 @@
-import os
-import json
 import luigi
 
 from .. cluster_tasks import WorkflowBase
-from ..utils import volume_utils as vu
 from . import block_node_labels as label_tasks
 from . import merge_node_labels as merge_tasks
 
@@ -34,7 +31,8 @@ class NodeLabelWorkflow(WorkflowBase):
                          input_key=self.input_key,
                          output_path=self.output_path,
                          output_key=tmp_key,
-                         ignore_label=self.ignore_label)
+                         ignore_label=self.ignore_label,
+                         prefix=self.prefix)
         merge_task = getattr(merge_tasks,
                              self._get_task_name('MergeNodeLabels'))
         dep = merge_task(max_jobs=self.max_jobs,
@@ -47,7 +45,8 @@ class NodeLabelWorkflow(WorkflowBase):
                          output_key=self.output_key,
                          max_overlap=self.max_overlap,
                          ignore_label=self.ignore_label,
-                         serialize_counts=self.serialize_counts)
+                         serialize_counts=self.serialize_counts,
+                         prefix=self.prefix)
         return dep
 
     @staticmethod
