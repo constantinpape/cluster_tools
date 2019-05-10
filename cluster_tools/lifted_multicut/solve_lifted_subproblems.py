@@ -199,7 +199,7 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
         # we only need to run lifted multicut if we have lifted edges in
         # the subgraph
         if len(inner_lifted_edges) > 0:
-            fu.log("Block %i: have lifted edges and use lifted multicut solver")
+            fu.log("Block %i: have lifted edges and use lifted multicut solver" % block_id)
             sub_lifted_uvs = nt.takeDict(mapping, lifted_uvs[inner_lifted_edges])
             sub_lifted_costs = lifted_costs[inner_lifted_edges]
 
