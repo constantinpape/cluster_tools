@@ -1,10 +1,9 @@
-import json
 from datetime import datetime
 from subprocess import check_output
 
-# Note that stdout is always piped to file, sowe can use it as logging
-# TODO log-levels
 
+# TODO log-levels
+# stdout is always piped to file, sowe can use it as logging
 def log(msg):
     print("%s: %s" % (str(datetime.now()), msg))
 

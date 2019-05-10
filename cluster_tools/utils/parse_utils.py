@@ -56,7 +56,7 @@ def parse_runtime_task(log_prefix, max_jobs, return_summary=True):
         path = log_prefix + '%i.log' % job_id
         if not os.path.exists(path):
             break
-        runtimes.append(runtime_from_log(path))
+        runtimes.append(parse_runtime(path))
     if return_summary:
         return (np.mean(runtimes), np.std(runtimes), len(runtimes))
     else:
@@ -106,7 +106,7 @@ def parse_job_lsf(log_file, job_id):
             try:
                 # get rid of the datetime prefix and check
                 msg = " ".join(ll.split()[2:])
-            except:
+            except Exception:
                 # if this fails for some reason, there is something unexpected in
                 # the log and we fail the job
                 return False
@@ -145,9 +145,9 @@ def parse_blocks_task(log_prefix, max_jobs, complete_job_list=[]):
         if job_id in complete_job_list:
             continue
 
-        path = log_prefix + '%i.log' % job_id
+        log_file = log_prefix + '%i.log' % job_id
         # log might not exist, even if this is not the last job
-        if not os.path.exists(path):
+        if not os.path.exists(log_file):
             continue
         blocks.extend(parse_blocks(log_file))
 
