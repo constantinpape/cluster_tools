@@ -3,7 +3,6 @@
 import os
 import sys
 import json
-import pickle
 
 import luigi
 import numpy as np
@@ -44,8 +43,7 @@ class SizeFilterBlocksBase(luigi.Task):
         block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
         n_jobs = min(len(block_list), self.max_jobs)
 
-        config = {'input_path': self.input_path, 'input_key': self.input_key,
-                  'tmp_folder': self.tmp_folder, 'n_jobs': n_jobs,
+        config = {'tmp_folder': self.tmp_folder, 'n_jobs': n_jobs,
                   'size_threshold': self.size_threshold}
 
         # we only have a single job to find the labeling
@@ -81,7 +79,6 @@ class SizeFilterBlocksLSF(SizeFilterBlocksBase, LSFTask):
     pass
 
 
-
 def size_filter_blocks(job_id, config_path):
 
     fu.log("start processing job %i" % job_id)
@@ -91,16 +88,13 @@ def size_filter_blocks(job_id, config_path):
         config = json.load(f)
     n_jobs = config['n_jobs']
     tmp_folder = config['tmp_folder']
-    input_path = config['input_path']
-    input_key = config['input_key']
     size_threshold = config['size_threshold']
 
-    # TODO this could be parallelized
-    unique_values = np.concatenate([np.load(os.path.join(tmp_folder, 'find_uniques_job_%i.npy' % job_id))
-                                    for job_id in range(n_jobs)])
-    count_values = np.concatenate([np.load(os.path.join(tmp_folder, 'counts_job_%i.npy' % job_id))
-                                   for job_id in range(n_jobs)])
-    uniques = np.unique(unique_values)
+    unique_values = [np.load(os.path.join(tmp_folder, 'find_uniques_job_%i.npy' % job_id))
+                     for job_id in range(n_jobs)]
+    count_values = [np.load(os.path.join(tmp_folder, 'counts_job_%i.npy' % job_id))
+                    for job_id in range(n_jobs)]
+    uniques = np.unique(np.concatenate(unique_values))
     counts = np.zeros(int(uniques[-1]) + 1, dtype='uint64')
 
     for uniques_job, counts_job in zip(unique_values, count_values):

@@ -9,12 +9,15 @@ from ..relabel import RelabelWorkflow
 from ..relabel import find_uniques as unique_tasks
 from ..node_labels import NodeLabelWorkflow
 from ..features import RegionFeaturesWorkflow
+from .. import write as write_tasks
 
 from . import size_filter_blocks as size_filter_tasks
 from . import background_size_filter as bg_tasks
 from . import filling_size_filter as filling_tasks
 from . import filter_blocks as filter_tasks
 from . import id_filter as id_tasks
+from . import orphan_assignments as orphan_tasks
+from . import graph_watershed_assignments as gws_tasks
 
 
 class SizeFilterWorkflow(WorkflowBase):
@@ -238,4 +241,133 @@ class FilterByThresholdWorkflow(WorkflowBase):
         configs = super(FilterByThresholdWorkflow, FilterByThresholdWorkflow).get_config()
         configs.update({'filter_blocks': filter_tasks.FilterBlocksLocal.default_task_config(),
                         **RegionFeaturesWorkflow.get_config()})
+        return configs
+
+
+class FilterOrphansWorkflow(WorkflowBase):
+
+    graph_path = luigi.Parameter()
+    graph_key = luigi.Parameter()
+
+    path = luigi.Parameter()
+    segmentation_key = luigi.Parameter()
+    assignment_key = luigi.Parameter()
+
+    output_path = luigi.Parameter()
+    assignment_out_key = luigi.Parameter()
+    output_key = luigi.Parameter(default=None)
+    relabel = luigi.BoolParameter(default=False)
+
+    def requires(self):
+        dep = self.dependency
+        orphan_task = getattr(orphan_tasks,
+                              self._get_task_name('OrphanAssignments'))
+        dep = orphan_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                          config_dir=self.config_dir, dependency=dep,
+                          graph_path=self.graph_path, graph_key=self.graph_key,
+                          assignment_path=self.path, assignment_key=self.assignment_key,
+                          output_path=self.path, output_key=self.assignment_out_key,
+                          relabel=self.relabel)
+        if self.output_key is not None:
+            write_task = getattr(write_tasks,
+                                 self._get_task_name('Write'))
+            dep = write_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                             config_dir=self.config_dir, dependency=dep,
+                             input_path=self.path, input_key=self.segmentation_key,
+                             output_path=self.path, output_key=self.output_key,
+                             assignment_path=self.output_path, assignment_key=self.assignment_out_key,
+                             identifier='filter-orphans')
+        return dep
+
+    @staticmethod
+    def get_config():
+        configs = super(FilterOrphansWorkflow, FilterOrphansWorkflow).get_config()
+        configs.update({'orphan_assignments': orphan_tasks.OrphanAssignmentsLocal.default_task_config(),
+                        'write': write_tasks.WriteLocal.default_task_config()})
+        return configs
+
+
+class SizeFilterAndGraphWatershedWorkflow(WorkflowBase):
+
+    problem_path = luigi.Parameter()
+    graph_key = luigi.Parameter()
+    features_key = luigi.Parameter()
+
+    #
+    path = luigi.Parameter()
+    # path to the merged segmentation
+    segmentation_key = luigi.Parameter()
+    # path to the underlying fragments
+    fragments_key = luigi.Parameter()
+    # path to the fragment segment assignment
+    assignment_key = luigi.Parameter()
+
+    # the size filter threshold
+    size_threshold = luigi.IntParameter()
+    relabel = luigi.BoolParameter(default=False)
+
+    output_path = luigi.Parameter()
+    assignment_out_key = luigi.Parameter()
+    output_key = luigi.Parameter(default=None)
+
+    def find_sizes(self, dep):
+        # find segemnts that should be merged according to the size filter
+        un_task = getattr(unique_tasks,
+                          self._get_task_name('FindUniques'))
+        dep = un_task(tmp_folder=self.tmp_folder,
+                      max_jobs=self.max_jobs,
+                      config_dir=self.config_dir,
+                      input_path=self.path,
+                      input_key=self.segmentation_key,
+                      return_counts=True,
+                      dependency=dep)
+        sf_task = getattr(size_filter_tasks,
+                          self._get_task_name('SizeFilterBlocks'))
+        dep = sf_task(tmp_folder=self.tmp_folder,
+                      max_jobs=self.max_jobs,
+                      config_dir=self.config_dir,
+                      input_path=self.path,
+                      input_key=self.segmentation_key,
+                      size_threshold=self.size_threshold,
+                      dependency=dep)
+        return dep
+
+    def requires(self):
+        dep = self.dependency
+
+        # find the sizes for all segments
+        dep = self.find_sizes(dep)
+
+        # run graph watershed to merge in all small segments
+        filter_path = os.path.join(self.tmp_folder, 'discard_ids.npy')
+        gws_task = getattr(gws_tasks,
+                           self._get_task_name('GraphWatershedAssignments'))
+        dep = gws_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                       config_dir=self.config_dir, dependency=dep,
+                       problem_path=self.problem_path, graph_key=self.graph_key,
+                       features_key=self.features_key,
+                       assignment_path=self.path, assignment_key=self.assignment_key,
+                       output_path=self.output_path, output_key=self.assignment_out_key,
+                       filter_nodes_path=filter_path,
+                       relabel=self.relabel)
+
+        if self.output_key is not None:
+            write_task = getattr(write_tasks,
+                                 self._get_task_name('Write'))
+            dep = write_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                             config_dir=self.config_dir, dependency=dep,
+                             input_path=self.path, input_key=self.fragments_key,
+                             output_path=self.path, output_key=self.output_key,
+                             assignment_path=self.output_path, assignment_key=self.assignment_out_key,
+                             identifier='size-filter-graph-ws')
+        return dep
+
+    @staticmethod
+    def get_config():
+        configs = super(SizeFilterAndGraphWatershedWorkflow,
+                        SizeFilterAndGraphWatershedWorkflow).get_config()
+        configs.update({'size_filter_blocks': size_filter_tasks.SizeFilterBlocksLocal.default_task_config(),
+                        'graph_waterhed_assignments':
+                        gws_tasks.GraphWatershedAssignmentsLocal.default_task_config(),
+                        'write': write_tasks.WriteLocal.default_task_config()})
         return configs
