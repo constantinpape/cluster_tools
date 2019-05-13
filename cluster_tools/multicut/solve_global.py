@@ -5,6 +5,7 @@ import sys
 import json
 
 import luigi
+import vigra
 import nifty
 
 import cluster_tools.utils.volume_utils as vu
@@ -165,6 +166,11 @@ def solve_global(job_id, config_path):
         initial_node_labeling[initial_node_labeling == 0] = new_max_label
         initial_node_labeling[0] = 0
 
+    # make node labeling consecutive
+    vigra.analysis.relabelConsecutive(initial_node_labeling, start_label=1, keep_zeros=True,
+                                      out=initial_node_labeling)
+
+    # write node labeling
     node_shape = (n_nodes,)
     chunks = (min(n_nodes, 524288),)
     with vu.file_reader(assignment_path) as f:
