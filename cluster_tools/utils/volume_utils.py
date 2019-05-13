@@ -393,19 +393,7 @@ def preserving_erosion(mask, erode_by):
     return eroded
 
 
-def fit_to_hmap(objs, hmap, erode_by):
-    # get object ids (excluding 0) and the new background id
-    obj_ids = np.unique(objs)
-    if 0 in obj_ids:
-        obj_ids = obj_ids[1:]
-    bg_id = obj_ids[-1] + 1
-
-    if isinstance(erode_by, int):
-        max_erode = erode_by
-    else:
-        max_erode = max(erode_by.values())
-        # json always casts keys to str, so we reverse this here
-        erode_by = {int(k): v for k, v in erode_by.items()}
+def fit_to_hmap_2d(objs, hmap, erode_by, max_erode, obj_ids, bg_id):
 
     # make seeds for one slice
     def seeds_z(objsz):
@@ -417,11 +405,8 @@ def fit_to_hmap(objs, hmap, erode_by):
             obj_mask = objsz == obj_id
             if obj_mask.sum() == 0:
                 continue
-            # erode the erode_byobject mask for seeds, but preserve small seeds
-            if isinstance(erode_by, int):
-                erode_obj = erode_by
-            else:
-                erode_obj = erode_by[obj_id]
+            # erode theobject mask for seeds, but preserve small seeds
+            erode_obj = erode_by if isinstance(erode_by, int) else erode_by[obj_id]
             obj_seeds = preserving_erosion(obj_mask, erode_obj)
             seeds[obj_seeds] = obj_id
         return seeds
@@ -443,13 +428,49 @@ def fit_to_hmap(objs, hmap, erode_by):
 
     # normalize distances and add up with hmap
     dt = 1. - normalize(dt)
-    alpha = .5
+    alpha = .8
     hmap = alpha * hmap + (1. - alpha) * dt
 
     # 2d
     objs_new = np.zeros_like(objs, dtype='uint32')
     for z in range(objs_new.shape[0]):
         objs_new[z] = vigra.analysis.watershedsNew(hmap[z], seeds=seeds[z])[0]
+
+    return objs_new, obj_ids
+
+
+def fit_to_hmap_3d(objs, hmap, erode_by, max_erode, obj_ids, bg_id):
+    background = objs == 0
+    seeds = bg_id * binary_erosion(background, iterations=max_erode)
+    seeds = seeds.astype('uint32')
+    # insert seeds for the objects
+    for obj_id in obj_ids:
+        obj_mask = objs == obj_id
+
+        # erode the object mask for seeds, but preserve small seeds
+        erode_obj = erode_by if isinstance(erode_by, int) else erode_by[obj_id]
+        obj_seeds = preserving_erosion(obj_mask, erode_obj)
+        seeds[obj_seeds] = obj_id
+
+
+def fit_to_hmap(objs, hmap, erode_by, fit_3d=True):
+    # get object ids (excluding 0) and the new background id
+    obj_ids = np.unique(objs)
+    if 0 in obj_ids:
+        obj_ids = obj_ids[1:]
+    bg_id = obj_ids[-1] + 1
+
+    if isinstance(erode_by, int):
+        max_erode = erode_by
+    else:
+        max_erode = max(erode_by.values())
+        # json always casts keys to str, so we reverse this here
+        erode_by = {int(k): v for k, v in erode_by.items()}
+
+    if fit_3d:
+        objs_new, obj_ids = fit_to_hmap_3d(objs, hmap, erode_by, max_erode, obj_ids, bg_id)
+    else:
+        objs_new, obj_ids = fit_to_hmap_2d(objs, hmap, erode_by, max_erode, obj_ids, bg_id)
 
     # set background to 0
     objs_new[objs_new == bg_id] = 0

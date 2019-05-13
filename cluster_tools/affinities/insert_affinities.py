@@ -118,6 +118,17 @@ def cast(input_, dtype):
     return input_.astype('uint8')
 
 
+def dilate(inp, iterations, dilate_2d):
+    assert inp.ndim == 3
+    if dilate_2d:
+        out = np.zeros_like(inp, dtype='float32')
+        for z in range(inp.shape[0]):
+            out[z] = binary_dilation(inp[z], iterations=iterations).astype('float32')
+        return out
+    else:
+        return binary_dilation(inp, iterations=iterations).astype('float32')
+
+
 def _insert_affinities(affs, objs, offsets, dilate_by):
     dtype = affs.dtype
     # compute affinities to objs and bring them to our aff convention
@@ -128,7 +139,7 @@ def _insert_affinities(affs, objs, offsets, dilate_by):
 
     # dilate affinity channels
     for c in range(affs_insert.shape[0]):
-        affs_insert[c] = binary_dilation(affs_insert[c], iterations=dilate_by)
+        affs_insert[c] = dilate(affs_insert[c], iterations=dilate_by, dilate_2d=True)
 
     # insert affinities
     affs = vu.normalize(affs)
