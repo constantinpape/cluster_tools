@@ -43,7 +43,7 @@ class InsertAffinitiesBase(luigi.Task):
     def default_task_config():
         config = LocalTask.default_task_config()
         config.update({'erode_by': 6, 'zero_objects_list': None,
-                       'chunks': None, 'dilate_by': 2})
+                       'chunks': None, 'dilate_by': 2, 'erode_3d': True})
         return config
 
     def requires(self):
@@ -140,6 +140,8 @@ def _insert_affinities(affs, objs, offsets, dilate_by):
     # dilate affinity channels
     for c in range(affs_insert.shape[0]):
         affs_insert[c] = dilate(affs_insert[c], iterations=dilate_by, dilate_2d=True)
+    # dirty hack: z affinities look pretty weird, so we add the averaged xy affinities
+    affs_insert[0] += np.mean(affs_insert[:, 1:3], axis=0)
 
     # insert affinities
     affs = vu.normalize(affs)
@@ -150,11 +152,15 @@ def _insert_affinities(affs, objs, offsets, dilate_by):
 
 
 def _insert_affinities_block(block_id, blocking, ds_in, ds_out, objects, offsets,
-                             erode_by, zero_objects_list, dilate_by):
+                             erode_by, erode_3d, zero_objects_list, dilate_by):
     fu.log("start processing block %i" % block_id)
     halo = np.max(np.abs(offsets), axis=0).tolist()
-    halo = [ha if axis == 0 else max(ha, erode_by)
-            for axis, ha in enumerate(halo)]
+    if erode_3d:
+        halo = [max(ha, erode_by)
+                for axis, ha in enumerate(halo)]
+    else:
+        halo = [ha if axis == 0 else max(ha, erode_by)
+                for axis, ha in enumerate(halo)]
 
     block = blocking.getBlockWithHalo(block_id, halo)
     outer_bb = vu.block_to_bb(block.outerBlock)
@@ -180,7 +186,7 @@ def _insert_affinities_block(block_id, blocking, ds_in, ds_out, objects, offsets
 
     # fit object to hmap derived from affinities via shrinking and watershed
     if erode_by > 0:
-        objs, obj_ids = vu.fit_to_hmap(objs, affs[0].copy(), erode_by)
+        objs, obj_ids = vu.fit_to_hmap(objs, affs[0].copy(), erode_by, erode_3d)
     else:
         obj_ids = np.unique(objs)
         if 0 in obj_ids:
@@ -217,8 +223,13 @@ def insert_affinities(job_id, config_path):
     objects_key = config['objects_key']
 
     erode_by = config['erode_by']
+    erode_3d = config.get('erode_3d', True)
     zero_objects_list = config['zero_objects_list']
     dilate_by = config.get('dilate_by', 2)
+
+    fu.log("Fitting objects to affinities with erosion strenght %i and erosion in 3d: %s" % (erode_by, str(erode_3d)))
+    if zero_objects_list is not None:
+        fu.log("Zeroing affinities for the objects %s" % str(zero_objects_list))
 
     block_list = config['block_list']
     block_shape = config['block_shape']
@@ -236,7 +247,7 @@ def insert_affinities(job_id, config_path):
 
         blocking = nt.blocking([0, 0, 0], list(shape), block_shape)
         [_insert_affinities_block(block_id, blocking, ds_in, ds_out, objects, offsets,
-                                  erode_by, zero_objects_list, dilate_by)
+                                  erode_by, erode_3d, zero_objects_list, dilate_by)
          for block_id in block_list]
 
     fu.log_job_success(job_id)
