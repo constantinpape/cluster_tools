@@ -1,5 +1,3 @@
-import os
-import json
 import luigi
 
 from .. cluster_tasks import WorkflowBase
@@ -13,6 +11,7 @@ class MorphologyWorkflow(WorkflowBase):
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
+    max_jobs_merge = luigi.Parameter(default=None)
     prefix = luigi.Parameter(default='')
 
     def requires(self):
@@ -31,7 +30,8 @@ class MorphologyWorkflow(WorkflowBase):
                              self._get_task_name('MergeMorphology'))
         with vu.file_reader(self.input_path) as f:
             number_of_labels = f[self.input_key].attrs['maxId'] + 1
-        dep = merge_task(max_jobs=self.max_jobs,
+        max_jobs_merge = self.max_jobs if self.max_jobs_merge is None else self.max_jobs_merge
+        dep = merge_task(max_jobs=max_jobs_merge,
                          tmp_folder=self.tmp_folder,
                          config_dir=self.config_dir,
                          input_path=self.output_path,
