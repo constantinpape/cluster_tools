@@ -393,28 +393,28 @@ def preserving_erosion(mask, erode_by):
     return eroded
 
 
-def fit_to_hmap_2d(objs, hmap, erode_by, max_erode, obj_ids, bg_id):
+def fit_seeds(objs, obj_ids, bg_id, erode_by, max_erode):
+    background = objs == 0
+    seeds = bg_id * binary_erosion(background, iterations=max_erode)
+    seeds = seeds.astype('uint32')
+    # insert seeds for the objects
+    for obj_id in obj_ids:
+        obj_mask = objs == obj_id
+        if obj_mask.sum() == 0:
+            continue
+        # erode theobject mask for seeds, but preserve small seeds
+        erode_obj = erode_by if isinstance(erode_by, int) else erode_by[obj_id]
+        obj_seeds = preserving_erosion(obj_mask, erode_obj)
+        seeds[obj_seeds] = obj_id
+    return seeds
 
-    # make seeds for one slice
-    def seeds_z(objsz):
-        background = objsz == 0
-        seeds = bg_id * binary_erosion(background, iterations=max_erode)
-        seeds = seeds.astype('uint32')
-        # insert seeds for the objects
-        for obj_id in obj_ids:
-            obj_mask = objsz == obj_id
-            if obj_mask.sum() == 0:
-                continue
-            # erode theobject mask for seeds, but preserve small seeds
-            erode_obj = erode_by if isinstance(erode_by, int) else erode_by[obj_id]
-            obj_seeds = preserving_erosion(obj_mask, erode_obj)
-            seeds[obj_seeds] = obj_id
-        return seeds
+
+def fit_to_hmap_2d(objs, hmap, erode_by, max_erode, obj_ids, bg_id):
 
     # make the seeds by binary erosion of background and foreground
     seeds = np.zeros_like(hmap, dtype='uint32')
     for z in range(seeds.shape[0]):
-        seeds[z] = seeds_z(objs[z])
+        seeds[z] = fit_seeds(objs[z], obj_ids, bg_id, erode_by, max_erode)
 
     # apply dt before watershed
     hmap = normalize(hmap)
@@ -440,17 +440,21 @@ def fit_to_hmap_2d(objs, hmap, erode_by, max_erode, obj_ids, bg_id):
 
 
 def fit_to_hmap_3d(objs, hmap, erode_by, max_erode, obj_ids, bg_id):
-    background = objs == 0
-    seeds = bg_id * binary_erosion(background, iterations=max_erode)
-    seeds = seeds.astype('uint32')
-    # insert seeds for the objects
-    for obj_id in obj_ids:
-        obj_mask = objs == obj_id
+    seeds = fit_seeds(objs, obj_ids, bg_id, erode_by, max_erode)
 
-        # erode the object mask for seeds, but preserve small seeds
-        erode_obj = erode_by if isinstance(erode_by, int) else erode_by[obj_id]
-        obj_seeds = preserving_erosion(obj_mask, erode_obj)
-        seeds[obj_seeds] = obj_id
+    # apply dt before watershed
+    hmap = normalize(hmap)
+    threshold = .3
+    threshd = (hmap > threshold).astype('uint32')
+    dt = vigra.filters.distanceTransform(threshd)
+
+    # normalize distances and add up with hmap
+    dt = 1. - normalize(dt)
+    alpha = .8
+    hmap = alpha * hmap + (1. - alpha) * dt
+
+    objs_new = vigra.analysis.watershedsNew(hmap, seeds=seeds)[0]
+    return objs_new, obj_ids
 
 
 def fit_to_hmap(objs, hmap, erode_by, fit_3d=True):

@@ -50,7 +50,8 @@ class ScaleToBoundariesBase(luigi.Task):
         # channel -  channel that will be used for multiscale inputs
         # dtype - output dtype
         # chunks - output chunks
-        config.update({'erode_by': 12, 'channel': 0, 'dtype': 'uint64', 'chunks': None})
+        config.update({'erode_by': 12, 'channel': 0, 'dtype': 'uint64', 'chunks': None,
+                       'erode_3d': True})
         return config
 
     def run_impl(self):
@@ -128,18 +129,22 @@ class ScaleToBoundariesLSF(ScaleToBoundariesBase, LSFTask):
 #
 
 
-def _scale_block(block_id, blocking,
-                 ds_in, ds_bd, ds_out,
-                 offset, erode_by, channel):
-    fu.log("start processing block %i" % block_id)
-
-    # load the block with halo set to 'erode_by'
+def compute_halo(erode_by, erode_3d):
     if isinstance(erode_by, int):
-        halo = [0, erode_by, erode_by]
+        halo = erode_by
     else:
         assert isinstance(erode_by, dict), 'Need int or dict'
-        max_erode = max(erode_by.values())
-        halo = [0, max_erode, max_erode]
+        halo = max(erode_by.values())
+    halo = 3 * [halo] if erode_3d else [0, halo, halo]
+    return halo
+
+
+def _scale_block(block_id, blocking,
+                 ds_in, ds_bd, ds_out,
+                 offset, erode_by, erode_3d, channel):
+    fu.log("start processing block %i" % block_id)
+    # load the block with halo set to 'erode_by'
+    halo = compute_halo(erode_by, erode_3d)
     block = blocking.getBlockWithHalo(block_id, halo)
     in_bb = vu.block_to_bb(block.outerBlock)
     out_bb = vu.block_to_bb(block.innerBlock)
@@ -155,7 +160,7 @@ def _scale_block(block_id, blocking,
     if ds_bd.ndim == 4:
         in_bb = (slice(channel, channel + 1),) + in_bb
     hmap = ds_bd[in_bb].squeeze()
-    obj, _ = vu.fit_to_hmap(obj, hmap, erode_by)
+    obj, _ = vu.fit_to_hmap(obj, hmap, erode_by, erode_3d)
     obj = obj[local_bb]
 
     fg_mask = obj != 0
@@ -186,6 +191,7 @@ def scale_to_boundaries(job_id, config_path):
 
     # additional config
     erode_by = config['erode_by']
+    erode_3d = config.get('erode_3d', True)
     channel = config['channel']
 
     block_shape = list(config['block_shape'])
@@ -206,7 +212,7 @@ def scale_to_boundaries(job_id, config_path):
         for block_id in block_list:
             _scale_block(block_id, blocking,
                          ds_in, ds_bd, ds_out,
-                         offset, erode_by, channel)
+                         offset, erode_by, erode_3d, channel)
 
     # log success
     fu.log_job_success(job_id)
