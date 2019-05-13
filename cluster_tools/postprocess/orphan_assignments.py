@@ -7,6 +7,7 @@ import numpy as np
 import luigi
 
 import vigra
+import nifty
 import nifty.tools as nt
 
 import cluster_tools.utils.volume_utils as vu
@@ -127,12 +128,17 @@ def orphan_assignments(job_id, config_path):
     # find all orphans = segments that have node degree one
     ids, node_degrees = np.unique(new_uv_ids, return_counts=True)
     orphans = ids[node_degrees == 1]
-    fu.log("Found %i orphans of %i nodes" % (len(orphans), n_new_nodes))
+    n_orphans = len(orphans)
+    fu.log("Found %i orphans of %i clusters" % (n_orphans, n_new_nodes))
 
-    orphan_edge_mask = np.isin(new_uv_ids, orphans).any(axis=1)
-    orphan_edges = new_uv_ids[orphan_edge_mask]
-    orphan_assignments = orphan_edges[np.logical_not(np.isin(orphan_edges, orphans))]
-    assignments[orphans] = orphan_assignments
+    # make graph for fast neighbor search
+    graph = nifty.graph.undirectedGraph(n_new_nodes)
+    graph.insertEdges(new_uv_ids)
+
+    orphan_assignments = np.array([next(graph.nodeAdjacency(orphan_id))[0]
+                                   for orphan_id in orphans],)
+    assert len(orphan_assignments) == n_orphans, "%i, %i" % (len(orphan_assignments), n_orphans)
+    assignments[orphans] = orphan_assignments.astype('uint64')
 
     if relabel:
         vigra.analysis.relabelConsecutive(assignments, out=assignments,
