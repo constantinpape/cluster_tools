@@ -247,7 +247,6 @@ class LiftedMulticutSegmentationWorkflow(SegmentationWorkflowBase):
     node_ignore_label = luigi.IntParameter(default=0)
     mode = luigi.Parameter(default='all')
 
-    # TODO different options for lifted problems
     def _lifted_problem_tasks(self, dep):
         nh_key = 's0/lifted_nh_%s' % self.lifted_prefix
         feat_key = 's0/lifted_costs_%s' % self.lifted_prefix

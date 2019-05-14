@@ -19,6 +19,7 @@ class LiftedFeaturesFromNodeLabelsWorkflow(WorkflowBase):
     prefix = luigi.Parameter()
     nh_graph_depth = luigi.IntParameter(default=4)
     ignore_label = luigi.IntParameter(default=0)
+    label_ignore_label = luigi.Parameter(default=None)
     mode = luigi.Parameter(default='all')
 
     def requires(self):
@@ -32,7 +33,7 @@ class LiftedFeaturesFromNodeLabelsWorkflow(WorkflowBase):
                                 input_path=self.labels_path, input_key=self.labels_key,
                                 prefix=self.prefix, output_path=self.output_path,
                                 output_key=labels_key, max_overlap=True,
-                                ignore_label=self.ignore_label)
+                                ignore_label=self.label_ignore_label)
         # 2.) find the sparse lifted neighborhood based on the node overlaps
         # and the neighborhood graph depth
         nh_task = getattr(nh_tasks,
