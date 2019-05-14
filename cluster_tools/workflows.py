@@ -246,6 +246,9 @@ class LiftedMulticutSegmentationWorkflow(SegmentationWorkflowBase):
     nh_graph_depth = luigi.IntParameter(default=4)
     node_ignore_label = luigi.IntParameter(default=0)
     mode = luigi.Parameter(default='all')
+    # clear labels
+    clear_labels_path = luigi.Parameter(default=None)
+    clear_labels_key = luigi.Parameter(default=None)
 
     def _lifted_problem_tasks(self, dep):
         nh_key = 's0/lifted_nh_%s' % self.lifted_prefix
@@ -267,6 +270,8 @@ class LiftedMulticutSegmentationWorkflow(SegmentationWorkflowBase):
                                                    prefix=self.lifted_prefix,
                                                    nh_graph_depth=self.nh_graph_depth,
                                                    ignore_label=self.node_ignore_label,
+                                                   clear_labels_path=self.clear_labels_path,
+                                                   clear_labels_key=self.clear_labels_key,
                                                    mode=self.mode)
         return dep
 
