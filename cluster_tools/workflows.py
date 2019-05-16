@@ -96,6 +96,7 @@ class ProblemWorkflow(WorkflowBase):
                                     output_path=self.problem_path,
                                     output_key=self.costs_key,
                                     node_label_dict=self.node_label_dict,
+                                    seg_path=self.ws_path, seg_key=self.ws_key,
                                     rf_path=self.rf_path)
         return dep
 
