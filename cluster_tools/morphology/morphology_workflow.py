@@ -25,7 +25,8 @@ class MorphologyWorkflow(WorkflowBase):
                          input_path=self.input_path,
                          input_key=self.input_key,
                          output_path=self.output_path,
-                         output_key=tmp_key)
+                         output_key=tmp_key,
+                         prefix=self.prefix)
         merge_task = getattr(merge_tasks,
                              self._get_task_name('MergeMorphology'))
         with vu.file_reader(self.input_path) as f:
