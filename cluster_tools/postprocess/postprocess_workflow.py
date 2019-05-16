@@ -367,7 +367,7 @@ class SizeFilterAndGraphWatershedWorkflow(WorkflowBase):
         configs = super(SizeFilterAndGraphWatershedWorkflow,
                         SizeFilterAndGraphWatershedWorkflow).get_config()
         configs.update({'size_filter_blocks': size_filter_tasks.SizeFilterBlocksLocal.default_task_config(),
-                        'graph_waterhed_assignments':
+                        'graph_watershed_assignments':
                         gws_tasks.GraphWatershedAssignmentsLocal.default_task_config(),
                         'write': write_tasks.WriteLocal.default_task_config()})
         return configs
