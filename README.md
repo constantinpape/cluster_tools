@@ -86,4 +86,4 @@ task = SimpleWorkflow(tmp_folder=tmp_folder, config_dir=config_dir,
                       output_path='/path/to/output.n5', output_key='data')
 luigi.build([task])
  ```
-Unfortunately, there is no proper documentation yet. Have a look at this [example](https://github.com/constantinpape/cluster_tools/blob/master/example/cremi/run_mc.py) instead ;).
+Unfortunately, there is no proper documentation yet. For more details. have a look at [this example](https://github.com/constantinpape/cluster_tools/blob/master/example/cremi/run_mc.py) instead ;).
