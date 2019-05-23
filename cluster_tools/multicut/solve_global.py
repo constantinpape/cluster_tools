@@ -125,12 +125,12 @@ def solve_global(job_id, config_path):
         group = f['s%i' % scale]
         graph_group = group['graph']
         ignore_label = graph_group.attrs['ignoreLabel']
-        n_nodes = graph_group.attrs['numberOfNodes']
 
         ds = graph_group['edges']
         ds.n_threads = n_threads
         uv_ids = ds[:]
         n_edges = len(uv_ids)
+        n_nodes = int(uv_ids.max() + 1)
 
         # we only need to load the initial node labeling if at
         # least one reduction step was performed i.e. scale > 0
