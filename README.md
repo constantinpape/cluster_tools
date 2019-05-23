@@ -49,7 +49,7 @@ This repository uses [luigi](https://github.com/spotify/luigi) for workflow mana
 We support different cluster schedulers, so far 
 - [`slurm`](https://slurm.schedmd.com/documentation.html)
 - [`lsf`](https://www.ibm.com/support/knowledgecenter/en/SSWRJV_10.1.0/lsf_welcome/lsf_kc_ss.html)
-- `local` (local exection based on `ProcessPool`)
+- `local` (local execution based on `ProcessPool`)
 
 The scheduler can be selected by the keyword `target`.
 Inter-process communication is achieved through files which are stored in a temporary folder and
