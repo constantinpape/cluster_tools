@@ -336,7 +336,7 @@ def write(job_id, config_path):
                 blocking = nt.blocking([0, 0, 0], list(shape), list(block_shape))
 
                 if offset_path is None:
-                    _write(ds_in, ds_out, blocking, block_list, n_threads, node_labels)
+                    _write(ds_in, ds_out, blocking, block_list, n_threads, node_labels, allow_empty_assignments)
                 else:
                     _write_with_offsets(ds_in, ds_out, blocking, block_list,
                                         n_threads, node_labels, offset_path, allow_empty_assignments)
