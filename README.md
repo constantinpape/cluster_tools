@@ -6,12 +6,12 @@ Supports Slurm, LSF and local execution, easy to extend to more scheduling syste
 
 ## Workflows
 
-- [Hierarchical Multicut](http:/openaccess.thecvf.com/content_ICCV_2017_workshops/papers/w1/Pape_Solving_Large_Multicut_ICCV_2017_paper.pdf) / [Hierarchical lifted Multicut](TODO)
+- [Hierarchical Multicut](http:/openaccess.thecvf.com/content_ICCV_2017_workshops/papers/w1/Pape_Solving_Large_Multicut_ICCV_2017_paper.pdf) / [Hierarchical lifted Multicut](https://arxiv.org/abs/1905.10535)
   - Distance Transform Watersheds
   - Region Adjacency Graph
   - Edge Feature Extraction from Boundary-or-Affinity Maps
   - Agglomeration via (lifted) Multicut
-- [Sparse lifted Multicut from biological priors](TODO)
+- [Sparse lifted Multicut from biological priors](https://arxiv.org/abs/1905.10535)
 - [Mutex Watershed](https://link.springer.com/chapter/10.1007/978-3-030-01225-0_34)
 - Connected Components
 - Downscaling and Pyramids
