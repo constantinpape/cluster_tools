@@ -59,7 +59,7 @@ Simplified, running a workflow from this repository looks like this:
 ```py
 import json
 import luigi
-from cluster_tools import SimpleWorkflow
+from cluster_tools import SimpleWorkflow  # this is just a mock class, not actually part of this repository
 
 # folder for temporary scripts and files
 tmp_folder = 'tmp_wf'
@@ -86,4 +86,5 @@ task = SimpleWorkflow(tmp_folder=tmp_folder, config_dir=config_dir,
                       output_path='/path/to/output.n5', output_key='data')
 luigi.build([task])
  ```
-Unfortunately, there is no proper documentation yet. For more details. have a look at [this example](https://github.com/constantinpape/cluster_tools/blob/master/example/cremi/run_mc.py) instead ;).
+For a list of the available segmentation worklfows, have a look at [this](https://github.com/constantinpape/cluster_tools/blob/master/cluster_tools/workflows.py).
+Unfortunately, there is no proper documentation yet. For more details. have a look at [this example](https://github.com/constantinpape/cluster_tools/blob/master/example/cremi/run_mc.py) instead ;)
