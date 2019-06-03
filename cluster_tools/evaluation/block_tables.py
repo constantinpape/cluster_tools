@@ -14,21 +14,23 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
 #
-# Morphology Tasks
+# Evaluation Tasks
 #
 
-class BlockMorphologyBase(luigi.Task):
-    """ BlockMorphology base class
+class BlockTablesBase(luigi.Task):
+    """ BlockTables base class
     """
 
-    task_name = 'block_morphology'
+    task_name = 'block_tables'
     src_file = os.path.abspath(__file__)
+    allow_retries = False
 
-    input_path = luigi.Parameter()
-    input_key = luigi.Parameter()
+    seg_path = luigi.Parameter()
+    seg_key = luigi.Parameter()
+    gt_path = luigi.Parameter()
+    gt_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
-    prefix = luigi.Parameter()
     #
     dependency = luigi.TaskParameter()
 
@@ -49,57 +51,52 @@ class BlockMorphologyBase(luigi.Task):
 
         # update the config with input and graph paths and keys
         # as well as block shape
-        config.update({'input_path': self.input_path,
-                       'input_key': self.input_key,
+        config.update({'seg_path': self.seg_path,
+                       'seg_key': self.seg_key,
+                       'gt_path': self.gt_path,
+                       'gt_key': self.gt_key,
                        'block_shape': block_shape,
                        'output_path': self.output_path,
                        'output_key': self.output_key})
 
+        shape = vu.get_shape(self.seg_path, self.seg_key)
+        gt_shape = vu.get_shape(self.gt_path, self.gt_key)
+        assert shape == gt_shape, "%s, %s" % (str(shape), str(gt_shape))
+
         # create output dataset
-        shape = vu.get_shape(self.input_path, self.input_key)
         with vu.file_reader(self.output_path) as f:
             f.require_dataset(self.output_key, shape=shape,
-                              dtype='float64',
+                              dtype='uint64_t',
                               chunks=tuple(block_shape),
                               compression='gzip')
 
-        if self.n_retries == 0:
-            block_list = vu.blocks_in_volume(shape, block_shape,
-                                             roi_begin, roi_end)
-        else:
-            block_list = self.block_list
-            self.clean_up_for_retry(block_list)
+        block_list = vu.blocks_in_volume(shape, block_shape,
+                                         roi_begin, roi_end)
         n_jobs = min(len(block_list), self.max_jobs)
 
         # prime and run the jobs
-        self.prepare_jobs(n_jobs, block_list, config, self.prefix)
-        self.submit_jobs(n_jobs, self.prefix)
+        self.prepare_jobs(n_jobs, block_list, config)
+        self.submit_jobs(n_jobs)
 
         # wait till jobs finish and check for job success
         self.wait_for_jobs()
-        self.check_jobs(n_jobs, self.prefix)
-
-    # part of the luigi API
-    def output(self):
-        outp = os.path.join(self.tmp_folder,
-                            "%s_%s.log" % (self.task_name, self.prefix))
-        return luigi.LocalTarget(outp)
+        self.check_jobs(n_jobs)
 
 
-class BlockMorphologyLocal(BlockMorphologyBase, LocalTask):
-    """ BlockMorphology on local machine
+class BlockTablesLocal(BlockTablesBase, LocalTask):
+    """ BlockTables on local machine
     """
     pass
 
 
-class BlockMorphologySlurm(BlockMorphologyBase, SlurmTask):
-    """ BlockMorphology on slurm cluster
+class BlockTablesSlurm(BlockTablesBase, SlurmTask):
+    """ BlockTables on slurm cluster
     """
     pass
 
 
-class BlockMorphologyLSF(BlockMorphologyBase, LSFTask):
-    """ BlockMorphology on lsf cluster
+class BlockTablesLSF(BlockTablesBase, LSFTask):
+    """ BlockTables on lsf cluster
     """
     pass
 
@@ -108,16 +105,18 @@ class BlockMorphologyLSF(BlockMorphologyBase, LSFTask):
 # Implementation
 #
 
-def _morphology_for_block(block_id, blocking, ds_in,
-                          output_path, output_key):
+def _block_table(block_id, blocking, ds_seg, ds_gt,
+                 out_path, ignore_seg, ignore_gt):
     fu.log("start processing block %i" % block_id)
     # read labels and input in this block
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
-    seg = ds_in[bb]
+
+    seg = ds_seg[bb]
+    gt = ds_gt[bb]
 
     # check if segmentation block is empty
-    if seg.sum() == 0:
+    if (gt != ignore_gt).sum() == 0:
         fu.log("block %i is empty" % block_id)
         fu.log_block_success(block_id)
         return
@@ -125,18 +124,13 @@ def _morphology_for_block(block_id, blocking, ds_in,
     chunk_id = tuple(beg // ch
                      for beg, ch in zip(block.begin,
                                         blocking.blockShape))
-    # extract and save simple morphology:
-    # - size of segments
-    # - center of mass of segments
-    # - minimum coordinates of segments
-    # - maximum coordinates of segments
-    ndist.computeAndSerializeMorphology(seg, block.begin,
-                                        os.path.join(output_path, output_key),
-                                        chunk_id)
+    ndist.computeAndSerializeContingencyTable(seg, gt,
+                                              path, chunk_id,
+                                              ignore_seg, ignore_gt)
     fu.log_block_success(block_id)
 
 
-def block_morphology(job_id, config_path):
+def block_tables(job_id, config_path):
 
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
@@ -145,25 +139,36 @@ def block_morphology(job_id, config_path):
     with open(config_path) as f:
         config = json.load(f)
 
-    input_path = config['input_path']
-    input_key = config['input_key']
+    seg_path = config['seg_path']
+    seg_key = config['seg_key']
+    gt_path = config['gt_path']
+    gt_key = config['gt_key']
+
     output_path = config['output_path']
     output_key = config['output_key']
+    out_path = os.path.join(output_path, output_key)
 
     block_shape = config['block_shape']
     block_list = config['block_list']
 
-    with vu.file_reader(input_path, 'r') as f:
-        shape = f[input_key].shape
+    ignore_seg = config.get("ignore_seg", 0)
+    ignore_gt = config.get("ignore_gt", 0)
+
+    with vu.file_reader(seg_path, 'r') as f:
+        shape = f[seg_key].shape
 
     blocking = nt.blocking([0, 0, 0],
                            list(shape),
                            list(block_shape))
 
-    with vu.file_reader(input_path, 'r') as f_in:
-        ds_in = f_in[input_key]
-        [_morphology_for_block(block_id, blocking, ds_in,
-                               output_path, output_key)
+    with vu.file_reader(seg_path, 'r') as f_seg,\
+            vu.file_reader(gt_path, 'r') as f_gt:
+        ds_seg = f_seg[seg_key]
+        ds_gt = f_gt[gt_key]
+
+        [_block_table(block_id, blocking,
+                      ds_seg, ds_gt, out_path,
+                      ignore_seg, ignore_gt)
          for block_id in block_list]
     fu.log_job_success(job_id)
 
@@ -172,4 +177,4 @@ if __name__ == '__main__':
     path = sys.argv[1]
     assert os.path.exists(path), path
     job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
-    block_morphology(job_id, path)
+    block_tables(job_id, path)
