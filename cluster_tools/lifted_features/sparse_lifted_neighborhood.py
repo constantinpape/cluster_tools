@@ -8,6 +8,7 @@ import luigi
 import nifty.distributed as ndist
 
 import cluster_tools.utils.function_utils as fu
+import cluster_tools.utils.volume_utils as vu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
@@ -125,13 +126,16 @@ def sparse_lifted_neighborhood(job_id, config_path):
 
     mode = config.get('mode', 'all')
     fu.log("lifted nh mode set to %s, depth set to %i" % (mode, graph_depth))
+    fu.log("have ignore label: %i" % node_ignore_label)
 
     fu.log("start lifted neighborhood extraction for depth %i" % graph_depth)
     ndist.computeLiftedNeighborhoodFromNodeLabels(os.path.join(graph_path, graph_key),
                                                   os.path.join(node_label_path, node_label_key),
                                                   os.path.join(output_path, output_key),
                                                   graph_depth, n_threads, mode, node_ignore_label)
-
+    with vu.file_reader(output_path, 'r') as f:
+        n_lifted = f[output_key].shape[0]
+    fu.log("extracted %i lifted edges" % n_lifted)
     fu.log_job_success(job_id)
 
 

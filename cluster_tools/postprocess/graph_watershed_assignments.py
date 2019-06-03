@@ -36,6 +36,7 @@ class GraphWatershedAssignmentsBase(luigi.Task):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     relabel = luigi.BoolParameter(default=False)
+    from_costs = luigi.BoolParameter(default=True)
     #
     dependency = luigi.TaskParameter()
 
@@ -60,6 +61,7 @@ class GraphWatershedAssignmentsBase(luigi.Task):
                        'filter_nodes_path': self.filter_nodes_path,
                        'output_path': self.output_path,
                        'output_key': self.output_key,
+                       'from_costs': self.from_costs,
                        'relabel': self.relabel})
 
         n_jobs = 1
@@ -113,6 +115,7 @@ def graph_watershed_assignments(job_id, config_path):
     output_path = config['output_path']
     output_key = config['output_key']
     relabel = config['relabel']
+    from_costs = config['from_costs']
     n_threads = config.get('threads_per_job', 1)
 
     # load the uv-ids, features and assignments
@@ -124,8 +127,17 @@ def graph_watershed_assignments(job_id, config_path):
 
         ds = f[features_key]
         ds.n_threads = n_threads
-        # TODO need to enable inversion
-        features = ds[:, 0].squeeze()
+        if ds.ndim == 2:
+            features = ds[:, 0].squeeze()
+        else:
+            features = ds[:]
+
+    if from_costs:
+        minc = features.min()
+        fu.log("Mapping costs with range %f to %f to range 0 to 1" % (minc, features.max()))
+        features -= minc
+        features /= features.max()
+        features = 1. - features
 
     with vu.file_reader(assignment_path) as f:
         ds = f[assignment_key]

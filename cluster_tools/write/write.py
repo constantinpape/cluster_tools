@@ -52,7 +52,7 @@ class WriteBase(luigi.Task):
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'chunks': None})
+        config.update({'chunks': None, 'allow_empty_assignments': False})
         return config
 
     def clean_up_for_retry(self, block_list, prefix):
@@ -145,7 +145,7 @@ class WriteLSF(WriteBase, LSFTask):
 #
 
 
-def _apply_node_labels(seg, node_labels):
+def _apply_node_labels(seg, node_labels, allow_empty_assignments):
     # choose the appropriate mapping:
     # - 1d np.array -> just apply it
     # - 2d np.array -> extract the local dict and apply
@@ -158,7 +158,11 @@ def _apply_node_labels(seg, node_labels):
         # so we make the dict as small as possible
         this_labels = np.unique(seg)
         if isinstance(node_labels, dict):
-            this_assignment = {label: node_labels[label] for label in this_labels}
+            # do we allow for assignments that are not in the assignment table?
+            if allow_empty_assignments:
+                this_assignment = {label: node_labels.get(label, label) for label in this_labels}
+            else:
+                this_assignment = {label: node_labels[label] for label in this_labels}
         else:
             this_assignment = node_labels[:, 1][np.in1d(node_labels[:, 0], this_labels)]
             this_assignment = {label: this_assignment[ii] for ii, label in enumerate(this_labels)}
@@ -167,7 +171,7 @@ def _apply_node_labels(seg, node_labels):
 
 
 def _write_block_with_offsets(ds_in, ds_out, blocking, block_id,
-                              node_labels, offsets):
+                              node_labels, offsets, allow_empty_assignments):
     fu.log("start processing block %i" % block_id)
     off = offsets[block_id]
     block = blocking.getBlock(block_id)
@@ -181,13 +185,13 @@ def _write_block_with_offsets(ds_in, ds_out, blocking, block_id,
         return
 
     seg[mask] += off
-    seg = _apply_node_labels(seg, node_labels)
+    seg = _apply_node_labels(seg, node_labels, allow_empty_assignments)
     ds_out[bb] = seg
     fu.log_block_success(block_id)
 
 
 def _write_with_offsets(ds_in, ds_out, blocking, block_list,
-                        n_threads, node_labels, offset_path):
+                        n_threads, node_labels, offset_path, allow_empty_assignments):
 
     fu.log("loading offsets from %s" % offset_path)
     with open(offset_path) as f:
@@ -197,12 +201,12 @@ def _write_with_offsets(ds_in, ds_out, blocking, block_list,
 
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(_write_block_with_offsets, ds_in, ds_out,
-                           blocking, block_id, node_labels, offsets)
+                           blocking, block_id, node_labels, offsets, allow_empty_assignments)
                  for block_id in block_list if block_id not in empty_blocks]
         [t.result() for t in tasks]
 
 
-def _write_block(ds_in, ds_out, blocking, block_id, node_labels):
+def _write_block(ds_in, ds_out, blocking, block_id, node_labels, allow_empty_assignments):
     fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
@@ -212,16 +216,16 @@ def _write_block(ds_in, ds_out, blocking, block_id, node_labels):
         fu.log_block_success(block_id)
         return
 
-    seg = _apply_node_labels(seg, node_labels)
+    seg = _apply_node_labels(seg, node_labels, allow_empty_assignments)
     ds_out[bb] = seg
     fu.log_block_success(block_id)
 
 
 def _write(ds_in, ds_out, blocking, block_list,
-           n_threads, node_labels):
+           n_threads, node_labels, allow_empty_assignments):
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(_write_block, ds_in, ds_out,
-                           blocking, block_id, node_labels)
+                           blocking, block_id, node_labels, allow_empty_assignments)
                  for block_id in block_list]
         [t.result() for t in tasks]
 
@@ -290,6 +294,7 @@ def write(job_id, config_path):
     block_shape = config['block_shape']
     block_list = config['block_list']
     n_threads = config.get('threads_per_core', 1)
+    allow_empty_assignments = config.get('allow_empty_assignments', False)
 
     # read node assignments
     assignment_path = config['assignment_path']
@@ -309,10 +314,10 @@ def write(job_id, config_path):
             blocking = nt.blocking([0, 0, 0], list(shape), list(block_shape))
 
             if offset_path is None:
-                _write(ds_in, ds_out, blocking, block_list, n_threads, node_labels)
+                _write(ds_in, ds_out, blocking, block_list, n_threads, node_labels, allow_empty_assignments)
             else:
                 _write_with_offsets(ds_in, ds_out, blocking, block_list,
-                                    n_threads, node_labels, offset_path)
+                                    n_threads, node_labels, offset_path, allow_empty_assignments)
         # write the max-label
         # for job 0
         if job_id == 0:
@@ -331,10 +336,10 @@ def write(job_id, config_path):
                 blocking = nt.blocking([0, 0, 0], list(shape), list(block_shape))
 
                 if offset_path is None:
-                    _write(ds_in, ds_out, blocking, block_list, n_threads, node_labels)
+                    _write(ds_in, ds_out, blocking, block_list, n_threads, node_labels, allow_empty_assignments)
                 else:
                     _write_with_offsets(ds_in, ds_out, blocking, block_list,
-                                        n_threads, node_labels, offset_path)
+                                        n_threads, node_labels, offset_path, allow_empty_assignments)
         else:
             with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
                 ds_in = f_in[input_key]
@@ -344,10 +349,10 @@ def write(job_id, config_path):
                 blocking = nt.blocking([0, 0, 0], list(shape), list(block_shape))
 
                 if offset_path is None:
-                    _write(ds_in, ds_out, blocking, block_list, n_threads, node_labels)
+                    _write(ds_in, ds_out, blocking, block_list, n_threads, node_labels, allow_empty_assignments)
                 else:
                     _write_with_offsets(ds_in, ds_out, blocking, block_list,
-                                        n_threads, node_labels, offset_path)
+                                        n_threads, node_labels, offset_path, allow_empty_assignments)
         # write the max-label
         # for job 0
         if job_id == 0:

@@ -2,13 +2,10 @@
 
 import os
 import sys
-import argparse
-import pickle
 import json
 
 import numpy as np
 import luigi
-import nifty.tools as nt
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -29,7 +26,8 @@ class ProbsToCostsBase(luigi.Task):
     # - ignore: set all edges connecting to a node with label to be maximally repulsive
     # - isolate : set all edges between nodes with label to be maximally attractive,
     #             all edges between nodes with and w/o label to be maximally attractive
-    label_modes = ('ignore', 'isolate')
+    # - ignore_transition: set transitions between labels to be max repulsive
+    label_modes = ('ignore', 'isolate', 'ignore_transition')
 
     # input and output volumes
     input_path = luigi.Parameter()
@@ -140,16 +138,18 @@ def _apply_node_labels(costs, uv_ids, mode, labels,
     # multiple label ids
     n_nodes = len(labels)
     max_node_id = int(uv_ids.max())
-    assert max_node_id +1 <= n_nodes, "%i, %i" % (max_node_id, n_nodes)
+    assert max_node_id + 1 <= n_nodes, "%i, %i" % (max_node_id, n_nodes)
     with_label = np.arange(n_nodes, dtype='uint64')[labels > 0]
     fu.log("number of nodes with label %i / %i" % (len(with_label), n_nodes))
     if mode == 'ignore':
+        fu.log("Node-label mode: ignore")
         # ignore mode: set all edges that connect to a node with label to max repulsive
-        edges_with_label = np.in1d(uv_ids, with_label).reshape(uv_ids.shape)
+        edges_with_label = np.isn(uv_ids, with_label)
         edges_with_label = edges_with_label.any(axis=1)
         costs[edges_with_label] = max_repulsive
     elif mode == 'isolate':
         # isolate mode: set all edges that connect to a node with label to node without label to max repulsive
+        fu.log("Node-label mode: isolate")
         # ignore mode: set all edges that connect two node with label to max attractive
         edges_with_label = np.in1d(uv_ids, with_label).reshape(uv_ids.shape)
         label_sum = edges_with_label.sum(axis=1)
@@ -159,6 +159,12 @@ def _apply_node_labels(costs, uv_ids, mode, labels,
         fu.log("number of repulsive edges: %i / %i" % (rep_edges.sum(), len(rep_edges)))
         costs[att_edges] = max_attractive
         costs[rep_edges] = max_repulsive
+    elif mode == 'ignore_transition':
+        fu.log("Node-label mode: ignore_transition")
+        labels_mapped_to_edges = labels[uv_ids]
+        transition = labels_mapped_to_edges[:, 0] != labels_mapped_to_edges[:, 1]
+        costs[transition] = max_repulsive
+        fu.log("number of repulsive edges: %i / %i" % (transition.sum(), len(transition)))
     else:
         raise RuntimeError("Invalid label mode: %s" % mode)
     return costs
@@ -200,7 +206,7 @@ def probs_to_costs(job_id, config_path):
 
     # normalize to range 0, 1
     min_, max_ = costs.min(), costs.max()
-    fu.log('input-range: %f %f' %  (min_, max_))
+    fu.log('input-range: %f %f' % (min_, max_))
     fu.log('%f +- %f' % (costs.mean(), costs.std()))
 
     if invert_inputs:
@@ -229,7 +235,7 @@ def probs_to_costs(job_id, config_path):
         if node_labels is not None:
             fu.log("have node labels")
             max_repulsive = 5 * costs.min()
-            max_attractive= 5 * costs.max()
+            max_attractive = 5 * costs.max()
             fu.log("maximally attractive edge weight %f" % max_attractive)
             fu.log("maximally repulsive edge weight %f" % max_repulsive)
             with vu.file_reader(features_path, 'r') as f:

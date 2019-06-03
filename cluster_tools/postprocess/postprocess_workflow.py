@@ -305,6 +305,7 @@ class SizeFilterAndGraphWatershedWorkflow(WorkflowBase):
     # the size filter threshold
     size_threshold = luigi.IntParameter()
     relabel = luigi.BoolParameter(default=False)
+    from_costs = luigi.BoolParameter(default=False)
 
     output_path = luigi.Parameter()
     assignment_out_key = luigi.Parameter()
@@ -349,7 +350,7 @@ class SizeFilterAndGraphWatershedWorkflow(WorkflowBase):
                        assignment_path=self.path, assignment_key=self.assignment_key,
                        output_path=self.output_path, output_key=self.assignment_out_key,
                        filter_nodes_path=filter_path,
-                       relabel=self.relabel)
+                       relabel=self.relabel, from_costs=self.from_costs)
 
         if self.output_key is not None:
             write_task = getattr(write_tasks,
@@ -367,7 +368,7 @@ class SizeFilterAndGraphWatershedWorkflow(WorkflowBase):
         configs = super(SizeFilterAndGraphWatershedWorkflow,
                         SizeFilterAndGraphWatershedWorkflow).get_config()
         configs.update({'size_filter_blocks': size_filter_tasks.SizeFilterBlocksLocal.default_task_config(),
-                        'graph_waterhed_assignments':
+                        'graph_watershed_assignments':
                         gws_tasks.GraphWatershedAssignmentsLocal.default_task_config(),
                         'write': write_tasks.WriteLocal.default_task_config()})
         return configs

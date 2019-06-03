@@ -71,7 +71,7 @@ class InsertAffinitiesBase(luigi.Task):
             chunks = vu.file_reader(self.input_path, 'r')[self.input_key].chunks
         assert all(bs % ch == 0 for bs, ch in zip(block_shape, chunks[1:]))
         with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, shape=shape, chunks=chunks,
+            f.require_dataset(self.output_key, shape=tuple(shape), chunks=tuple(chunks),
                               dtype=dtype, compression='gzip')
 
         shape = shape[1:]
@@ -141,7 +141,7 @@ def _insert_affinities(affs, objs, offsets, dilate_by):
     for c in range(affs_insert.shape[0]):
         affs_insert[c] = dilate(affs_insert[c], iterations=dilate_by, dilate_2d=True)
     # dirty hack: z affinities look pretty weird, so we add the averaged xy affinities
-    affs_insert[0] += np.mean(affs_insert[:, 1:3], axis=0)
+    affs_insert[0] += np.mean(affs_insert[1:3], axis=0)
 
     # insert affinities
     affs = vu.normalize(affs)

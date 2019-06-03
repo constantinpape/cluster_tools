@@ -3,7 +3,6 @@
 import os
 import sys
 import json
-import numpy as np
 
 import luigi
 import nifty.tools as nt
@@ -29,6 +28,7 @@ class BlockMorphologyBase(luigi.Task):
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
+    prefix = luigi.Parameter()
     #
     dependency = luigi.TaskParameter()
 
@@ -73,12 +73,18 @@ class BlockMorphologyBase(luigi.Task):
         n_jobs = min(len(block_list), self.max_jobs)
 
         # prime and run the jobs
-        self.prepare_jobs(n_jobs, block_list, config)
-        self.submit_jobs(n_jobs)
+        self.prepare_jobs(n_jobs, block_list, config, self.prefix)
+        self.submit_jobs(n_jobs, self.prefix)
 
         # wait till jobs finish and check for job success
         self.wait_for_jobs()
-        self.check_jobs(n_jobs)
+        self.check_jobs(n_jobs, self.prefix)
+
+    # part of the luigi API
+    def output(self):
+        outp = os.path.join(self.tmp_folder,
+                            "%s_%s.log" % (self.task_name, self.prefix))
+        return luigi.LocalTarget(outp)
 
 
 class BlockMorphologyLocal(BlockMorphologyBase, LocalTask):

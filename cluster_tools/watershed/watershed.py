@@ -297,10 +297,21 @@ def _ws_block(blocking, block_id, ds_in, ds_out, mask, config):
         # mask the input
         input_[np.logical_not(in_mask)] = 1
 
+    # get offset to make new seeds unique between blocks
+    # (we need to relabel later to make processing efficient !)
+    offset = block_id * np.prod(blocking.blockShape)
+
     # apply distance transform
     dt = _apply_dt(input_, config)
     # check if input was valid
     if dt is None:
+        # if the input is not valid, we just write the offset
+        # (potentially corrected for the mask)
+        out_shape = tuple(obb.stop - obb.start for obb in output_bb)
+        ws = offset * np.ones(out_shape, dtype='uint64')
+        if mask is not None:
+            ws[np.logical_not(out_mask)] = 0
+        ds_out[output_bb] = ws
         fu.log_block_success(block_id)
         return
 
@@ -314,9 +325,7 @@ def _ws_block(blocking, block_id, ds_in, ds_out, mask, config):
         in_mask = in_mask[inner_bb]
     ws = ws.astype('uint64')
 
-    # get offset to make new seeds unique between blocks
-    # (we need to relabel later to make processing efficient !)
-    offset = block_id * np.prod(blocking.blockShape)
+    # apply offset to the watershed
     if in_mask is None:
         ws += offset
     else:
