@@ -5,6 +5,7 @@ import sys
 import json
 
 import luigi
+import numpy as np
 import nifty.tools as nt
 import nifty.distributed as ndist
 
@@ -37,10 +38,6 @@ class BlockTablesBase(luigi.Task):
     def requires(self):
         return self.dependency
 
-    def clean_up_for_retry(self, block_list):
-        super().clean_up_for_retry(block_list)
-        # TODO remove any output of failed blocks because it might be corrupted
-
     def run_impl(self):
         # get the global config and init configs
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
@@ -66,7 +63,7 @@ class BlockTablesBase(luigi.Task):
         # create output dataset
         with vu.file_reader(self.output_path) as f:
             f.require_dataset(self.output_key, shape=shape,
-                              dtype='uint64_t',
+                              dtype='uint64',
                               chunks=tuple(block_shape),
                               compression='gzip')
 
@@ -125,7 +122,7 @@ def _block_table(block_id, blocking, ds_seg, ds_gt,
                      for beg, ch in zip(block.begin,
                                         blocking.blockShape))
     ndist.computeAndSerializeContingencyTable(seg, gt,
-                                              path, chunk_id,
+                                              out_path, chunk_id,
                                               ignore_seg, ignore_gt)
     fu.log_block_success(block_id)
 
@@ -147,6 +144,7 @@ def block_tables(job_id, config_path):
     output_path = config['output_path']
     output_key = config['output_key']
     out_path = os.path.join(output_path, output_key)
+    fu.log("Seriailze results to %s" % out_path)
 
     block_shape = config['block_shape']
     block_list = config['block_list']
@@ -170,6 +168,17 @@ def block_tables(job_id, config_path):
                       ds_seg, ds_gt, out_path,
                       ignore_seg, ignore_gt)
          for block_id in block_list]
+
+    # write out the number of labels for convinience
+    if job_id == 0:
+        n_labels_seg = vu.file_reader(seg_path, 'r')[seg_key].attrs['maxId'] + 1
+        n_labels_gt = vu.file_reader(gt_path, 'r')[gt_key].attrs['maxId'] + 1
+        with vu.file_reader(output_path) as f:
+            attrs = f[output_key].attrs
+            attrs['n_labels_seg'] = int(n_labels_seg)
+            attrs['n_labels_gt'] = int(n_labels_gt)
+            attrs['n_points'] = int(np.prod(list(shape)))
+
     fu.log_job_success(job_id)
 
 
