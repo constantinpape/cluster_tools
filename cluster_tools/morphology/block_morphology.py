@@ -55,9 +55,8 @@ class BlockMorphologyBase(luigi.Task):
                        'output_path': self.output_path,
                        'output_key': self.output_key})
 
-        # make graph file and write shape as attribute
-        shape = vu.get_shape(self.input_path, self.input_key)
         # create output dataset
+        shape = vu.get_shape(self.input_path, self.input_key)
         with vu.file_reader(self.output_path) as f:
             f.require_dataset(self.output_key, shape=shape,
                               dtype='float64',
@@ -119,7 +118,7 @@ def _morphology_for_block(block_id, blocking, ds_in,
 
     # check if segmentation block is empty
     if seg.sum() == 0:
-        fu.log("watershed of block %i is empty" % block_id)
+        fu.log("block %i is empty" % block_id)
         fu.log_block_success(block_id)
         return
 
