@@ -61,13 +61,21 @@ class BlockNodeLabelsBase(luigi.Task):
 
         shape = vu.get_shape(self.ws_path, self.ws_key)
         chunks = tuple(min(bs, sh) for bs, sh in zip(block_shape, shape))
+        try:
+            max_id = vu.file_reader(self.ws_path, 'r')[self.ws_key].attrs['maxId']
+        except KeyError:
+            raise KeyError("Dataset %s:%s does not have attribute maxId" % (self.ws_path,
+                                                                            self.ws_key))
 
         # create output dataset
         with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, shape=shape,
-                              dtype='uint64',
-                              chunks=chunks,
-                              compression='gzip')
+            ds_out = f.require_dataset(self.output_key, shape=shape,
+                                       dtype='uint64',
+                                       chunks=chunks,
+                                       compression='gzip')
+            # need to serialize the label max-id here for
+            # the merge_node_labels task
+            ds_out.attrs['maxId'] = int(max_id)
 
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape,
@@ -198,19 +206,6 @@ def block_node_labels(job_id, config_path):
                            ds_ws, out_path, labels,
                            ignore_label)
          for block_id in block_list]
-
-    # need to serialize the label max-id here for
-    # the merge_node_labels task
-    if job_id == 0:
-        with vu.file_reader(ws_path, 'r'):
-            try:
-                max_id = ds_ws.attrs['maxId']
-            except KeyError:
-                raise KeyError("Dataset %s:%s does not have attribute maxId" % (ws_path, ws_key))
-
-        with vu.file_reader(output_path) as f:
-            ds_out = f[output_key]
-            ds_out.attrs['maxId'] = max_id
 
     f_lab.close()
     fu.log_job_success(job_id)
