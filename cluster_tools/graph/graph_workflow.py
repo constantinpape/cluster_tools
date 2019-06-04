@@ -1,5 +1,3 @@
-import os
-import json
 import luigi
 
 from ..cluster_tasks import WorkflowBase
@@ -26,49 +24,44 @@ class GraphWorkflow(WorkflowBase):
 
         initial_task = getattr(initial_tasks,
                                self._get_task_name('InitialSubGraphs'))
-        t1 = initial_task(tmp_folder=self.tmp_folder,
-                          max_jobs=self.max_jobs,
-                          config_dir=self.config_dir,
-                          input_path=self.input_path,
-                          input_key=self.input_key,
-                          graph_path=self.graph_path,
-                          dependency=self.dependency)
+        dep = initial_task(tmp_folder=self.tmp_folder,
+                           max_jobs=self.max_jobs,
+                           config_dir=self.config_dir,
+                           input_path=self.input_path,
+                           input_key=self.input_key,
+                           graph_path=self.graph_path,
+                           dependency=self.dependency)
         merge_task = getattr(merge_tasks,
                              self._get_task_name('MergeSubGraphs'))
-        t_prev = t1
         for scale in range(1, self.n_scales):
-            t2 = merge_task(tmp_folder=self.tmp_folder,
-                            max_jobs=self.max_jobs,
-                            config_dir=self.config_dir,
-                            graph_path=self.graph_path,
-                            scale=scale,
-                            merge_complete_graph=False,
-                            dependency=t_prev)
-            t_prev = t2
+            dep = merge_task(tmp_folder=self.tmp_folder,
+                             max_jobs=self.max_jobs,
+                             config_dir=self.config_dir,
+                             graph_path=self.graph_path,
+                             scale=scale,
+                             merge_complete_graph=False,
+                             dependency=dep)
 
-        t3 = merge_task(tmp_folder=self.tmp_folder,
-                        max_jobs=self.max_jobs,
-                        config_dir=self.config_dir,
-                        graph_path=self.graph_path,
-                        output_key=self.output_key,
-                        scale=self.n_scales - 1,
-                        merge_complete_graph=True,
-                        dependency=t_prev)
-
+        dep = merge_task(tmp_folder=self.tmp_folder,
+                         max_jobs=self.max_jobs,
+                         config_dir=self.config_dir,
+                         graph_path=self.graph_path,
+                         output_key=self.output_key,
+                         scale=self.n_scales - 1,
+                         merge_complete_graph=True,
+                         dependency=dep)
 
         map_task = getattr(map_tasks,
                            self._get_task_name('MapEdgeIds'))
-        t_prev = t3
         for scale in range(self.n_scales):
-            t4 = map_task(tmp_folder=self.tmp_folder,
-                          max_jobs=self.max_jobs,
-                          config_dir=self.config_dir,
-                          graph_path=self.graph_path,
-                          input_key=self.output_key,
-                          scale=self.n_scales - 1,
-                          dependency=t_prev)
-            t_prev = t4
-        return t4
+            dep = map_task(tmp_folder=self.tmp_folder,
+                           max_jobs=self.max_jobs,
+                           config_dir=self.config_dir,
+                           graph_path=self.graph_path,
+                           input_key=self.output_key,
+                           scale=self.n_scales - 1,
+                           dependency=dep)
+        return dep
 
     @staticmethod
     def get_config():
