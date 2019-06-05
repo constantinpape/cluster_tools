@@ -1,9 +1,9 @@
 import luigi
 
 from ..cluster_tasks import WorkflowBase
-from ..utils.volume_utils import get_shape
 from . import find_uniques as unique_tasks
 from . import find_labeling as labeling_tasks
+from . import merge_uniques as merge_tasks
 from .. import write as write_tasks
 
 
@@ -70,4 +70,38 @@ class RelabelWorkflow(WorkflowBase):
                         labeling_tasks.FindLabelingLocal.default_task_config(),
                         'write':
                         write_tasks.WriteLocal.default_task_config()})
+        return configs
+
+
+class UniqueWorkflow(WorkflowBase):
+    input_path = luigi.Parameter()
+    input_key = luigi.Parameter()
+    output_path = luigi.Parameter()
+    output_key = luigi.Parameter()
+
+    def requires(self):
+        unique_task = getattr(unique_tasks,
+                              self._get_task_name('FindUniques'))
+        dep = unique_task(tmp_folder=self.tmp_folder,
+                          max_jobs=self.max_jobs,
+                          config_dir=self.config_dir,
+                          input_path=self.input_path,
+                          input_key=self.input_key,
+                          dependency=self.dependency)
+
+        merge_task = getattr(merge_tasks,
+                             self._get_task_name('MergeUniques'))
+        dep = merge_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                         config_dir=self.config_dir, dependency=dep,
+                         input_path=self.input_path, input_key=self.input_key,
+                         output_path=self.output_path, output_key=self.output_key)
+        return dep
+
+    @staticmethod
+    def get_config():
+        configs = super(UniqueWorkflow, UniqueWorkflow).get_config()
+        configs.update({'find_uniques':
+                        unique_tasks.FindUniquesLocal.default_task_config(),
+                        'merge_uniques':
+                        merge_tasks.MergeUniquesLocal.default_task_config()})
         return configs

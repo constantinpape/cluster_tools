@@ -1,1 +1,1 @@
-from .relabel_workflow import RelabelWorkflow
+from .relabel_workflow import RelabelWorkflow, UniqueWorkflow
