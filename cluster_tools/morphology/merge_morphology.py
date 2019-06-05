@@ -3,8 +3,6 @@
 import os
 import sys
 import json
-import numpy as np
-from concurrent import futures
 
 import luigi
 import nifty.tools as nt
@@ -47,8 +45,8 @@ class MergeMorphologyBase(luigi.Task):
         # load the task config
         config = self.get_task_config()
 
-        out_shape = (self.number_of_labels, 11)
-        out_chunks = (min(self.number_of_labels, 100000), 11)
+        out_shape = (int(self.number_of_labels), 11)
+        out_chunks = (min(int(self.number_of_labels), 100000), 11)
         block_list = vu.blocks_in_volume([out_shape[0]], [out_chunks[0]])
 
         # create output dataset
