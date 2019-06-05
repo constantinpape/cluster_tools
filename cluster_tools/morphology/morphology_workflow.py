@@ -4,6 +4,8 @@ from .. cluster_tasks import WorkflowBase
 from ..utils import volume_utils as vu
 from . import block_morphology as block_tasks
 from . import merge_morphology as merge_tasks
+from . import correct_anchors as correct_tasks
+from . import write_corrections as write_tasks
 
 
 class MorphologyWorkflow(WorkflowBase):
@@ -51,4 +53,39 @@ class MorphologyWorkflow(WorkflowBase):
                         block_tasks.BlockMorphologyLocal.default_task_config(),
                         'merge_morphology':
                         merge_tasks.MergeMorphologyLocal.default_task_config()})
+        return configs
+
+
+class CorrectAnchorsWorkflow(WorkflowBase):
+    input_path = luigi.Parameter()
+    input_key = luigi.Parameter()
+    morphology_path = luigi.Parameter()
+    morphology_key = luigi.Parameter()
+    output_path = luigi.Parameter(default='')
+    output_key = luigi.Parameter(default='')
+
+    def requires(self):
+        dep = self.dependency
+        correct_task = getattr(correct_tasks,
+                               self._get_task_name('CorrectAnchors'))
+        dep = correct_task(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
+                           max_jobs=self.max_jobs, dependency=dep,
+                           input_path=self.input_path, input_key=self.input_key,
+                           morphology_path=self.morphology_path, morphology_key=self.morphology_key)
+
+        write_task = getattr(write_tasks,
+                             self._get_task_name('WriteCorrections'))
+        dep = write_task(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
+                         max_jobs=self.max_jobs, dependency=dep,
+                         morphology_path=self.morphology_path, morphology_key=self.morphology_key,
+                         output_path=self.output_path, output_key=self.output_key)
+        return dep
+
+    @staticmethod
+    def get_config():
+        configs = super(CorrectAnchorsWorkflow, CorrectAnchorsWorkflow).get_config()
+        configs.update({'correct_anchors':
+                        correct_tasks.CorrectAnchorsLocal.default_task_config(),
+                        'write_corrections':
+                        write_tasks.WriteCorrectionsLocal.default_task_config()})
         return configs
