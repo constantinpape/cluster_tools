@@ -35,7 +35,8 @@ class PytorchPredicter(object):
     def build_augmenter(augmentation_mode, augmentation_dim):
         return TestTimeAugmenter.default_tda(augmentation_dim, augmentation_mode)
 
-    def __init__(self, model_path, halo, gpu=0, use_best=True, prep_model=None, **augmentation_kwargs):
+    def __init__(self, model_path, halo, gpu=0, use_best=True, prep_model=None,
+                 **augmentation_kwargs):
         # load the model and prep it if specified
         assert os.path.exists(model_path), model_path
         self.model = torch.load(model_path)

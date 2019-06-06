@@ -360,7 +360,12 @@ def inference(job_id, config_path):
         fu.log(str(tda_config))
 
     fu.log("Loading model from %s" % checkpoint_path)
-    predict = get_predictor(framework)(checkpoint_path, halo, gpu=gpu,
+    # # FIXME hack for ynet
+    # def extract_unet(model):
+    #     return model.unet
+    extract_unet = None
+
+    predict = get_predictor(framework)(checkpoint_path, halo, gpu=gpu, prep_model=extract_unet,
                                        use_best=use_best, **tda_config)
     fu.log("Have model")
     preprocess = get_preprocessor(framework)
