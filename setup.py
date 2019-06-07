@@ -5,7 +5,7 @@ import cluster_tools
 from cluster_tools import __version__
 
 
-def find_packages(path=__path__, prefix=""):
+def find_packages(path, prefix):
     yield prefix
     prefix = prefix + "."
     for _, name, ispkg in walk_packages(path, prefix):
@@ -17,4 +17,4 @@ setup(name='cluster_tools',
       version=__version__,
       description='Workflows for distributed bio-image analysis and segmentation',
       author='Constantin Pape',
-      packages=list(find_packages(mypackage.__path__, mypackage.__name__)))
+      packages=list(find_packages(cluster_tools.__path__, cluster_tools.__name__)))
