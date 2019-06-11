@@ -25,12 +25,16 @@ Supports Slurm, LSF and local execution, easy to extend to more scheduling syste
 
 ## Installation
 
-All dependencies can be installed via conda, using the `environment.yml` file:
+You can install the package via conda (only python 3.7 and linux for now):
+```
+conda install -c conda-forge -c cpape cluster_tools
+```
+
+To set-up a develoment environment with all necessary dependencies, you can use the `environment.yml` file (only python 3.7 and linux for now):
 ```
 conda env create -f environment.yml
 ```
-For now, this only supports linux and python3.7.
-The package itself must be added to the python environment manually, e.g. by
+In ths case, the package itself must be added to the python environment manually, e.g. by
 creating a softlink in the lib/python3.7/site-packages of the conda env.
 
 
