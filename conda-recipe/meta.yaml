@@ -21,8 +21,13 @@ build:
 
 
 requirements:
-  build:
+  host:
     - python {{PY_VER}}*
+    - scikit-image
+    - nifty
+    - luigi
+    - z5py
+    - h5py
 
   run:
     - python {{PY_VER}}*

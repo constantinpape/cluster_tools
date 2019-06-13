@@ -181,7 +181,7 @@ class ConversionWorkflow(WorkflowBase):
         return dep
 
     def _align_scales(self, dependency):
-        # check which sales we have in the raw data
+        # check how many scales we have in the raw data
         raw_dir = os.path.join(self.path, self.raw_key)
         raw_scales = os.listdir(raw_dir)
         raw_scales = [rscale for rscale in raw_scales
