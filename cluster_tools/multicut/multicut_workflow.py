@@ -50,15 +50,15 @@ class MulticutWorkflow(MulticutWorkflowBase):
         solve_task = getattr(solve_tasks,
                              self._get_task_name('SolveGlobal'))
         dep = self._hierarchical_tasks(self.dependency, self.n_scales)
-        t_solve = solve_task(tmp_folder=self.tmp_folder,
-                             max_jobs=self.max_jobs,
-                             config_dir=self.config_dir,
-                             problem_path=self.problem_path,
-                             assignment_path=self.assignment_path,
-                             assignment_key=self.assignment_key,
-                             scale=self.n_scales,
-                             dependency=dep)
-        return t_solve
+        dep = solve_task(tmp_folder=self.tmp_folder,
+                         max_jobs=self.max_jobs,
+                         config_dir=self.config_dir,
+                         problem_path=self.problem_path,
+                         assignment_path=self.assignment_path,
+                         assignment_key=self.assignment_key,
+                         scale=self.n_scales,
+                         dependency=dep)
+        return dep
 
     @staticmethod
     def get_config():
