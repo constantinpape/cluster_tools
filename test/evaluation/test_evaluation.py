@@ -4,19 +4,21 @@ import unittest
 from shutil import rmtree
 
 import luigi
+import z5py
 import cluster_tools.evaluation as evaluation
 from cluster_tools.utils.validation_utils import SegmentationValidation
+from cremi_tools.metrics import adapted_rand, voi
 
 
 class TestGraph(unittest.TestCase):
-    path = '/home/pape/Work/data/cluster_tools_test_data/test_data.n5'
-    seg_key = 'volumes/watershed'
-    gt_key = 'volumes/groundtruth'
+    path = '/home/pape/Work/data/cremi/example/sampleA.n5'
+    seg_key = 'segmentation/multicut'
+    gt_key = 'segmentation/groundtruth'
 
     tmp_folder = './tmp'
     config_folder = './tmp/configs'
     target = 'local'
-    block_shape = [10, 256, 256]
+    block_shape = [50, 512, 512]
 
     def setUp(self):
         os.makedirs(self.config_folder, exist_ok=True)
@@ -30,13 +32,29 @@ class TestGraph(unittest.TestCase):
         with open(os.path.join(self.config_folder, 'global.config'), 'w') as f:
             json.dump(global_config, f)
 
-    def tearDown(self):
+    def _tearDown(self):
         try:
             rmtree(self.tmp_folder)
         except OSError:
             pass
 
-    def test_ctable(self):
+    def cremi_metrics(self):
+        f = z5py.File(self.path)
+
+        ds = f[self.seg_key]
+        ds.n_threads = 8
+        seg = ds[:]
+
+        ds = f[self.gt_key]
+        ds.n_threads = 8
+        gt = ds[:]
+
+        rand = adapted_rand(seg, gt)
+        vi_split, vi_merge = voi(seg, gt)
+
+        return rand, vi_split, vi_merge
+
+    def test_eval(self):
         task = evaluation.EvaluationWorkflow
         res_path = './tmp/res.json'
         t = task(tmp_folder=self.tmp_folder, config_dir=self.config_folder,
@@ -49,11 +67,14 @@ class TestGraph(unittest.TestCase):
         self.assertTrue(os.path.exists(res_path))
 
         metric = SegmentationValidation(res_path)
-        # TODO compare to independet implementation
-        ri = metric.rand_index
-        vi = metric.voi
-        print(ri)
-        print(vi)
+        ri = 1. - metric.adapated_rand_score
+        vim = metric.vi_merge
+        vis = metric.vi_split
+
+        ri_exp, vis_exp, vim_exp = self.cremi_metrics()
+        self.assertAlmostEqual(ri, ri_exp)
+        self.assertAlmostEqual(vim, vim_exp)
+        self.assertAlmostEqual(vis, vis_exp)
 
 
 if __name__ == '__main__':

@@ -31,11 +31,33 @@ class SegmentationValidation:
     def rand_index(self):
         return 1. - (self.rand_a + self.rand_b - 2 * self.rand_ab) / (self.n_points * self.n_points)
 
-    # TODO need separate vi split and vi merge
+    @property
+    def rand_precision(self):
+        return self.rand_ab / self.rand_b
+
+    @property
+    def rand_recall(self):
+        return self.rand_ab / self.rand_a
+
+    @property
+    def adapated_rand_score(self):
+        prec = self.rand_precision
+        rec = self.rand_recall
+        return 2. * prec * rec / (prec + rec)
+
     #
     # vi measures
     #
 
     @property
-    def voi(self):
+    def variation_of_information(self):
         return self.vi_a + self.vi_b - 2. * self.vi_a
+
+    # TODO
+    @property
+    def vi_merge(self):
+        return
+
+    @property
+    def vi_split(self):
+        return
