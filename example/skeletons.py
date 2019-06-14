@@ -12,19 +12,18 @@ from cluster_tools.skeletons import SkeletonWorkflow
 from cremi_tools.viewer.volumina import view
 
 
-def skeletons(sample, max_jobs, target):
+def skeletons(path, max_jobs, target):
     """ Skeletonize cremi segmentation.
 
     You can obtain the data used for this examle from
     https://drive.google.com/open?id=1E6j77gV0iwquSxd7KmmuXghgFcyuP7WW
     """
 
-    path = '/g/kreshuk/data/cremi/example/sample%s.n5' % sample
     input_key = 'segmentation/multicut'
     output_key = 'skeletons'
 
     config_dir = './configs'
-    tmp_folder = './tmp_skeletons_%s' % sample
+    tmp_folder = './tmp_skeletons'
     os.makedirs(config_dir, exist_ok=True)
 
     config = SkeletonWorkflow.get_config()
@@ -46,8 +45,7 @@ def skeletons(sample, max_jobs, target):
     assert success
 
 
-def view_skeletons(sample):
-    path = '/g/kreshuk/data/cremi/example/sample%s.n5' % sample
+def view_skeletons(path):
     input_key = 'segmentation/multicut'
     output_key = 'skeletons'
 
@@ -78,6 +76,6 @@ def view_skeletons(sample):
 
 
 if __name__ == '__main__':
-    sample = 'A'
-    skeletons(sample, 32, 'local')
-    view_skeletons(sample)
+    path = '/g/kreshuk/data/cremi/example/sampleA.n5'
+    skeletons(path, 32, 'local')
+    view_skeletons(path)

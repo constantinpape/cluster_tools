@@ -7,7 +7,7 @@ import luigi
 from cluster_tools import MulticutSegmentationWorkflow
 
 
-def run_mc(sample, tmp_folder, max_jobs,
+def run_mc(input_path, tmp_folder, max_jobs,
            n_scales=1, have_watershed=True, target='local',
            from_affinities=False, invert_inputs=False):
     """ Run multicut on cremi sample or similar data.
@@ -16,7 +16,8 @@ def run_mc(sample, tmp_folder, max_jobs,
     https://drive.google.com/open?id=1E6j77gV0iwquSxd7KmmuXghgFcyuP7WW
 
     Args:
-        sample: which cremi sample to use (more general, what's our input data)
+        input_path: n5 or hdf5 container with input data
+            (boundary maps or affinity maps)
         tmp_folder: temporary folder to store job files
         max_jobs: maximal number of jobs
         n_scales: number of scales for hierarchical solver (0 will perform vanilla multicut)
@@ -30,20 +31,17 @@ def run_mc(sample, tmp_folder, max_jobs,
             affinity maps
     """
 
-    # input path: n5 or hdf5 container which holds the input data
-    # (= boundary maps or affinity maps)
-    input_path = '/g/kreshuk/data/cremi/example/sample%s.n5' % sample
     # path with the watershed data, can be the same as input_path
     ws_path = input_path
 
     # key for input, and watershed
-    input_key = 'predictions/full_affs'
-    ws_key = 'segmentation/watershed'
+    input_key = 'volumes/affinities'
+    ws_key = 'volumes/segmentation/watershed'
 
     # path to n5 or hdf5 container to which the output segmentation should be written
     # can be the same as input_path
     out_path = input_path
-    out_key = 'segmentation/multicut'
+    out_key = 'volumes/segmentation/multicut'
 
     # path and key for mask
     # mask can be used to exclude parts of the volume from segmentation
@@ -52,11 +50,11 @@ def run_mc(sample, tmp_folder, max_jobs,
     mask_key = ''
 
     # n5 container for intermediate results like graph-structure or features
-    exp_path = './sample%s_exp.n5' % sample
+    exp_path = './sampleA_exp.n5'
 
     # config folder holds configurations for workflow steps stored as json
     configs = MulticutSegmentationWorkflow.get_config()
-    config_folder = 'config_mc'
+    config_folder = 'configs'
     os.makedirs(config_folder, exist_ok=True)
 
     # global workflow config
@@ -108,10 +106,10 @@ def run_mc(sample, tmp_folder, max_jobs,
 
 
 if __name__ == '__main__':
-    sample = 'A'
-    tmp_folder = './tmp_mc_%s' % sample
+    path = ''
+    tmp_folder = './tmp_mc'
 
     target = 'slurm'
     max_jobs = 16
 
-    run_mc(sample, tmp_folder, max_jobs, target=target, from_affinities=True)
+    run_mc(path, tmp_folder, max_jobs, target=target, from_affinities=True)

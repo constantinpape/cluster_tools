@@ -44,7 +44,7 @@ If you use this software for results you use in a publication, please cite
 ```
 Pape, Constantin, et al. "Solving large multicut problems for connectomics via domain decomposition." Proceedings of the IEEE International Conference on Computer Vision. 2017.
 ```
-If you are using an algorithom not described int this publication, please also cite the approproiate publication (see [embedded links](https://github.com/constantinpape/cluster_tools#workflows)).
+If you are using an algorithom not described int this publication, please also cite the approproiate publication (see [links](https://github.com/constantinpape/cluster_tools#workflows)).
 
 
 ## Getting Started
@@ -91,4 +91,6 @@ task = SimpleWorkflow(tmp_folder=tmp_folder, config_dir=config_dir,
 luigi.build([task])
  ```
 For a list of the available segmentation worklfows, have a look at [this](https://github.com/constantinpape/cluster_tools/blob/master/cluster_tools/workflows.py).
-Unfortunately, there is no proper documentation yet. For more details. have a look at [this example](https://github.com/constantinpape/cluster_tools/blob/master/example/cremi/run_mc.py) instead ;)
+Unfortunately, there is no proper documentation yet. For more details, have a look at the
+[examples](https://github.com/constantinpape/cluster_tools/blob/master/example), in particular
+[this example](https://github.com/constantinpape/cluster_tools/blob/master/example/multicut.py).

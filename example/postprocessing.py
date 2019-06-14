@@ -4,16 +4,13 @@ import z5py
 import luigi
 from cluster_tools.postprocess import FilterOrphansWorkflow
 from cluster_tools.postprocess import SizeFilterAndGraphWatershedWorkflow
-from cremi_tools.viewer.volumina import view
 
 
-# TODO check results
-def filter_orphans(sample='A'):
-    input_path = '/g/kreshuk/data/cremi/example/sample%s.n5' % sample
-    exp_path = './sample%s_exp.n5' % sample
+def filter_orphans(input_path):
+    exp_path = './sampleA_exp.n5'
 
     tmp_folder = './tmp_orphans'
-    config_folder = './config_mc'
+    config_folder = './configs'
 
     task = FilterOrphansWorkflow(tmp_folder=tmp_folder, config_dir=config_folder,
                                  target='local', max_jobs=8,
@@ -26,12 +23,11 @@ def filter_orphans(sample='A'):
     luigi.build([task], local_scheduler=True)
 
 
-def graph_watershed_size_filter(sample='A'):
-    input_path = '/g/kreshuk/data/cremi/example/sample%s.n5' % sample
-    exp_path = './sample%s_exp.n5' % sample
+def graph_watershed_size_filter(input_path):
+    exp_path = './sampleA_exp.n5'
 
     tmp_folder = './tmp_ws_filter'
-    config_folder = './config_mc'
+    config_folder = './configs'
 
     task_name = SizeFilterAndGraphWatershedWorkflow
     task = task_name(tmp_folder=tmp_folder, config_dir=config_folder,
@@ -49,8 +45,8 @@ def graph_watershed_size_filter(sample='A'):
     assert ret
 
 
-def check_results(sample='A'):
-    input_path = '/g/kreshuk/data/cremi/example/sample%s.n5' % sample
+def check_results(input_path):
+    from cremi_tools.viewer.volumina import view
     f = z5py.File(input_path)
 
     ds = f['raw']
@@ -74,6 +70,6 @@ def check_results(sample='A'):
 
 
 if __name__ == '__main__':
-    # filter_orphans()
-    graph_watershed_size_filter()
-    check_results()
+    input_path = '/g/kreshuk/data/cremi/example/sampleA.n5'
+    graph_watershed_size_filter(input_path)
+    check_results(input_path)
