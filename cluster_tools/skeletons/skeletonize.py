@@ -3,17 +3,15 @@
 import os
 import sys
 import json
-from concurrent import futures
 
-import numpy as np
 import luigi
 import nifty.tools as nt
-# TODO use skeletor.skeletonize instead
-from skimage.morphology import skeletonize_3d
+
+import skeletor.io as skelio
+from skeletor import skeletonize as skel_impl, get_method_names
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
-import skeletor.io as su
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 from cluster_tools.utils.task_utils import DummyTask
 
@@ -34,55 +32,31 @@ class SkeletonizeBase(luigi.Task):
     # input and output volumes
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
+    morphology_path = luigi.Parameter()
+    morphology_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     number_of_labels = luigi.IntParameter()
-    skeleton_format = luigi.Parameter(default='n5')
+    resolution = luigi.ListParameter()
+    size_threshold = luigi.IntParameter(default=None)
+    method = luigi.Parameter(default='thinning')
     dependency = luigi.TaskParameter(default=DummyTask())
 
-    formats = ('volume', 'swc', 'n5')  # TODO support csv
+    methods = get_method_names()
 
+    # TODO expose skeletonization parameter
     @staticmethod
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'resolution': None, 'size_filter': 10,
-                       'chunk_len': 1000})
+        config.update({'chunk_len': 1000,
+                       'method_kwargs': {}})
         return config
 
     def requires(self):
         return self.dependency
 
-    def _prepare_format_volume(self, block_shape):
-        assert self.max_jobs == 1, "Output-format 'volume' only supported with a single job"
-
-        # get shape, dtype and make block config
-        with vu.file_reader(self.input_path, 'r') as f:
-            shape = f[self.input_key].shape
-
-        # prepare output dataset
-        chunks = tuple(min(bs // 2, sh) for bs, sh in zip(block_shape, shape))
-        with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, shape=shape, chunks=chunks,
-                              compression='gzip', dtype='uint64')
-        # return n-jobs (=1) and block_list (=None)
-        return 1, None
-
-    def _prepare_format_swc(self, config):
-        # make the output directory
-        os.makedirs(os.path.join(self.output_path, self.output_key),
-                    exist_ok=True)
-        # make the blocking
-        block_len = min(self.number_of_labels, config.get('chunk_len', 1000))
-        block_list = vu.blocks_in_volume((self.number_of_labels,),
-                                         (block_len,))
-        n_jobs = min(len(block_list), self.max_jobs)
-        # update the config
-        config.update({'number_of_labels': self.number_of_labels,
-                       'block_len': block_len})
-        return n_jobs, block_list
-
-    def _prepare_format_n5(self, config):
+    def _prepare_output(self, config):
         # make the blocking
         block_len = min(self.number_of_labels, config.get('chunk_len', 1000))
         block_list = vu.blocks_in_volume((self.number_of_labels,),
@@ -95,10 +69,12 @@ class SkeletonizeBase(luigi.Task):
         # update the config
         config.update({'number_of_labels': self.number_of_labels,
                        'block_len': block_len})
-        return n_jobs, block_list
+        return config, n_jobs, block_list
 
     def run_impl(self):
-        assert self.skeleton_format in self.formats, self.skeleton_format
+        assert self.method in self.methods,\
+            "Method %s is not supported, must be one of %s" % (self.method, str(self.methods))
+
         # TODO support roi
         # get the global config and init configs
         shebang, block_shape, _, _ = self.global_config_values()
@@ -106,20 +82,16 @@ class SkeletonizeBase(luigi.Task):
 
         # load the skeletonize config
         # update the config with input and output paths and keys
-        task_config = self.get_task_config()
-        task_config.update({'input_path': self.input_path, 'input_key': self.input_key,
-                            'output_path': self.output_path, 'output_key': self.output_key,
-                            'skeleton_format': self.skeleton_format})
-
-        if self.skeleton_format == 'volume':
-            n_jobs, block_list = self._prepare_format_volume(block_shape)
-        elif self.skeleton_format == 'swc':
-            n_jobs, block_list = self._prepare_format_swc(task_config)
-        elif self.skeleton_format == 'n5':
-            n_jobs, block_list = self._prepare_format_n5(task_config)
+        config = self.get_task_config()
+        config.update({'input_path': self.input_path, 'input_key': self.input_key,
+                       'morphology_path': self.morphology_path, 'morphology_key': self.morphology_key,
+                       'output_path': self.output_path, 'output_key': self.output_key,
+                       'resolution': self.resolution, 'size_threshold': self.size_threshold,
+                       'method': self.method})
+        config, n_jobs, block_list = self._prepare_output(config)
 
         # prime and run the jobs
-        self.prepare_jobs(n_jobs, block_list, task_config)
+        self.prepare_jobs(n_jobs, block_list, config)
         self.submit_jobs(n_jobs)
 
         # wait till jobs finish and check for job success
@@ -153,138 +125,30 @@ class SkeletonizeLSF(SkeletonizeBase, LSFTask):
 #
 
 
-#
-# functions for 'volume' skeleton format
-#
-
-def _get_ids(seg, size_filter):
-    if size_filter > 0:
-        ids, counts = np.unique(seg, return_counts=True)
-        ids = ids[counts > size_filter]
-    else:
-        ids = np.unique(seg)
-    # if 0 in ids, discard it (ignore id)
-    if ids[0] == 0:
-        ids = ids[1:]
-    return ids
-
-
-def skeletonize_segment(seg_mask):
-    # skimage transforms to uint8 and assigns maxval to skelpoints
-    return np.where(skeletonize_3d(seg_mask) == 255)
-
-
-def _skeletonize_to_volume(seg, output_path, output_key, config):
-
-    size_filter = config.get('size_filter', 10)
-    n_threads = config.get('threads_per_job', 1)
-    ids = _get_ids(seg, size_filter)
-
-    fu.log("computing skeletons for %i ids" % len(ids))
-    with futures.ProcessPoolExecutor(n_threads) as pp:
-        tasks = [pp.submit(skeletonize_segment, seg == seg_id) for seg_id in ids]
-        results = {seg_id: t.result() for seg_id, t in zip(ids, tasks)}
-
-    # allocate output
-    skel_vol = np.zeros_like(seg, dtype='uint64')
-
-    def write_res(seg_id):
-        res = results[seg_id]
-        skel_vol[res] = seg_id
-
-    with futures.ThreadPoolExecutor(n_threads) as tp:
-        tasks = [tp.submit(write_res, seg_id) for seg_id in ids]
-        [t.result() for t in tasks]
-
-    # write the output
-    with vu.file_reader(output_path) as f_out:
-        ds_out = f_out[output_key]
-        ds_out.n_threads = n_threads
-        ds_out[:] = skel_vol
-
-
-#
-# functions for 'swc' skeleton format
-#
-
-def _skeletonize_id_to_swc(seg, node_id, size_filter, output_path, resolution):
-    mask = seg == node_id
-    if np.sum(mask) <= size_filter:
-        return
-    skel_vol = skeletonize_3d(mask)
-    # write skeleton as swc
-    su.write_swc(output_path, skel_vol, resolution)
-
-
 # not parallelized for now
-def _skeletonize_to_swc(seg, output_path, output_key, config):
-    block_list = config['block_list']
-    block_len = config['block_len']
-    n_labels = config['number_of_labels']
-    blocking = nt.blocking([0], [n_labels], [block_len])
+def _skeletonize_id_block(blocking, block_id, ds_in, ds_out,
+                          sizes, bb_min, bb_max, resolution, size_threshold,
+                          method):
 
-    resolution = config.get('resolution', None)
+    fu.log("start processing block %i" % block_id)
+    block = blocking.getBlock(block_id)
+    id_begin, id_end = block.begin[0], block.end[0]
+    # we don't compute the skeleton for id 0, which is reserved for the ignore label
+    id_begin = 1 if id_begin == 0 else id_begin
 
-    output_folder = os.path.join(output_path, output_key)
-    size_filter = config.get('size_filter', 10)
-    for block_id in block_list:
-        fu.log("start processing block %i" % block_id)
-        block = blocking.getBlock(block_id)
-        id_begin, id_end = block.begin[0], block.end[0]
-        # we don't compute the skeleton for id 0, which is reserved for the ignore label
-        id_begin = 1 if id_begin == 0 else id_begin
+    # skeletonize ids in range and serialize skeletons
+    for seg_id in range(id_begin, id_end):
+        if size_threshold is not None:
+            if sizes[seg_id] < size_threshold:
+                continue
+        bb = tuple(slice(mi, ma) for mi, ma in zip(bb_min[seg_id], bb_max[seg_id]))
+        obj = ds_in[bb] == seg_id
+        nodes, edges = skel_impl(obj, resolution=resolution, method=method)
 
-        for node_id in range(id_begin, id_end):
-            out_path = os.path.join(output_folder, '%i.swc' % node_id)
-            _skeletonize_id_to_swc(seg, node_id, size_filter, out_path, resolution)
-        fu.log_block_success(block_id)
-
-
-#
-# functions for 'n5' skeleton format
-#
-
-def _skeletonize_id_to_n5(seg, node_id, size_filter, ds):
-    mask = seg == node_id
-    if np.sum(mask) <= size_filter:
-        return
-    # get the bounding box of the segment
-    # (extended by 1, because otherwise there might be some artifacts in coordinates)
-    coords = np.where(mask)
-    min_coords = [max(np.min(coord) - 1, 0) for coord in coords]
-    max_coords = [min(np.max(coord) + 1, sh - 1)
-                  for coord, sh in zip(coords, mask.shape)]
-    bb = tuple(slice(minc, maxc + 1)
-               for minc, maxc in zip(min_coords, max_coords))
-    skel_vol = skeletonize_3d(mask[bb])
-    # write skeleton as swc
-    su.write_n5(ds, node_id, skel_vol,
-                coordinate_offset=min_coords)
-
-
-# not parallelized for now
-def _skeletonize_to_n5(seg, output_path, output_key, config):
-    block_list = config['block_list']
-    block_len = config['block_len']
-    n_labels = config['number_of_labels']
-    blocking = nt.blocking([0], [n_labels], [block_len])
-
-    ds = vu.file_reader(output_path)[output_key]
-    size_filter = config.get('size_filter', 10)
-    for block_id in block_list:
-        fu.log("start processing block %i" % block_id)
-        block = blocking.getBlock(block_id)
-        id_begin, id_end = block.begin[0], block.end[0]
-        # we don't compute the skeleton for id 0, which is reserved for the ignore label
-        id_begin = 1 if id_begin == 0 else id_begin
-
-        for node_id in range(id_begin, id_end):
-            _skeletonize_id_to_n5(seg, node_id, size_filter, ds)
-        fu.log_block_success(block_id)
-
-#
-# main function
-#
+        offsets = [b.start for b in bb]
+        skelio.write_n5(ds_out, seg_id,
+                        nodes, edges, offsets)
+    fu.log_block_success(block_id)
 
 
 def skeletonize(job_id, config_path):
@@ -296,28 +160,39 @@ def skeletonize(job_id, config_path):
     # read the input cofig
     input_path = config['input_path']
     input_key = config['input_key']
-
+    morphology_path = config['morphology_path']
+    morphology_key = config['morphology_key']
     output_path = config['output_path']
     output_key = config['output_key']
-    skeleton_format = config['skeleton_format']
-    n_threads = config.get('threads_per_job', 1)
+    size_threshold = config['size_threshold']
+    resolution = config['resolution']
+    method = config['method']
 
-    # load input segmentation
-    with vu.file_reader(input_path) as f_in:
+    # morphology feature-columns
+    # 0    = label-id
+    # 1    = pixel size
+    # 2:5  = center of mass
+    # 5:8  = min coordinate
+    # 8:11  = max coordinate
+    with vu.file_reader(morphology_path) as f:
+        morpho = f[morphology_key][:]
+        sizes = morpho[:, 1].astype('uint64')
+        bb_min = morpho[:, 5:8].astype('uint64')
+        bb_max = morpho[:, 8:11].astype('uint64') + 1
+
+    block_list = config['block_list']
+    block_len = config['block_len']
+    n_labels = config['number_of_labels']
+    blocking = nt.blocking([0], [n_labels], [block_len])
+
+    # skeletonize this id block
+    with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
         ds_in = f_in[input_key]
-        ds_in.n_threads = n_threads
-        seg = ds_in[:]
-
-    fu.log("writing output in format %s" % skeleton_format)
-    fu.log("to %s:%s" % (output_path, output_key))
-    if skeleton_format == 'volume':
-        _skeletonize_to_volume(seg, output_path, output_key, config)
-    elif skeleton_format == 'swc':
-        _skeletonize_to_swc(seg, output_path, output_key, config)
-    elif skeleton_format == 'n5':
-        _skeletonize_to_n5(seg, output_path, output_key, config)
-    else:
-        raise RuntimeError("Format %s not supported" % skeleton_format)
+        ds_out = f_out[output_key]
+        for block_id in block_list:
+            _skeletonize_id_block(blocking, block_id, ds_in, ds_out,
+                                  sizes, bb_min, bb_max, resolution, size_threshold,
+                                  method)
 
     # log success
     fu.log_job_success(job_id)
