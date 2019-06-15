@@ -143,7 +143,12 @@ def _skeletonize_id_block(blocking, block_id, ds_in, ds_out,
                 continue
         bb = tuple(slice(mi, ma) for mi, ma in zip(bb_min[seg_id], bb_max[seg_id]))
         obj = ds_in[bb] == seg_id
-        nodes, edges = skel_impl(obj, resolution=resolution, method=method)
+
+        # try to skeletonize the object, skip if any exception is thrown
+        try:
+            nodes, edges = skel_impl(obj, resolution=resolution, method=method)
+        except Exception:
+            continue
 
         offsets = [b.start for b in bb]
         skelio.write_n5(ds_out, seg_id,

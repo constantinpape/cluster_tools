@@ -25,8 +25,8 @@ class SkeletonWorkflow(WorkflowBase):
             if self.max_id is None and attrs_max_id is None:
                 raise RuntimeError("Input dataset does not have maxId attribute, so it needs to be passed externally")
             elif self.max_id is not None and attrs_max_id is None:
-                ds.attrs['maxId'] = self.maxId
-                max_id = self.maxId
+                ds.attrs['maxId'] = self.max_id
+                max_id = self.max_id
             elif self.max_id is not None and attrs_max_id is not None:
                 if self.max_id != attrs_max_id:
                     raise RuntimeError("MaxIds do not agree")
