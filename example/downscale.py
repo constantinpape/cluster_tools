@@ -1,4 +1,4 @@
-#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env/bin/python
+#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python
 
 import os
 import json
@@ -10,8 +10,7 @@ def downscale_raw(path, max_jobs=8, target='local'):
     """ Downscale raw data.
 
     Arguments:
-        path [str] - path to raw data, download the example data from
-            TODO
+        path [str] - path to raw data
         max_jobs [int] - maximum number of jobs
         target [str] - target of computation: local, slurm or lsf
     """
@@ -29,7 +28,7 @@ def downscale_raw(path, max_jobs=8, target='local'):
     # all necessary dependencies
     config = DownscalingWorkflow.get_config()
     global_config = config['global']
-    shebang = '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env/bin/python'
+    shebang = '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python'
     global_config.update({'shebang': shebang})
     with open(os.path.join(config_dir, 'global.config'), 'w') as f:
         json.dump(global_config, f)
@@ -37,7 +36,7 @@ def downscale_raw(path, max_jobs=8, target='local'):
     # write the task specific config
     # here, we configure the downscaling task to use skimage
     task_config = config['downscaling']
-    task_config.update({'library': 'nskimage'})
+    task_config.update({'library': 'skimage'})
     with open(os.path.join(config_dir, 'downscaling.config'), 'w') as f:
         json.dump(task_config, f)
 
@@ -59,4 +58,4 @@ def downscale_raw(path, max_jobs=8, target='local'):
 
 if __name__ == '__main__':
     path = '/g/kreshuk/data/cremi/example/sampleA.n5'
-    downscale_raw(path)
+    downscale_raw(path, max_jobs=8, target='local')

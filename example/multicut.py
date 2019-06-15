@@ -13,7 +13,7 @@ def run_mc(input_path, tmp_folder, max_jobs,
     """ Run multicut on cremi sample or similar data.
 
     You can obtain the data used for this examle from
-    https://drive.google.com/open?id=1E6j77gV0iwquSxd7KmmuXghgFcyuP7WW
+    https://drive.google.com/open?id=15hZmM4cu_H_ruhlgXilNWgDZWMpuo9XK
 
     Args:
         input_path: n5 or hdf5 container with input data
@@ -61,11 +61,12 @@ def run_mc(input_path, tmp_folder, max_jobs,
     # python interpreter of conda environment with dependencies, see
     # https://github.com/constantinpape/cluster_tools/blob/master/environment.yml
     shebang = "#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python"
+
     # block shape used for parallelization
     block_shape = [30, 256, 256]
     global_config = configs['global']
     global_config.update({'shebang': shebang, 'block_shape': block_shape})
-    with open('./config_mc/global.config', 'w') as f:
+    with open('./configs/global.config', 'w') as f:
         json.dump(global_config, f)
 
     # config for edge feature calculation
@@ -73,13 +74,13 @@ def run_mc(input_path, tmp_folder, max_jobs,
     # specify offsets if you have affinity features.
     if from_affinities:
         feat_config.update({'offsets': [[-1, 0, 0], [0, -1, 0], [0, 0, -1]]})
-    with open('./config_mc/block_edge_features.config', 'w') as f:
+    with open('./configs/block_edge_features.config', 'w') as f:
         json.dump(feat_config, f)
 
     # config for converting edge probabilities to edge costs
     costs_config = configs['probs_to_costs']
     costs_config.update({'threads_per_job': max_jobs, 'weight_edges': True, 'invert_inputs': invert_inputs})
-    with open('./config_mc/probs_to_costs.config', 'w') as f:
+    with open('./configs/probs_to_costs.config', 'w') as f:
         json.dump(costs_config, f)
 
     # set number of threads for sum jobs
@@ -88,7 +89,7 @@ def run_mc(input_path, tmp_folder, max_jobs,
     for tt in tasks:
         config = configs[tt]
         config.update({'threads_per_job': max_jobs, 'mem_limit': 8})
-        with open('./config_mc/%s.config' % tt, 'w') as f:
+        with open('./configs/%s.config' % tt, 'w') as f:
             json.dump(config, f)
 
     luigi.build([MulticutSegmentationWorkflow(input_path=input_path, input_key=input_key,
@@ -98,7 +99,7 @@ def run_mc(input_path, tmp_folder, max_jobs,
                                               node_labels_key='node_labels',
                                               output_path=out_path, output_key=out_key,
                                               n_scales=n_scales,
-                                              config_dir='./config_mc',
+                                              config_dir=config_folder,
                                               tmp_folder=tmp_folder,
                                               target=target,
                                               skip_ws=have_watershed,
@@ -106,10 +107,10 @@ def run_mc(input_path, tmp_folder, max_jobs,
 
 
 if __name__ == '__main__':
-    path = ''
+    path = '/g/kreshuk/data/cremi/example/sampleA.n5'
     tmp_folder = './tmp_mc'
 
-    target = 'slurm'
-    max_jobs = 16
+    target = 'local'
+    max_jobs = 8
 
     run_mc(path, tmp_folder, max_jobs, target=target, from_affinities=True)

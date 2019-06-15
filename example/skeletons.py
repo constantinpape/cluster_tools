@@ -9,17 +9,13 @@ import z5py
 import skeletor.io
 
 from cluster_tools.skeletons import SkeletonWorkflow
-from cremi_tools.viewer.volumina import view
 
 
 def skeletons(path, max_jobs, target):
-    """ Skeletonize cremi segmentation.
-
-    You can obtain the data used for this examle from
-    https://drive.google.com/open?id=1E6j77gV0iwquSxd7KmmuXghgFcyuP7WW
+    """ Skeletonize segmentation.
     """
 
-    input_key = 'segmentation/multicut'
+    input_key = 'volumes/segmentation/multicut'
     output_key = 'skeletons'
 
     config_dir = './configs'
@@ -46,6 +42,7 @@ def skeletons(path, max_jobs, target):
 
 
 def view_skeletons(path):
+    from cremi_tools.viewer.volumina import view
     input_key = 'segmentation/multicut'
     output_key = 'skeletons'
 
