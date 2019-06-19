@@ -44,20 +44,6 @@ def contigency_table(seg_a, seg_b):
     return a_dict, b_dict, p_ids, p_counts
 
 
-# TODO
-def merge_tables():
-    pass
-
-
-# TODO
-def save_table():
-    pass
-
-
-def load_table():
-    pass
-
-
 def compute_ignore_mask(seg_a, seg_b, ignore_a, ignore_b):
     if ignore_a is None and ignore_b is None:
         return None
