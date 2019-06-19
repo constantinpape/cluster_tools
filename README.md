@@ -21,6 +21,7 @@ Supports Slurm, LSF and local execution, easy to extend to more scheduling syste
 - [Ilastik Prediction](https://www.ilastik.org/)
 - Skeletonization
 - Distributed Neural Network Prediction (originally implemented [here](https://github.com/constantinpape/simpleference))
+- Validation with Rand Index and Variation of Information
 
 
 ## Installation
@@ -34,8 +35,8 @@ To set-up a develoment environment with all necessary dependencies, you can use 
 ```
 conda env create -f environment.yml
 ```
-In ths case, the package itself must be added to the python environment manually, e.g. by
-creating a softlink in the lib/python3.7/site-packages of the conda env.
+In this case, the package itself must be added to the python environment manually, e.g. by
+creating a softlink in the `lib/python3.7/site-packages` folder of the conda env.
 
 
 ## Citation
