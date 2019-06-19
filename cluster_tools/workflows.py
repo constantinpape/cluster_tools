@@ -240,12 +240,22 @@ class LiftedMulticutSegmentationWorkflow(SegmentationWorkflowBase):
     n_scales = luigi.IntParameter()
 
     # node labels for lifted milticut
+    # set to '' in order to skip sparse lifted edge computation
+    # in this case, pre-computed lifted edges and costs need to be provided
     lifted_labels_path = luigi.Parameter()
     lifted_labels_key = luigi.Parameter()
+    # prefix to distinguish task and log-names
     lifted_prefix = luigi.Parameter()
     # graph depth for lifted neighborhood
     nh_graph_depth = luigi.IntParameter(default=4)
+    # ignore labels:
+    # node_ignore_label: this label will be ignored when inserting lifted
+    # edges into the lifted neighborhood (usually 0 for sparse lifted edges)
     node_ignore_label = luigi.IntParameter(default=0)
+    # label_ignore_label: this label will be ignored when mapping the lifted_labels
+    # (lifted_labels_path:lifted_labels_key) to nodes for constructing sparse
+    # lifted edges (usually None -> no label is ignored)
+    label_ignore_label = luigi.Parameter(default=None)
     mode = luigi.Parameter(default='all')
     # clear labels
     clear_labels_path = luigi.Parameter(default=None)
@@ -271,6 +281,7 @@ class LiftedMulticutSegmentationWorkflow(SegmentationWorkflowBase):
                                                    prefix=self.lifted_prefix,
                                                    nh_graph_depth=self.nh_graph_depth,
                                                    ignore_label=self.node_ignore_label,
+                                                   label_ignore_label=self.label_ignore_label,
                                                    clear_labels_path=self.clear_labels_path,
                                                    clear_labels_key=self.clear_labels_key,
                                                    mode=self.mode)
@@ -292,7 +303,11 @@ class LiftedMulticutSegmentationWorkflow(SegmentationWorkflowBase):
     def requires(self):
         dep = self._watershed_tasks()
         dep = self._problem_tasks(dep, compute_costs=True)
-        dep = self._lifted_problem_tasks(dep)
+        # enable splitting the lifted problem calculation
+        # to allow for precomputed costs
+        if self.lifted_labels_path != '':
+            assert self.lifted_labels_key != ''
+            dep = self._lifted_problem_tasks(dep)
         dep = self._lifted_multicut_tasks(dep)
         dep = self._write_tasks(dep, 'lifted_multicut')
         return dep
