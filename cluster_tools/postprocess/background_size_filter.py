@@ -154,6 +154,7 @@ def background_size_filter(job_id, config_path):
                            blockShape=list(block_shape))
 
     discard_ids = np.load(res_path)
+    fu.log("Discarding %i ids" % len(discard_ids))
 
     same_file = input_path == output_path
     in_place = same_file and input_key == output_key
@@ -177,7 +178,7 @@ def background_size_filter(job_id, config_path):
              for block_id in block_list]
 
     # copy the 'maxId' attribute if present
-    if job_id == 0:
+    if job_id == 0 and not in_place:
         with vu.file_reader(input_path, 'r') as f:
             attrs = f[input_key].attrs
             max_id = attrs.get('maxId', None)

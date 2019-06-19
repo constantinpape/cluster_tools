@@ -102,7 +102,9 @@ def size_filter_blocks(job_id, config_path):
     counts = counts[counts != 0]
     assert len(counts) == len(uniques)
 
+    print("applying size filter %i" % size_threshold)
     discard_ids = uniques[counts < size_threshold]
+    fu.log("discarding %i / %i ids" % (len(discard_ids), len(uniques)))
 
     save_path = os.path.join(tmp_folder, 'discard_ids.npy')
     fu.log("saving results to %s" % save_path)

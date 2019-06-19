@@ -105,13 +105,13 @@ def find_labeling(job_id, config_path):
     fu.log("compute uniques")
     uniques = np.unique(uniques)
 
-    fu.log("relabel")
     if uniques[0] == 0:
         start_label = 0
         stop_label = len(uniques)
     else:
         start_label = 1
         stop_label = len(uniques) + 1
+    fu.log("relabel to new max-id %i" % stop_label)
     new_ids = np.arange(start_label, stop_label, dtype='uint64')
     assignments = np.concatenate([uniques[:, None], new_ids[:, None]], axis=1)
 
