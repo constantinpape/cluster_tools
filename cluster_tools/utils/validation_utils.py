@@ -19,6 +19,7 @@ def contigency_table(seg_a, seg_b):
     a_dict = dict(zip(a_ids, a_counts))
     b_dict = dict(zip(b_ids, b_counts))
 
+    # FIXME nifty ground_truth counts are not quite correct
     # compute the overlaps and overlap counts
     # use nifty gt functionality
     ovlp_comp = ngt.overlap(seg_a, seg_b)
@@ -32,10 +33,9 @@ def contigency_table(seg_a, seg_b):
     sorted_ids = np.lexsort(np.rot90(p_ids))
     p_ids = p_ids[sorted_ids]
     p_counts = p_counts[sorted_ids]
-    print(p_ids[:10])
-    print(p_counts[:10])
 
-    # nifty function overcounts by a factor of 2
+    # for some reason, we over-count by a factor of 2
+    # I am not quite sure why
     p_counts = np.divide(p_counts, 2)
 
     # this is the alternative (naive) numpy impl, unfortunately this is very slow and
@@ -87,33 +87,36 @@ def compute_vi_scores(a_dict, b_dict, p_ids, p_counts, n_points, use_log2):
     return vis, vim
 
 
-def variation_of_information(seg_a, seg_b, ignore_a=None, ignore_b=None, use_log2=True):
+def variation_of_information(segmentation, groundtruth,
+                             ignore_seg=None, ignore_gt=None,
+                             use_log2=True):
     """ Compute variation of information between two segmentations.
 
     Computes split and merge vi, add them up to get the full vi score.
 
     Arguments:
-        seg_a [np.ndarray] - segmentation a
-        seg_b [np.ndarray] - segmentation b
-        ignore_a [listlike] - ignore ids for segmentation a (default: None)
-        ignore_b [listlike] - ignore ids for segmentation b (default: None)
+        segmentation [np.ndarray] - candidate segmentation to evaluate
+        groundtruth [np.ndarray] - groundtruth
+        ignore_seg [listlike] - ignore ids for segmentation (default: None)
+        ignore_gt [listlike] - ignore ids for groundtruth (default: None)
         use_log2 [bool] - whether to use log2 or loge (default: True)
     Retuns:
         float - split vi
         float - merge vi
     """
-    ignore_mask = compute_ignore_mask(seg_a, seg_b, ignore_a, ignore_b)
+    ignore_mask = compute_ignore_mask(segmentation, groundtruth,
+                                      ignore_seg, ignore_gt)
     if ignore_mask is not None:
-        seg_a = seg_a[ignore_mask]
-        seg_b = seg_b[ignore_mask]
+        segmentation = segmentation[ignore_mask]
+        groundtruth = groundtruth[ignore_mask]
     else:
         # if we don't have a mask, we need to make sure the segmentations are
-        seg_a = seg_a.ravel()
-        seg_b = seg_b.ravel()
+        segmentation = segmentation.ravel()
+        groundtruth = groundtruth.ravel()
 
     # compute ids, counts and overlaps making up the contigency table
-    a_dict, b_dict, p_ids, p_counts = contigency_table(seg_a, seg_b)
-    n_points = seg_a.size
+    a_dict, b_dict, p_ids, p_counts = contigency_table(groundtruth, segmentation)
+    n_points = segmentation.size
 
     # compute and return vi scores
     vis, vim = compute_vi_scores(a_dict, b_dict, p_ids, p_counts, n_points,
@@ -149,46 +152,47 @@ def compute_rand_scores(a_dict, b_dict, p_counts, n_points):
     return ari, ri
 
 
-def rand_index(seg_a, seg_b, ignore_a=None, ignore_b=None):
+def rand_index(segmentation, groundtruth, ignore_seg=None, ignore_gt=None):
     """ Compute rand index derived scores between two segmentations.
 
     Computes adapted rand error and rand index.
 
     Arguments:
-        seg_a [np.ndarray] - segmentation a
-        seg_b [np.ndarray] - segmentation b
-        ignore_a [listlike] - ignore ids for segmentation a (default: None)
-        ignore_b [listlike] - ignore ids for segmentation b (default: None)
+        segmentation [np.ndarray] - candidate segmentation to evaluate
+        groundtruth [np.ndarray] - groundtruth
+        ignore_seg [listlike] - ignore ids for segmentation (default: None)
+        ignore_gt [listlike] - ignore ids for groundtruth (default: None)
     Retuns:
         float - adapted rand error
         float - rand index
     """
-    ignore_mask = compute_ignore_mask(seg_a, seg_b, ignore_a, ignore_b)
+    ignore_mask = compute_ignore_mask(segmentation, groundtruth,
+                                      ignore_seg, ignore_gt)
     if ignore_mask is not None:
-        seg_a = seg_a[ignore_mask]
-        seg_b = seg_b[ignore_mask]
+        segmentation = segmentation[ignore_mask]
+        groundtruth = groundtruth[ignore_mask]
     else:
         # if we don't have a mask, we need to make sure the segmentations are
-        seg_a = seg_a.ravel()
-        seg_b = seg_b.ravel()
+        segmentation = segmentation.ravel()
+        groundtruth = groundtruth.ravel()
 
     # compute ids, counts and overlaps making up the contigency table
-    a_dict, b_dict, _, p_counts = contigency_table(seg_a, seg_b)
-    n_points = seg_a.size
+    a_dict, b_dict, _, p_counts = contigency_table(groundtruth, segmentation)
+    n_points = segmentation.size
 
     # compute and return rand scores
     ari, ri = compute_rand_scores(a_dict, b_dict, p_counts, n_points)
     return ari, ri
 
 
-def cremi_score(seg_a, seg_b, ignore_a=None, ignore_b=None):
+def cremi_score(segmentation, groundtruth, ignore_seg=None, ignore_gt=None):
     """ Computes cremi scores between two segmentations
 
     Arguments:
-        seg_a [np.ndarray] - segmentation a
-        seg_b [np.ndarray] - segmentation b
-        ignore_a [listlike] - ignore ids for segmentation a (default: None)
-        ignore_b [listlike] - ignore ids for segmentation b (default: None)
+        segmentation [np.ndarray] - candidate segmentation to evaluate
+        groundtruth [np.ndarray] - groundtruth
+        ignore_seg [listlike] - ignore ids for segmentation (default: None)
+        ignore_gt [listlike] - ignore ids for groundtruth (default: None)
     Retuns:
         float - vi-split
         float - vi-merge
@@ -196,18 +200,19 @@ def cremi_score(seg_a, seg_b, ignore_a=None, ignore_b=None):
         float - cremi score
     """
 
-    ignore_mask = compute_ignore_mask(seg_a, seg_b, ignore_a, ignore_b)
+    ignore_mask = compute_ignore_mask(segmentation, groundtruth,
+                                      ignore_seg, ignore_gt)
     if ignore_mask is not None:
-        seg_a = seg_a[ignore_mask]
-        seg_b = seg_b[ignore_mask]
+        segmentation = segmentation[ignore_mask]
+        groundtruth = groundtruth[ignore_mask]
     else:
         # if we don't have a mask, we need to make sure the segmentations are
-        seg_a = seg_a.ravel()
-        seg_b = seg_b.ravel()
+        segmentation = segmentation.ravel()
+        groundtruth = groundtruth.ravel()
 
     # compute ids, counts and overlaps making up the contigency table
-    a_dict, b_dict, p_ids, p_counts = contigency_table(seg_a, seg_b)
-    n_points = seg_a.size
+    a_dict, b_dict, p_ids, p_counts = contigency_table(groundtruth, segmentation)
+    n_points = segmentation.size
 
     # compute vi scores
     vis, vim = compute_vi_scores(a_dict, b_dict, p_ids, p_counts, n_points,

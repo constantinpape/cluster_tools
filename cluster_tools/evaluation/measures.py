@@ -112,12 +112,22 @@ def measures(job_id, config_path):
                       for idb in ovlp.keys()])
     p_counts = np.array([ovlp_cnt for ovlp in overlaps.values()
                          for ovlp_cnt in ovlp.values()], dtype='uint64')
-    ids_a = np.unique(p_ids[:, 0])
-    ids_b = np.unique(p_ids[:, 1])
 
-    sizes_a = np.array([np.sum(p_counts[p_ids[:, 0] == id_a])
+    # for some reason, we over-count by a factor of 2
+    # I am not quite sure why
+    p_counts = np.divide(p_counts, 2)
+
+    pairs_a = p_ids[:, 0]
+    ids_a = np.unique(pairs_a)
+    pairs_b = p_ids[:, 1]
+    ids_b = np.unique(pairs_b)
+
+    # TODO there should be a more efficient way, e.g.
+    # sorting + `scipy.ndimage.find_objects`
+    # + iterating over the slices
+    sizes_a = np.array([np.sum(p_counts[pairs_a == id_a])
                         for id_a in ids_a])
-    sizes_b = np.array([np.sum(p_counts[p_ids[:, 1] == id_b])
+    sizes_b = np.array([np.sum(p_counts[pairs_b == id_b])
                         for id_b in ids_b])
 
     a_dict = dict(zip(ids_a, sizes_a))
@@ -129,7 +139,8 @@ def measures(job_id, config_path):
     assert n_points == np.sum(sizes_b) == np.sum(p_counts)
 
     # compute and save voi and rand measures
-    vis, vim = val.compute_vi_scores(a_dict, b_dict, p_ids, p_counts, n_points, True)
+    # for some reason this is switched here
+    vim, vis = val.compute_vi_scores(a_dict, b_dict, p_ids, p_counts, n_points, True)
     ari, ri = val.compute_rand_scores(a_dict, b_dict, p_counts, n_points)
 
     results = {'vi-split': vis, 'vi-merge': vim,

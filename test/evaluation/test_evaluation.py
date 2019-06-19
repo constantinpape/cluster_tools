@@ -18,6 +18,7 @@ class TestEvaluation(unittest.TestCase):
     config_folder = './tmp/configs'
     target = 'local'
     block_shape = [25, 256, 256]
+    shebang = '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python'
 
     def setUp(self):
         os.makedirs(self.config_folder, exist_ok=True)
@@ -25,12 +26,12 @@ class TestEvaluation(unittest.TestCase):
         configs = evaluation.EvaluationWorkflow.get_config()
         global_config = configs['global']
 
-        global_config['shebang'] = '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python'
+        global_config['shebang'] = self.shebang
         global_config['block_shape'] = self.block_shape
         with open(os.path.join(self.config_folder, 'global.config'), 'w') as f:
             json.dump(global_config, f)
 
-    def _tearDown(self):
+    def tearDown(self):
         try:
             rmtree(self.tmp_folder)
         except OSError:
@@ -47,7 +48,7 @@ class TestEvaluation(unittest.TestCase):
         ds.n_threads = 8
         gt = ds[:]
 
-        vis, vim, ri, _ = val.cremi_score(gt, seg, ignore_a=[0])
+        vis, vim, ri, _ = val.cremi_score(seg, gt, ignore_gt=[0])
         return vis, vim, ri
 
     def test_eval(self):
@@ -70,13 +71,9 @@ class TestEvaluation(unittest.TestCase):
 
         vis_exp, vim_exp, ri_exp = self.metrics()
 
-        print(ri, ri_exp)
-        print(vis, vis_exp)
-        print(vim, vim_exp)
-
-        self.assertAlmostEqual(ri, ri_exp)
-        self.assertAlmostEqual(vim, vim_exp)
         self.assertAlmostEqual(vis, vis_exp)
+        self.assertAlmostEqual(vim, vim_exp)
+        self.assertAlmostEqual(ri, ri_exp)
 
 
 if __name__ == '__main__':
