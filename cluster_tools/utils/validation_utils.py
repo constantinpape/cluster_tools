@@ -29,9 +29,11 @@ def contigency_table(seg_a, seg_b):
 
     # the contingency table is unsorted.
     # it can be sorted with the code below, but is not necessary here
-    # sorted_ids = np.lexsort(np.rot90(p_ids))
-    # p_ids = p_ids[sorted_ids]
-    # p_counts = p_counts[sorted_ids]
+    sorted_ids = np.lexsort(np.rot90(p_ids))
+    p_ids = p_ids[sorted_ids]
+    p_counts = p_counts[sorted_ids]
+    print(p_ids[:10])
+    print(p_counts[:10])
 
     # nifty function overcounts by a factor of 2
     p_counts = np.divide(p_counts, 2)

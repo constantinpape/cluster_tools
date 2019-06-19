@@ -19,28 +19,21 @@ except ImportError:
 
 
 class TestNodeLabels(unittest.TestCase):
-    path = '/g/kreshuk/pape/Work/data/cluster_tools_test_data/test_data.n5'
+    path = '/g/kreshuk/data/cremi/example/sampleA.n5'
     output_path = './tmp/node_labels.n5'
-    ws_key = 'volumes/watershed'
-    input_key = 'volumes/groundtruth'
+    ws_key = 'volumes/segmentation/multicut'
+    input_key = 'volumes/segmentation/groundtruth'
     output_key = 'labels'
     output_key_ol = 'overlaps'
     #
     tmp_folder = './tmp'
     config_folder = './tmp/configs'
-    target= 'local'
-    shebang = '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env/bin/python'
-
-    @staticmethod
-    def _mkdir(dir_):
-        try:
-            os.mkdir(dir_)
-        except OSError:
-            pass
+    target = 'local'
+    shebang = '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python'
 
     def setUp(self):
-        self._mkdir(self.tmp_folder)
-        self._mkdir(self.config_folder)
+        os.makedirs(self.tmp_folder, exist_ok=True)
+        os.makedirs(self.config_folder, exist_ok=True)
         global_config = NodeLabelWorkflow.get_config()['global']
         global_config['shebang'] = self.shebang
         global_config['block_shape'] = [10, 256, 256]
@@ -126,18 +119,18 @@ class TestNodeLabels(unittest.TestCase):
             json.dump(config, f)
 
         task1 = NodeLabelWorkflow(tmp_folder=self.tmp_folder,
-                                 config_dir=self.config_folder,
-                                 target=self.target, max_jobs=8,
-                                 ws_path=self.path, ws_key=self.ws_key,
-                                 input_path=self.path, input_key=self.input_key,
-                                 output_path=self.output_path, output_key=self.output_key)
+                                  config_dir=self.config_folder,
+                                  target=self.target, max_jobs=4,
+                                  ws_path=self.path, ws_key=self.ws_key,
+                                  input_path=self.path, input_key=self.input_key,
+                                  output_path=self.output_path, output_key=self.output_key)
         task2 = NodeLabelWorkflow(tmp_folder=self.tmp_folder,
-                                 config_dir=self.config_folder,
-                                 target=self.target, max_jobs=8,
-                                 ws_path=self.path, ws_key=self.ws_key,
-                                 input_path=self.path, input_key=self.input_key,
-                                 output_path=self.output_path, output_key=self.output_key_ol,
-                                 max_overlap=False)
+                                  config_dir=self.config_folder,
+                                  target=self.target, max_jobs=4,
+                                  ws_path=self.path, ws_key=self.ws_key,
+                                  input_path=self.path, input_key=self.input_key,
+                                  output_path=self.output_path, output_key=self.output_key_ol,
+                                  max_overlap=False)
         ret = luigi.build([task1, task2], local_scheduler=True)
         self.assertTrue(ret)
         self._check_sub_results()
