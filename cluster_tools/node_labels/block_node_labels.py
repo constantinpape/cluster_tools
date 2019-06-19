@@ -5,6 +5,7 @@ import sys
 import json
 
 import luigi
+import numpy as np
 import nifty.tools as nt
 import nifty.distributed as ndist
 
@@ -140,10 +141,11 @@ def _labels_for_block(block_id, blocking,
     labs = labels[bb].astype('uint64')
 
     # check if label block is empty:
-    if labs.sum() == 0:
-        fu.log("labels of block %i is empty" % block_id)
-        fu.log_block_success(block_id)
-        return
+    if ignore_label is not None:
+        if np.sum(labs == ignore_label) == labs.size:
+            fu.log("labels of block %i is empty" % block_id)
+            fu.log_block_success(block_id)
+            return
 
     chunk_id = tuple(beg // ch
                      for beg, ch in zip(block.begin,

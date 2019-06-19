@@ -7,7 +7,8 @@ from shutil import rmtree
 import numpy as np
 import luigi
 import z5py
-import nifty.graph.rag as nrag
+
+import nifty.ground_truth as ngt
 import nifty.distributed as ndist
 import nifty.tools as nt
 
@@ -24,117 +25,193 @@ class TestNodeLabels(unittest.TestCase):
     ws_key = 'volumes/segmentation/multicut'
     input_key = 'volumes/segmentation/groundtruth'
     output_key = 'labels'
-    output_key_ol = 'overlaps'
     #
     tmp_folder = './tmp'
     config_folder = './tmp/configs'
     target = 'local'
     shebang = '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python'
+    block_shape = [10, 256, 256]
+    n_jobs = 4
 
     def setUp(self):
         os.makedirs(self.tmp_folder, exist_ok=True)
         os.makedirs(self.config_folder, exist_ok=True)
         global_config = NodeLabelWorkflow.get_config()['global']
         global_config['shebang'] = self.shebang
-        global_config['block_shape'] = [10, 256, 256]
+        global_config['block_shape'] = self.block_shape
         with open(os.path.join(self.config_folder, 'global.config'), 'w') as f:
             json.dump(global_config, f)
 
-    def _tearDown(self):
+        config = NodeLabelWorkflow.get_config()['merge_node_labels']
+        config.update({'threads_per_job': self.n_jobs})
+        # config.update({'threads_per_job': 1})
+        with open(os.path.join(self.config_folder,
+                               'merge_node_labels.config'), 'w') as f:
+            json.dump(config, f)
+
+    def tearDown(self):
         try:
             rmtree(self.tmp_folder)
         except OSError:
             pass
 
-    def _compute_and_check_expected(self, ws, inp, res, exclude=None):
-        self.assertFalse((res == 0).all())
-        rag = nrag.gridRag(ws, numberOfLabels=int(ws.max() + 1))
-        expected = nrag.gridRagAccumulateLabels(rag, inp)
+    @staticmethod
+    def compute_overlaps_numpy(ws, gt, max_overlap=False):
+        seg_ids = np.unique(ws)
+        overlaps = {}
+        for seg_id in seg_ids:
+            mask = ws == seg_id
+            ovlp, cnt = np.unique(gt[mask], return_counts=True)
+            overlaps[seg_id] = (ovlp, cnt)
 
-        if exclude is not None:
-            res = res[exclude]
-            expected = expected[exclude]
+        if max_overlap:
+            assert False
+            return overlaps
+        return overlaps
 
-        self.assertEqual(res.shape, expected.shape)
-        self.assertTrue(np.allclose(res, expected))
+    # FIXME nifty overlap counts are not 100% correct
+    @staticmethod
+    def compute_overlaps(seg_a, seg_b, max_overlap=True):
 
-    def _ovlps_to_max_ovlps(self, res, max_label_id):
-        max_overlaps = np.zeros(max_label_id + 1, dtype='uint64')
-        exclude = np.ones(max_label_id + 1, dtype='bool')
-        for label_id, ovlps in res.items():
-            self.assertTrue(ovlps)
-            values, counts = np.array(list(ovlps.keys())), np.array(list(ovlps.values()))
-            _, count_counts = np.unique(counts, return_counts=True)
+        seg_ids = np.unique(seg_a)
+        comp = ngt.overlap(seg_a, seg_b)
+        overlaps = [comp.overlapArrays(ida, True) for ida in seg_ids]
 
-            # if we have agreeing counts, the results may be ambiguous, so we exclude the label from check
-            if (count_counts > 1).any():
-                exclude[label_id] = False
-            max_overlaps[label_id] = values[np.argmax(counts)]
-        return max_overlaps, exclude
+        if max_overlap:
+            # the max overlap can be ambiguous, need to filtr for this
+            mask = np.array([ovlp[1][0] != ovlp[1][1] if ovlp[1].size > 1 else True
+                             for ovlp in overlaps])
+            overlaps = np.array([ovlp[0][0] for ovlp in overlaps])
+            assert mask.shape == overlaps.shape
+            return overlaps, mask
+        else:
+            overlaps = {seg_id: ovlp for seg_id, ovlp in zip(seg_ids, overlaps)}
+            return overlaps
 
-    def _check_result(self):
-        # load the max ol result
-        with z5py.File(self.output_path) as f:
-            res = f[self.output_key][:]
-            ds_ol = f[self.output_key_ol]
-            res_ol, max_label_id = ndist.deserializeOverlapChunk(ds_ol.path, (0,))
-        n_labels = len(res)
-        self.assertEqual(n_labels, max_label_id + 1)
-
-        # extract the max ol labels
-        max_ols, exclude = self._ovlps_to_max_ovlps(res_ol, max_label_id)
-
+    def load_data(self):
+        # compute the expected max overlaps
         with z5py.File(self.path) as f:
-            ws = f[self.ws_key][:]
-            inp = f[self.input_key][:]
-        self._compute_and_check_expected(ws, inp, res, exclude)
-        self._compute_and_check_expected(ws, inp, max_ols, exclude)
+            ds_ws = f[self.ws_key]
+            ds_ws.n_threads = self.n_jobs
+            ws = ds_ws[:]
 
-    def _check_sub_results(self):
+            ds_inp = f[self.input_key]
+            ds_inp.n_threads = self.n_jobs
+            inp = ds_inp[:]
+        return ws, inp
+
+    def check_overlaps(self, ids, overlaps, overlaps_exp):
+        self.assertEqual(len(ids), len(overlaps))
+        self.assertEqual(len(overlaps), len(overlaps_exp))
+
+        for seg_id in ids:
+
+            this_ovlps = overlaps[seg_id]
+            ovlp_ids = np.array(list(this_ovlps.keys()))
+            ovlp_counts = np.array(list(this_ovlps.values()))
+            sorted_ids = np.argsort(ovlp_ids)
+            ovlp_ids = ovlp_ids[sorted_ids]
+            ovlp_counts = ovlp_counts[sorted_ids]
+
+            ovlp_ids_exp, ovlp_counts_exp = overlaps_exp[seg_id]
+            sorted_ids = np.argsort(ovlp_ids_exp)
+            ovlp_ids_exp = ovlp_ids[sorted_ids]
+            ovlp_counts_exp = ovlp_counts_exp[sorted_ids]
+
+            self.assertTrue(np.allclose(ovlp_ids, ovlp_ids_exp))
+            self.assertTrue(np.allclose(ovlp_counts, ovlp_counts_exp))
+
+    # test the nifty function
+    def test_nifty_ovlp(self):
+        bb = tuple(slice(0, bs) for bs in self.block_shape)
         f = z5py.File(self.path)
-        dsw = f[self.ws_key]
-        dsi = f[self.input_key]
-        block_shape = [10, 256, 256]
-        blocking = nt.blocking([0, 0, 0], dsw.shape, block_shape)
+        ws = f[self.ws_key][bb]
+        gt = f[self.input_key][bb]
+        ids = np.unique(ws)
+        overlaps = ndist.computeLabelOverlaps(ws, gt)
+        # overlaps_exp = self.compute_overlaps(ws, gt, False)
+        overlaps_exp = self.compute_overlaps_numpy(ws, gt, False)
+        self.check_overlaps(ids, overlaps, overlaps_exp)
+
+    def test_max_overlap(self):
+        task = NodeLabelWorkflow(tmp_folder=self.tmp_folder,
+                                 config_dir=self.config_folder,
+                                 target=self.target, max_jobs=self.n_jobs,
+                                 ws_path=self.path, ws_key=self.ws_key,
+                                 input_path=self.path, input_key=self.input_key,
+                                 output_path=self.output_path, output_key=self.output_key)
+
+        ret = luigi.build([task], local_scheduler=True)
+        self.assertTrue(ret)
+
+        # load the result
+        with z5py.File(self.output_path) as f:
+            overlaps = f[self.output_key][:]
+
+        ws, inp = self.load_data()
+
+        overlaps_exp, mask = self.compute_overlaps(ws, inp)
+        self.assertEqual(overlaps.shape, overlaps_exp.shape)
+
+        overlaps = overlaps[mask]
+        overlaps_exp = overlaps_exp[mask]
+
+        # compare results
+        self.assertTrue(np.allclose(overlaps, overlaps_exp))
+
+    def test_subresults(self):
+        task = NodeLabelWorkflow(tmp_folder=self.tmp_folder,
+                                 config_dir=self.config_folder,
+                                 target=self.target, max_jobs=self.n_jobs,
+                                 ws_path=self.path, ws_key=self.ws_key,
+                                 input_path=self.path, input_key=self.input_key,
+                                 output_path=self.output_path, output_key=self.output_key)
+
+        ret = luigi.build([task], local_scheduler=True)
+        self.assertTrue(ret)
 
         tmp_path = os.path.join(self.output_path, 'label_overlaps_')
+        ws, inp = self.load_data()
 
+        blocking = nt.blocking([0, 0, 0], ws.shape, self.block_shape)
         for block_id in range(blocking.numberOfBlocks):
             block = blocking.getBlock(block_id)
+            chunk_id = tuple(start // bs for start, bs in zip(block.begin, self.block_shape))
             bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
-            ws = dsw[bb]
-            inp = dsi[bb]
 
-            chunk_id = tuple(beg // bs for beg, bs in zip(block.begin, block_shape))
-            res, max_label_id = ndist.deserializeOverlapChunk(tmp_path, chunk_id)
+            wsb, inpb = ws[bb], inp[bb]
 
-            max_overlaps, exclude = self._ovlps_to_max_ovlps(res, max_label_id)
-            self._compute_and_check_expected(ws, inp, max_overlaps, exclude)
+            overlaps, _ = ndist.deserializeOverlapChunk(tmp_path, chunk_id)
+            # overlaps_exp = self.compute_overlaps(wsb, inpb, False)
+            overlaps_exp = self.compute_overlaps_numpy(wsb, inpb, False)
 
-    def test_node_labels(self):
-        config = NodeLabelWorkflow.get_config()['merge_node_labels']
-        config.update({'threads_per_job': 8})
-        with open(os.path.join(self.config_folder,
-                               'merge_node_labels.config'), 'w') as f:
-            json.dump(config, f)
+            ids = np.unique(wsb)
+            self.check_overlaps(ids, overlaps, overlaps_exp)
 
-        task1 = NodeLabelWorkflow(tmp_folder=self.tmp_folder,
-                                  config_dir=self.config_folder,
-                                  target=self.target, max_jobs=4,
-                                  ws_path=self.path, ws_key=self.ws_key,
-                                  input_path=self.path, input_key=self.input_key,
-                                  output_path=self.output_path, output_key=self.output_key)
-        task2 = NodeLabelWorkflow(tmp_folder=self.tmp_folder,
-                                  config_dir=self.config_folder,
-                                  target=self.target, max_jobs=4,
-                                  ws_path=self.path, ws_key=self.ws_key,
-                                  input_path=self.path, input_key=self.input_key,
-                                  output_path=self.output_path, output_key=self.output_key_ol,
-                                  max_overlap=False)
-        ret = luigi.build([task1, task2], local_scheduler=True)
+    def test_overlaps(self):
+        task = NodeLabelWorkflow(tmp_folder=self.tmp_folder,
+                                 config_dir=self.config_folder,
+                                 target=self.target, max_jobs=self.n_jobs,
+                                 ws_path=self.path, ws_key=self.ws_key,
+                                 input_path=self.path, input_key=self.input_key,
+                                 output_path=self.output_path, output_key=self.output_key,
+                                 max_overlap=False)
+
+        ret = luigi.build([task], local_scheduler=True)
         self.assertTrue(ret)
-        self._check_sub_results()
-        self._check_result()
+
+        # load the result
+        overlaps = ndist.deserializeOverlapChunk(os.path.join(self.output_path,
+                                                              self.output_key),
+                                                 (0,))[0]
+
+        # compute the expected overlaps
+        ws, inp = self.load_data()
+        overlaps_exp = self.compute_overlaps(ws, inp, max_overlap=False)
+
+        # check the result
+        ids = np.unique(ws)
+        self.check_overlaps(ids, overlaps, overlaps_exp)
 
 
 if __name__ == '__main__':
