@@ -16,27 +16,16 @@ def contigency_table(seg_a, seg_b):
     # and wrap them in a dict
     a_ids, a_counts = np.unique(seg_a, return_counts=True)
     b_ids, b_counts = np.unique(seg_b, return_counts=True)
-    a_dict = dict(zip(a_ids, a_counts))
-    b_dict = dict(zip(b_ids, b_counts))
+    a_dict = dict(zip(a_ids, a_counts.astype('float64')))
+    b_dict = dict(zip(b_ids, b_counts.astype('float64')))
 
-    # FIXME nifty ground_truth counts are not quite correct
     # compute the overlaps and overlap counts
     # use nifty gt functionality
     ovlp_comp = ngt.overlap(seg_a, seg_b)
     ovlps = [ovlp_comp.overlapArrays(ida, sorted=False) for ida in a_ids]
     p_ids = np.array([[ida, idb] for ida, ovlp in zip(a_ids, ovlps) for idb in ovlp[0]])
-    p_counts = np.concatenate([ovlp[1] for ovlp in ovlps]).astype('uint64')
+    p_counts = np.concatenate([ovlp[1] for ovlp in ovlps]).astype('float64')
     assert len(p_ids) == len(p_counts)
-
-    # the contingency table is unsorted.
-    # it can be sorted with the code below, but is not necessary here
-    sorted_ids = np.lexsort(np.rot90(p_ids))
-    p_ids = p_ids[sorted_ids]
-    p_counts = p_counts[sorted_ids]
-
-    # for some reason, we over-count by a factor of 2
-    # I am not quite sure why
-    p_counts = np.divide(p_counts, 2)
 
     # this is the alternative (naive) numpy impl, unfortunately this is very slow and
     # needs a lot of memory

@@ -77,6 +77,16 @@ class MeasuresLSF(MeasuresBase, LSFTask):
 # Implementation
 #
 
+def overlaps_to_sizes(pairs, counts):
+    sorted_ids = np.argsort(pairs)
+    sizes = counts[sorted_ids]
+    sorted_ids = pairs[sorted_ids]
+    _, label_starts = np.unique(sorted_ids, return_index=True)
+    label_ends = label_starts[1:].tolist() + [sizes.size]
+    sizes = np.array([np.sum(sizes[lstart:lend])
+                      for lstart, lend in zip(label_starts, label_ends)])
+    return sizes
+
 
 def measures(job_id, config_path):
 
@@ -111,24 +121,16 @@ def measures(job_id, config_path):
     p_ids = np.array([[ida, idb] for ida, ovlp in overlaps.items()
                       for idb in ovlp.keys()])
     p_counts = np.array([ovlp_cnt for ovlp in overlaps.values()
-                         for ovlp_cnt in ovlp.values()], dtype='uint64')
-
-    # for some reason, we over-count by a factor of 2
-    # I am not quite sure why
-    p_counts = np.divide(p_counts, 2)
+                         for ovlp_cnt in ovlp.values()], dtype='float64')
 
     pairs_a = p_ids[:, 0]
     ids_a = np.unique(pairs_a)
     pairs_b = p_ids[:, 1]
     ids_b = np.unique(pairs_b)
 
-    # TODO there should be a more efficient way, e.g.
-    # sorting + `scipy.ndimage.find_objects`
-    # + iterating over the slices
-    sizes_a = np.array([np.sum(p_counts[pairs_a == id_a])
-                        for id_a in ids_a])
-    sizes_b = np.array([np.sum(p_counts[pairs_b == id_b])
-                        for id_b in ids_b])
+    # get the sizes from the overlaps
+    sizes_a = overlaps_to_sizes(pairs_a, p_counts)
+    sizes_b = overlaps_to_sizes(pairs_b, p_counts)
 
     a_dict = dict(zip(ids_a, sizes_a))
     b_dict = dict(zip(ids_b, sizes_b))

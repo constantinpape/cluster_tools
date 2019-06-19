@@ -11,9 +11,9 @@ class TestMetrics(unittest.TestCase):
     gt_key = 'volumes/segmentation/groundtruth'
 
     # this takes quite a while, so we only do it on a sub-cutout
-    bb = np.s_[:30, :256, :256]
+    # bb = np.s_[:30, :256, :256]
     # bb = np.s_[:]
-    # bb = np.s_[:100, :1024, :1024]
+    bb = np.s_[:100, :1024, :1024]
 
     def test_vi(self):
         from cluster_tools.utils.validation_utils import variation_of_information

@@ -31,7 +31,7 @@ class TestEvaluation(unittest.TestCase):
         with open(os.path.join(self.config_folder, 'global.config'), 'w') as f:
             json.dump(global_config, f)
 
-    def tearDown(self):
+    def _tearDown(self):
         try:
             rmtree(self.tmp_folder)
         except OSError:

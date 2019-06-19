@@ -44,7 +44,6 @@ class TestNodeLabels(unittest.TestCase):
 
         config = NodeLabelWorkflow.get_config()['merge_node_labels']
         config.update({'threads_per_job': self.n_jobs})
-        # config.update({'threads_per_job': 1})
         with open(os.path.join(self.config_folder,
                                'merge_node_labels.config'), 'w') as f:
             json.dump(config, f)
@@ -55,21 +54,6 @@ class TestNodeLabels(unittest.TestCase):
         except OSError:
             pass
 
-    @staticmethod
-    def compute_overlaps_numpy(ws, gt, max_overlap=False):
-        seg_ids = np.unique(ws)
-        overlaps = {}
-        for seg_id in seg_ids:
-            mask = ws == seg_id
-            ovlp, cnt = np.unique(gt[mask], return_counts=True)
-            overlaps[seg_id] = (ovlp, cnt)
-
-        if max_overlap:
-            assert False
-            return overlaps
-        return overlaps
-
-    # FIXME nifty overlap counts are not 100% correct
     @staticmethod
     def compute_overlaps(seg_a, seg_b, max_overlap=True):
 
@@ -115,23 +99,11 @@ class TestNodeLabels(unittest.TestCase):
 
             ovlp_ids_exp, ovlp_counts_exp = overlaps_exp[seg_id]
             sorted_ids = np.argsort(ovlp_ids_exp)
-            ovlp_ids_exp = ovlp_ids[sorted_ids]
+            ovlp_ids_exp = ovlp_ids_exp[sorted_ids]
             ovlp_counts_exp = ovlp_counts_exp[sorted_ids]
 
             self.assertTrue(np.allclose(ovlp_ids, ovlp_ids_exp))
             self.assertTrue(np.allclose(ovlp_counts, ovlp_counts_exp))
-
-    # test the nifty function
-    def test_nifty_ovlp(self):
-        bb = tuple(slice(0, bs) for bs in self.block_shape)
-        f = z5py.File(self.path)
-        ws = f[self.ws_key][bb]
-        gt = f[self.input_key][bb]
-        ids = np.unique(ws)
-        overlaps = ndist.computeLabelOverlaps(ws, gt)
-        # overlaps_exp = self.compute_overlaps(ws, gt, False)
-        overlaps_exp = self.compute_overlaps_numpy(ws, gt, False)
-        self.check_overlaps(ids, overlaps, overlaps_exp)
 
     def test_max_overlap(self):
         task = NodeLabelWorkflow(tmp_folder=self.tmp_folder,
@@ -182,8 +154,7 @@ class TestNodeLabels(unittest.TestCase):
             wsb, inpb = ws[bb], inp[bb]
 
             overlaps, _ = ndist.deserializeOverlapChunk(tmp_path, chunk_id)
-            # overlaps_exp = self.compute_overlaps(wsb, inpb, False)
-            overlaps_exp = self.compute_overlaps_numpy(wsb, inpb, False)
+            overlaps_exp = self.compute_overlaps(wsb, inpb, False)
 
             ids = np.unique(wsb)
             self.check_overlaps(ids, overlaps, overlaps_exp)
