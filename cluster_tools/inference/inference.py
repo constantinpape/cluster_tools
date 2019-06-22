@@ -51,7 +51,7 @@ class InferenceBase(luigi.Task):
         config = LocalTask.default_task_config()
         config.update({'dtype': 'uint8', 'compression': 'gzip', 'chunks': None,
                        'gpu_type': '2080Ti', 'device_mapping': None,
-                       'use_best': True, 'tda_config': {}})
+                       'use_best': True, 'tda_config': {}, 'prep_model': None})
         return config
 
     def clean_up_for_retry(self, block_list):
@@ -178,8 +178,26 @@ class InferenceLSF(InferenceBase, LSFTask):
 
 
 #
+# Prep models
+#
+
+def extract_unet(model):
+    return model.unet
+
+
+PREP_FUNCTIONS = {'extract_unet': extract_unet}
+
+
+def get_prep_model(key):
+    assert key in PREP_FUNCTIONS, "prep_model %s is not supported, use one of %s"\
+        % (key, str(list(PREP_FUNCTIONS.values())))
+    return PREP_FUNCTIONS[key]
+
+
+#
 # Implementation
 #
+
 
 def _load_input(ds, offset, block_shape, halo, padding_mode='reflect'):
 
@@ -316,7 +334,9 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
     # iterate over the blocks in block list, get the input data and predict
     results = []
     for block_id in block_list:
-        res = tz.pipe(block_id, log1, load_input, preprocess_impl, predict_impl, write_output, log2)
+        res = tz.pipe(block_id, log1, load_input,
+                      preprocess_impl, predict_impl,
+                      write_output, log2)
         results.append(res)
 
     success = dask.compute(*results, scheduler='threads', num_workers=n_threads)
@@ -360,12 +380,12 @@ def inference(job_id, config_path):
         fu.log(str(tda_config))
 
     fu.log("Loading model from %s" % checkpoint_path)
-    # # FIXME hack for ynet
-    # def extract_unet(model):
-    #     return model.unet
-    extract_unet = None
 
-    predict = get_predictor(framework)(checkpoint_path, halo, gpu=gpu, prep_model=extract_unet,
+    prep_model = config.get('prep_model', None)
+    if prep_model is not None:
+        prep_model = get_prep_model(prep_model)
+
+    predict = get_predictor(framework)(checkpoint_path, halo, gpu=gpu, prep_model=prep_model,
                                        use_best=use_best, **tda_config)
     fu.log("Have model")
     preprocess = get_preprocessor(framework)
