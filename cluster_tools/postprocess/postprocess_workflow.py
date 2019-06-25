@@ -18,6 +18,7 @@ from . import filter_blocks as filter_tasks
 from . import id_filter as id_tasks
 from . import orphan_assignments as orphan_tasks
 from . import graph_watershed_assignments as gws_tasks
+from . import graph_connected_components as cc_tasks
 
 
 class SizeFilterWorkflow(WorkflowBase):
@@ -31,6 +32,10 @@ class SizeFilterWorkflow(WorkflowBase):
     relabel = luigi.BoolParameter(default=True)
 
     def _bg_filter(self, dep):
+        print("HEAAAAAAAAAAAAAARRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR")
+        print("HEAAAAAAAAAAAAAARRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR")
+        print("HEAAAAAAAAAAAAAARRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR")
+        print("HEAAAAAAAAAAAAAARRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR")
         filter_task = getattr(bg_tasks,
                               self._get_task_name('BackgroundSizeFilter'))
         dep = filter_task(tmp_folder=self.tmp_folder,
@@ -259,6 +264,7 @@ class FilterOrphansWorkflow(WorkflowBase):
     relabel = luigi.BoolParameter(default=False)
 
     def requires(self):
+        assert False, "FIXME not debugged yet"
         dep = self.dependency
         orphan_task = getattr(orphan_tasks,
                               self._get_task_name('OrphanAssignments'))
@@ -287,6 +293,50 @@ class FilterOrphansWorkflow(WorkflowBase):
         return configs
 
 
+class ConnectedComponentsWorkflow(WorkflowBase):
+    problem_path = luigi.Parameter()
+    graph_key = luigi.Parameter()
+
+    path = luigi.Parameter()
+    fragments_key = luigi.Parameter(default='')
+    assignment_key = luigi.Parameter()
+
+    output_path = luigi.Parameter()
+    assignment_out_key = luigi.Parameter()
+    output_key = luigi.Parameter(default='')
+
+    def requires(self):
+        cc_task = getattr(cc_tasks,
+                          self._get_task_name('GraphConnectedComponents'))
+        dep = cc_task(max_jobs=self.max_jobs, tmp_folder=self.tmp_folder,
+                      config_dir=self.config_dir,
+                      problem_path=self.problem_path,
+                      graph_key=self.graph_key,
+                      assignment_path=self.path,
+                      assignment_key=self.assignment_key,
+                      output_path=self.output_path,
+                      output_key=self.assignment_out_key)
+        if self.output_key != '':
+            write_task = getattr(write_tasks,
+                                 self._get_task_name('Write'))
+            assert self.fragments_key != ''
+            dep = write_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                             config_dir=self.config_dir, dependency=dep,
+                             input_path=self.path, input_key=self.fragments_key,
+                             output_path=self.output_path, output_key=self.output_key,
+                             assignment_path=self.output_path,
+                             assignment_key=self.assignment_out_key,
+                             identifier='graph-connected-components')
+        return dep
+
+    @staticmethod
+    def get_config():
+        configs = super(WorkflowBase, WorkflowBase).get_config()
+        configs.update({'graph_connected_components': cc_tasks.default_task_config(),
+                        'write': write_tasks.WriteLocal.default_task_config()})
+        return configs
+
+
 class SizeFilterAndGraphWatershedWorkflow(WorkflowBase):
 
     problem_path = luigi.Parameter()
@@ -309,7 +359,7 @@ class SizeFilterAndGraphWatershedWorkflow(WorkflowBase):
 
     output_path = luigi.Parameter()
     assignment_out_key = luigi.Parameter()
-    output_key = luigi.Parameter(default=None)
+    output_key = luigi.Parameter(default='')
 
     def find_sizes(self, dep):
         # find segemnts that should be merged according to the size filter
@@ -352,13 +402,13 @@ class SizeFilterAndGraphWatershedWorkflow(WorkflowBase):
                        filter_nodes_path=filter_path,
                        relabel=self.relabel, from_costs=self.from_costs)
 
-        if self.output_key is not None:
+        if self.output_key != '':
             write_task = getattr(write_tasks,
                                  self._get_task_name('Write'))
             dep = write_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                              config_dir=self.config_dir, dependency=dep,
                              input_path=self.path, input_key=self.fragments_key,
-                             output_path=self.path, output_key=self.output_key,
+                             output_path=self.output_path, output_key=self.output_key,
                              assignment_path=self.output_path, assignment_key=self.assignment_out_key,
                              identifier='size-filter-graph-ws')
         return dep
