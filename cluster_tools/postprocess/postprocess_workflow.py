@@ -299,6 +299,7 @@ class ConnectedComponentsWorkflow(WorkflowBase):
 
     path = luigi.Parameter()
     fragments_key = luigi.Parameter(default='')
+    assignment_path = luigi.Parameter()
     assignment_key = luigi.Parameter()
 
     output_path = luigi.Parameter()
@@ -312,10 +313,11 @@ class ConnectedComponentsWorkflow(WorkflowBase):
                       config_dir=self.config_dir,
                       problem_path=self.problem_path,
                       graph_key=self.graph_key,
-                      assignment_path=self.path,
+                      assignment_path=self.assignment_path,
                       assignment_key=self.assignment_key,
                       output_path=self.output_path,
-                      output_key=self.assignment_out_key)
+                      output_key=self.assignment_out_key,
+                      dependency=self.dependency)
         if self.output_key != '':
             write_task = getattr(write_tasks,
                                  self._get_task_name('Write'))

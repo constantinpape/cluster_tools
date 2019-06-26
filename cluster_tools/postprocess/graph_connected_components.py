@@ -3,9 +3,9 @@
 import os
 import sys
 import json
-import numpy as np
 import luigi
 import nifty.distributed as ndist
+import vigra
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -108,12 +108,10 @@ def graph_connected_components(job_id, config_path):
         chunks = ds_ass.chunks
 
     graph = ndist.Graph(os.path.join(problem_path, graph_key), n_threads)
-
-    # TODO implement node connected components in nifty.distributed and
-    # use it instead of edge label based version
-    uv_ids = graph.uvIds()
-    edge_labels = assignments[uv_ids[:, 0]] != assignments[uv_ids[:, 1]]
-    assignments = ndist.connectedComponents(edge_labels, True)
+    # TODO check if we acutally have an ignore label
+    assignments = ndist.connectedComponentsFromNodes(graph, assignments, True)
+    vigra.analysis.relabelConsecutive(assignments, out=assignments, start_label=1,
+                                      keep_zeros=True)
 
     with vu.file_reader(output_path) as f:
         ds_out = f.require_dataset(output_key, shape=assignments.shape,

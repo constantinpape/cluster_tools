@@ -3,3 +3,4 @@ from .postprocess_workflow import FilterLabelsWorkflow
 from .postprocess_workflow import FilterByThresholdWorkflow
 from .postprocess_workflow import FilterOrphansWorkflow
 from .postprocess_workflow import SizeFilterAndGraphWatershedWorkflow
+from .postprocess_workflow import ConnectedComponentsWorkflow
