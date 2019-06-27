@@ -190,10 +190,12 @@ def block_node_labels(job_id, config_path):
     lab_shape = ds_labels.shape
     # label shape is smaller than ws shape
     # -> interpolated
-    if all(lsh < sh for lsh, sh in zip(lab_shape, shape)):
+    if any(lsh < sh for lsh, sh in zip(lab_shape, shape)):
+        assert not any(lsh > sh for lsh, sh in zip(lab_shape, shape)),\
+            "Can't have label shape bigger then volshape"
         labels = vu.InterpolatedVolume(ds_labels, shape, spline_order=0)
     else:
-        assert lab_shape == shape
+        assert lab_shape == shape, "%s, %s" % (str(lab_shape), shape)
         labels = ds_labels
 
     if ignore_label is None:
