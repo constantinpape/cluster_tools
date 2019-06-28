@@ -2,7 +2,6 @@
 
 import os
 import sys
-import argparse
 import json
 
 import numpy as np
@@ -152,7 +151,7 @@ def _accumulate_filter(input_, graph, labels, bb_local,
         assert response.shape[:-1] == labels.shape
         return np.concatenate([ndist.accumulateInput(graph, response[..., c], labels,
                                                      ignore_label,
-                                                     with_size and c==n_chan-1,
+                                                     with_size and c == n_chan-1,
                                                      response[..., c].min(),
                                                      response[..., c].max())
                                for c in range(n_chan)], axis=1)
@@ -217,7 +216,7 @@ def _accumulate_block(block_id, blocking,
     # accumulate the edge features
     edge_features = [_accumulate_filter(input_, graph, labels, bb_local,
                                         filter_name, sigma, ignore_label,
-                                        filter_name==filters[-1] and sigma==sigmas[-1],
+                                        filter_name == filters[-1] and sigma == sigmas[-1],
                                         apply_in_2d)
                      for filter_name in filters for sigma in sigmas]
     edge_features = np.concatenate(edge_features, axis=1)
@@ -245,7 +244,6 @@ def _accumulate_with_filters(input_path, input_key,
     # TODO log filter and sigma values
     with vu.file_reader(input_path, 'r') as f:
         ds = f[input_key]
-        dtype = ds.dtype
         input_dim = ds.ndim
         shape = ds.shape
         if input_dim == 4:
