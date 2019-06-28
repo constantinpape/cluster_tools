@@ -4,9 +4,11 @@ import ctypes
 
 def set_numpy_threads(n_threads):
     """ Set the number of threads numpy exposes to its
-    underlying linalg library.
+    underlying linalg library. 
 
-    Based on https://github.com/numpy/numpy/issues/11826.
+    This needs to be called BEFORE the numpy import and sets the number
+    of threads statically.
+    Based on answers in https://github.com/numpy/numpy/issues/11826.
     """
 
     # set number of threads for mkl if it is used
