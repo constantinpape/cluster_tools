@@ -5,8 +5,13 @@ import sys
 import json
 from concurrent import futures
 
-import luigi
+# this is a task called by multiple processes,
+# so we need to restrict the number of threads used by numpy
+from cluster_tools.utils.numpy_utils import set_numpy_threads
+set_numpy_threads(1)
 import numpy as np
+
+import luigi
 import nifty.distributed as ndist
 
 import cluster_tools.utils.validation_utils as val

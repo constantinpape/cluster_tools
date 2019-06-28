@@ -4,7 +4,12 @@ import os
 import sys
 import json
 
+# this is a task called by multiple processes,
+# so we need to restrict the number of threads used by numpy
+from cluster_tools.utils.numpy_utils import set_numpy_threads
+set_numpy_threads(1)
 import numpy as np
+
 import luigi
 import nifty.tools as nt
 
@@ -71,7 +76,8 @@ class ScaleToBoundariesBase(luigi.Task):
         chunks = config.pop('chunks')
         if chunks is None:
             chunks = tuple(bs // 2 for bs in block_shape)
-        assert all(bs % ch == 0 for bs, ch in zip(block_shape, chunks)), "%s, %s" % (str(block_shape), str(chunks))
+        assert all(bs % ch == 0 for bs, ch in zip(block_shape, chunks)),\
+            "%s, %s" % (str(block_shape), str(chunks))
         self._write_log("requiring output dataset @ %s:%s" % (self.output_path, self.output_key))
         with vu.file_reader(self.output_path) as f:
             f.require_dataset(self.output_key, shape=shape, chunks=tuple(chunks),
