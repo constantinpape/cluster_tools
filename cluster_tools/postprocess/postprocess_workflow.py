@@ -350,7 +350,7 @@ class SizeFilterAndGraphWatershedWorkflow(WorkflowBase):
     # path to the merged segmentation
     segmentation_key = luigi.Parameter()
     # path to the underlying fragments
-    fragments_key = luigi.Parameter()
+    fragments_key = luigi.Parameter(default='')
     # path to the fragment segment assignment
     assignment_key = luigi.Parameter()
 
@@ -405,6 +405,7 @@ class SizeFilterAndGraphWatershedWorkflow(WorkflowBase):
                        relabel=self.relabel, from_costs=self.from_costs)
 
         if self.output_key != '':
+            assert self.fragments_key != ''
             write_task = getattr(write_tasks,
                                  self._get_task_name('Write'))
             dep = write_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,

@@ -119,6 +119,7 @@ def graph_watershed_assignments(job_id, config_path):
     n_threads = config.get('threads_per_job', 1)
 
     # load the uv-ids, features and assignments
+    fu.log("Read features and edges from %s" % problem_path)
     with vu.file_reader(problem_path) as f:
         ds = f['%s/edges' % graph_key]
         ds.n_threads = n_threads
@@ -139,11 +140,14 @@ def graph_watershed_assignments(job_id, config_path):
         features /= features.max()
         features = 1. - features
 
+    fu.log("Read assignments from %s" % assignment_path)
     with vu.file_reader(assignment_path) as f:
         ds = f[assignment_key]
         ds.n_threads = n_threads
         chunks = ds.chunks
         assignments = ds[:]
+    assert n_nodes == len(assignments),\
+        "Expected number of nodes %i and number of assignments %i does not agree" % (n_nodes, len(assignments))
 
     seed_offset = int(assignments.max()) + 1
 
@@ -156,12 +160,17 @@ def graph_watershed_assignments(job_id, config_path):
     graph.insertEdges(uv_ids)
 
     # run graph watershed to get the new assignments
-    node_seeds = assignments.copy()
     # map zero label to new id
     assignments[assignments == 0] = seed_offset
 
-    node_seeds[np.in1d(assignments, discard_ids)] = 0
-    assignments = nifty.graph.edgeWeightedWatershedsSegmentation(graph, node_seeds, features)
+    discard_mask = np.in1d(assignments, discard_ids)
+    assignments[discard_mask] = 0
+
+    n_discard = int(discard_mask.sum())
+    fu.log("Discarding %i fragments" % n_discard)
+    fu.log("Start grah watershed")
+    assignments = nifty.graph.edgeWeightedWatershedsSegmentation(graph, assignments, features)
+    fu.log("Finished graph watershed")
     assignments[assignments == seed_offset] = 0
 
     if relabel:
@@ -171,6 +180,7 @@ def graph_watershed_assignments(job_id, config_path):
     with vu.file_reader(output_path) as f:
         ds = f.require_dataset(output_key, shape=assignments.shape, chunks=chunks,
                                compression='gzip', dtype='uint64')
+        ds.n_threads = n_threads
         ds[:] = assignments
 
     fu.log_job_success(job_id)

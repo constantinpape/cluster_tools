@@ -98,8 +98,8 @@ def uniques_in_block(block_id, blocking, ds, return_counts):
 
     if labels.sum() == 0:
         if return_counts:
-            return np.array([0]), np.array([labels.size])
-        return np.array([0])
+            return np.array([0], dtype=labels.dtype), np.array([labels.size], dtype='int64')
+        return np.array([0], dtype=labels.dtype)
 
     if return_counts:
         uniques, counts = np.unique(labels, return_counts=True)
