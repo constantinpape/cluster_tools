@@ -62,18 +62,19 @@ class RegionCentersWorkflow(WorkflowBase):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     ignore_label = luigi.Parameter(default=None)
+    resolution = luigi.ListParameter(default=[1, 1, 1])
 
     def requires(self):
         dep = self.dependency
 
-        tmp_path = os.path.join(self.tmp_folder, 'data.n5')
+        tmp_path = os.path.join(self.tmp_folder, 'region_centers.n5')
         tmp_key = 'morphology'
 
         dep = MorphologyWorkflow(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                                  config_dir=self.config_dir, target=self.target,
                                  input_path=self.input_path, input_key=self.input_key,
                                  output_path=tmp_path, output_key=tmp_key,
-                                 dependency=dep)
+                                 dependency=dep, prefix='region-centers')
         center_task = getattr(center_tasks,
                               self._get_task_name('RegionCenters'))
         dep = center_task(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
@@ -81,7 +82,7 @@ class RegionCentersWorkflow(WorkflowBase):
                           input_path=self.input_path, input_key=self.input_key,
                           morphology_path=tmp_path, morphology_key=tmp_key,
                           output_path=self.output_path, output_key=self.output_key,
-                          ignore_label=self.ignore_label)
+                          ignore_label=self.ignore_label, resolution=self.resolution)
         return dep
 
     @staticmethod

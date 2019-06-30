@@ -34,6 +34,8 @@ class RegionCentersBase(luigi.Task):
     input_key = luigi.Parameter()
     morphology_path = luigi.Parameter()
     morphology_key = luigi.Parameter()
+    output_path = luigi.Parameter()
+    output_key = luigi.Parameter()
     ignore_label = luigi.Parameter(default=None)
     resolution = luigi.ListParameter(default=[1, 1, 1])
     #
@@ -57,8 +59,8 @@ class RegionCentersBase(luigi.Task):
 
         # require output dataset
         with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, shape=(number_of_labels,),
-                              chunls=(id_chunks,), dtype='float32', compression='gzip')
+            f.require_dataset(self.output_key, shape=(number_of_labels, 3),
+                              chunks=(id_chunks, 3), dtype='float32', compression='gzip')
 
         # update the config with input and graph paths and keys
         # as well as block shape
@@ -114,6 +116,11 @@ def region_centers_for_label_range(ds_in, ds_out, bb_start, bb_stop,
         bb = tuple(slice(start, stop) for start, stop in
                    zip(bb_start[label_id], bb_stop[label_id]))
         obj = ds_in[bb] == label_id
+
+        # can't do anything if the object is empty
+        if obj.sum() == 0:
+            continue
+
         dist = distance_transform_edt(obj, sampling=resolution)
         center = np.argmax(dist)
         center = np.unravel_index([center], obj.shape)

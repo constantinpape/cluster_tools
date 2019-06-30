@@ -1,2 +1,2 @@
 from .morphology_workflow import MorphologyWorkflow
-from .morphology_workflow import CorrectAnchorsWorkflow
+from .morphology_workflow import RegionCentersWorkflow
