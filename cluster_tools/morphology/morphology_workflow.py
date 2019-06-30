@@ -1,11 +1,11 @@
+import os
 import luigi
 
 from .. cluster_tasks import WorkflowBase
 from ..utils import volume_utils as vu
 from . import block_morphology as block_tasks
 from . import merge_morphology as merge_tasks
-from . import correct_anchors as correct_tasks
-from . import write_corrections as write_tasks
+from . import region_centers as center_tasks
 
 
 class MorphologyWorkflow(WorkflowBase):
@@ -56,36 +56,38 @@ class MorphologyWorkflow(WorkflowBase):
         return configs
 
 
-class CorrectAnchorsWorkflow(WorkflowBase):
+class RegionCentersWorkflow(WorkflowBase):
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
-    morphology_path = luigi.Parameter()
-    morphology_key = luigi.Parameter()
-    output_path = luigi.Parameter(default='')
-    output_key = luigi.Parameter(default='')
+    output_path = luigi.Parameter()
+    output_key = luigi.Parameter()
+    ignore_label = luigi.Parameter(default=None)
 
     def requires(self):
         dep = self.dependency
-        correct_task = getattr(correct_tasks,
-                               self._get_task_name('CorrectAnchors'))
-        dep = correct_task(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
-                           max_jobs=self.max_jobs, dependency=dep,
-                           input_path=self.input_path, input_key=self.input_key,
-                           morphology_path=self.morphology_path, morphology_key=self.morphology_key)
 
-        write_task = getattr(write_tasks,
-                             self._get_task_name('WriteCorrections'))
-        dep = write_task(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
-                         max_jobs=self.max_jobs, dependency=dep,
-                         morphology_path=self.morphology_path, morphology_key=self.morphology_key,
-                         output_path=self.output_path, output_key=self.output_key)
+        tmp_path = os.path.join(self.tmp_folder, 'data.n5')
+        tmp_key = 'morphology'
+
+        dep = MorphologyWorkflow(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                                 config_dir=self.config_dir, target=self.target,
+                                 input_path=self.input_path, input_key=self.input_key,
+                                 output_path=tmp_path, output_key=tmp_key,
+                                 dependency=dep)
+        center_task = getattr(center_tasks,
+                              self._get_task_name('RegionCenters'))
+        dep = center_task(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
+                          max_jobs=self.max_jobs, dependency=dep,
+                          input_path=self.input_path, input_key=self.input_key,
+                          morphology_path=tmp_path, morphology_key=tmp_key,
+                          output_path=self.output_path, output_key=self.output_key,
+                          ignore_label=self.ignore_label)
         return dep
 
     @staticmethod
     def get_config():
-        configs = super(CorrectAnchorsWorkflow, CorrectAnchorsWorkflow).get_config()
-        configs.update({'correct_anchors':
-                        correct_tasks.CorrectAnchorsLocal.default_task_config(),
-                        'write_corrections':
-                        write_tasks.WriteCorrectionsLocal.default_task_config()})
+        configs = super(RegionCentersWorkflow, RegionCentersWorkflow).get_config()
+        configs.update({'region_centers':
+                        center_tasks.RegionCentersLocal.default_task_config(),
+                        **MorphologyWorkflow.get_config()})
         return configs
