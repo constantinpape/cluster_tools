@@ -21,7 +21,7 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
 #
-# Validation measure Tasks
+# Validation measure tasks
 #
 
 class MeasuresBase(luigi.Task):
