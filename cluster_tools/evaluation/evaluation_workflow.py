@@ -37,6 +37,7 @@ class MergeViResults(luigi.Task):
         return luigi.LocalTarget(self.output_path)
 
 
+# TODO continue implementing
 class ObjectViWorkflow(WorkflowBase):
     seg_path = luigi.Parameter()
     seg_key = luigi.Parameter()
@@ -45,6 +46,7 @@ class ObjectViWorkflow(WorkflowBase):
     output_path = luigi.Parameter()
 
     def requires(self):
+        raise NotImplementedError
         tmp_path = os.path.join(self.tmp_folder, 'data.n5')
         tmp_key = 'morphology'
         dep = MorphologyWorkflow(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
