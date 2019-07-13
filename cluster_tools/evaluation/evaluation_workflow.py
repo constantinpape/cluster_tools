@@ -13,6 +13,7 @@ class ObjectViWorkflow(WorkflowBase):
     gt_path = luigi.Parameter()
     gt_key = luigi.Parameter()
     output_path = luigi.Parameter()
+    ignore_label = luigi.BoolParameter(default=True)
 
     def requires(self):
         # 1.) compute the full overlaps between the segmentation and the groundtruth
