@@ -74,6 +74,32 @@ class TestMetrics(unittest.TestCase):
         self.assertAlmostEqual(vim, vim_exp)
         self.assertAlmostEqual(cs, cs_exp)
 
+    def test_object_vi(self):
+        from cluster_tools.utils.validation_utils import compute_object_vi_scores
+        f = z5py.File(self.path)
+
+        ds_gt = f[self.gt_key]
+        ds_gt.n_threads = 4
+        gt = ds_gt[self.bb]
+
+        ds_seg = f[self.seg_key]
+        ds_seg.n_threads = 4
+        seg = ds_seg[self.bb]
+
+        object_vis = compute_object_vi_scores(seg, gt, ignore_gt=[0])
+
+        ids_exp = np.unique(gt)
+        if 0 in gt:
+            ids_exp = ids_exp[1:]
+        ids = np.array(list(object_vis.keys()))
+        ids = np.sort(ids)
+        self.assertTrue(np.allclose(ids, ids_exp))
+
+        for score in object_vis.values():
+            vis, vim = score
+            self.assertGreaterEqual(vis, 0)
+            self.assertGreaterEqual(vim, 0)
+
 
 if __name__ == '__main__':
     unittest.main()
