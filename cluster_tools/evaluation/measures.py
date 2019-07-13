@@ -91,8 +91,10 @@ def overlaps_to_sizes(pairs, counts):
 def contigency_table_from_overlaps(overlaps):
     # make contigency table objects, cf.
     # https://github.com/constantinpape/cluster_tools/blob/master/cluster_tools/utils/validation_utils.py#L9
-    p_ids = np.array([[ida, idb] for ida, ovlp in overlaps.items()
-                      for idb in ovlp.keys()])
+    # NOTE this is reversed compared to the above computation because we calculate the overlaps
+    # the other way around (overlaps of seg with gt)
+    p_ids = np.array([[ida, idb] for idb, ovlp in overlaps.items()
+                      for ida in ovlp.keys()])
     p_counts = np.array([ovlp_cnt for ovlp in overlaps.values()
                          for ovlp_cnt in ovlp.values()], dtype='float64')
 
@@ -116,6 +118,17 @@ def contigency_table_from_overlaps(overlaps):
     return a_dict, b_dict, p_ids, p_counts, n_points
 
 
+def load_overlaps(path, n_chunks, n_threads):
+    with futures.ThreadPoolExecutor(n_threads) as tp:
+        tasks = [tp.submit(ndist.deserializeOverlapChunk, path, [chunk_id])
+                 for chunk_id in range(n_chunks)]
+        results = [t.result()[0] for t in tasks]
+    overlaps = {}
+    for res in results:
+        overlaps.update(res)
+    return overlaps
+
+
 def measures(job_id, config_path):
 
     fu.log("start processing job %i" % job_id)
@@ -136,18 +149,11 @@ def measures(job_id, config_path):
     n_chunks = f[overlap_key].number_of_chunks
     path = os.path.join(input_path, overlap_key)
 
-    with futures.ThreadPoolExecutor(n_threads) as tp:
-        tasks = [tp.submit(ndist.deserializeOverlapChunk, path, [chunk_id])
-                 for chunk_id in range(n_chunks)]
-        results = [t.result()[0] for t in tasks]
-    overlaps = {}
-    for res in results:
-        overlaps.update(res)
-
+    overlaps = load_overlaps(path, n_chunks, n_threads)
     a_dict, b_dict, p_ids, p_counts, n_points = contigency_table_from_overlaps(overlaps)
 
     # compute and save voi and rand measures
-    vim, vis = val.compute_vi_scores(a_dict, b_dict, p_ids, p_counts, n_points, True)
+    vis, vim = val.compute_vi_scores(a_dict, b_dict, p_ids, p_counts, n_points, True)
     ari, ri = val.compute_rand_scores(a_dict, b_dict, p_counts, n_points)
 
     results = {'vi-split': vis, 'vi-merge': vim,

@@ -130,7 +130,7 @@ def compute_object_vi_scores(a_dict, b_dict, p_ids, p_counts, use_log2):
                    for ocount in overlap_counts)
         vis = -sum(ocount / gt_count * log(ocount / b_dict[ovlp_id])
                    for ocount, ovlp_id in zip(overlap_counts, overlap_ids))
-        object_scores[gt_id] = (vim, vis)
+        object_scores[gt_id] = (vis, vim)
 
     return object_scores
 
@@ -149,7 +149,7 @@ def object_vi(segmentation, groundtruth,
         ignore_gt [listlike] - ignore ids for groundtruth (default: None)
         use_log2 [bool] - whether to use log2 or loge (default: True)
     Returns:
-        dict - per object vi for all groundtruth objects
+        dict - per object split-vi and merge-vi for all groundtruth objects
     """
     ignore_mask = compute_ignore_mask(segmentation, groundtruth,
                                       ignore_seg, ignore_gt)

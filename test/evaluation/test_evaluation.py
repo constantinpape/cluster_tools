@@ -31,7 +31,7 @@ class TestEvaluation(unittest.TestCase):
         with open(os.path.join(self.config_folder, 'global.config'), 'w') as f:
             json.dump(global_config, f)
 
-    def _tearDown(self):
+    def tearDown(self):
         try:
             rmtree(self.tmp_folder)
         except OSError:
@@ -106,6 +106,7 @@ class TestEvaluation(unittest.TestCase):
         scores_exp = self.vi_scores()
 
         for gt_id, score in scores.items():
+            gt_id = int(gt_id)
             self.assertIn(gt_id, scores_exp)
             score_exp = scores_exp[gt_id]
             self.assertAlmostEqual(score[0], score_exp[0])

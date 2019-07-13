@@ -3,18 +3,16 @@
 import os
 import sys
 import json
-from concurrent import futures
 
 import numpy as np
 import luigi
-import nifty.distributed as ndist
 
 import cluster_tools.utils.validation_utils as val
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
-from cluster_tools.evaluation.measures import contigency_table_from_overlaps
+from cluster_tools.evaluation.measures import contigency_table_from_overlaps, load_overlaps
 
 
 #
@@ -106,21 +104,18 @@ def object_vi(job_id, config_path):
     n_threads = config.get('threads_per_job', 1)
 
     f = vu.file_reader(input_path, 'r')
+
     # load overlaps in parallel and merge them
     n_chunks = f[overlap_key].number_of_chunks
     path = os.path.join(input_path, overlap_key)
-
-    with futures.ThreadPoolExecutor(n_threads) as tp:
-        tasks = [tp.submit(ndist.deserializeOverlapChunk, path, [chunk_id])
-                 for chunk_id in range(n_chunks)]
-        results = [t.result()[0] for t in tasks]
-    overlaps = {}
-    for res in results:
-        overlaps.update(res)
+    overlaps = load_overlaps(path, n_chunks, n_threads)
 
     a_dict, b_dict, p_ids, p_counts, _ = contigency_table_from_overlaps(overlaps)
-    object_scores = val.compute_object_vi_scores(a_dict, b_dict, p_ids, p_counts)
+    object_scores = val.compute_object_vi_scores(a_dict, b_dict, p_ids, p_counts,
+                                                 use_log2=True)
 
+    # annoying json ...
+    object_scores = {int(gt_id): score for gt_id, score in object_scores.items()}
     with open(output_path, 'w') as f:
         json.dump(object_scores, f)
 
