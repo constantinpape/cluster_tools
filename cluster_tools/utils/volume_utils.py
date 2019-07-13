@@ -12,7 +12,7 @@ import vigra
 from scipy.ndimage.morphology import binary_erosion
 from nifty.tools import blocking
 from .knossos_wrapper import KnossosFile
-from .transformed_volume import TransformedVolume
+# from .transformed_volume import TransformedVolume
 
 # use vigra filters as fallback if we don't have
 # fastfilters available

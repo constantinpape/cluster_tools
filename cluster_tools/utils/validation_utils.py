@@ -129,7 +129,7 @@ def compute_object_vi_scores(a_dict, b_dict, p_ids, p_counts, n_points, use_log2
         vim = -sum(ocount / gt_count * log(ocount / gt_count)
                    for ocount in overlap_counts)
         vis = -sum(ocount / gt_count * log(ocount / b_dict[ovlp_id])
-                   for ocount, ovlp_id in zip(overlap_counts, overalp_ids))
+                   for ocount, ovlp_id in zip(overlap_counts, overlap_ids))
         object_scores[gt_id] = (vim, vis)
 
     return object_scores

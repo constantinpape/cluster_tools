@@ -75,7 +75,7 @@ class TestMetrics(unittest.TestCase):
         self.assertAlmostEqual(cs, cs_exp)
 
     def test_object_vi(self):
-        from cluster_tools.utils.validation_utils import compute_object_vi_scores
+        from cluster_tools.utils.validation_utils import object_vi
         f = z5py.File(self.path)
 
         ds_gt = f[self.gt_key]
@@ -86,7 +86,7 @@ class TestMetrics(unittest.TestCase):
         ds_seg.n_threads = 4
         seg = ds_seg[self.bb]
 
-        object_vis = compute_object_vi_scores(seg, gt, ignore_gt=[0])
+        object_vis = object_vi(seg, gt, ignore_gt=[0])
 
         ids_exp = np.unique(gt)
         if 0 in gt:
