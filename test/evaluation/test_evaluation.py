@@ -51,6 +51,20 @@ class TestEvaluation(unittest.TestCase):
         vis, vim, ri, _ = val.cremi_score(seg, gt, ignore_gt=[0])
         return vis, vim, ri
 
+    def vi_scores(self):
+        f = z5py.File(self.path)
+
+        ds = f[self.seg_key]
+        ds.n_threads = 8
+        seg = ds[:]
+
+        ds = f[self.gt_key]
+        ds.n_threads = 8
+        gt = ds[:]
+
+        scores = val.object_vi(seg, gt, ignore_gt=[0])
+        return scores
+
     def test_eval(self):
         task = evaluation.EvaluationWorkflow
         res_path = './tmp/res.json'
@@ -74,6 +88,28 @@ class TestEvaluation(unittest.TestCase):
         self.assertAlmostEqual(vis, vis_exp)
         self.assertAlmostEqual(vim, vim_exp)
         self.assertAlmostEqual(ri, ri_exp)
+
+    def test_object_vis(self):
+        task = evaluation.ObjectViWorkflow
+        res_path = './tmp/res_objs.json'
+        t = task(tmp_folder=self.tmp_folder, config_dir=self.config_folder,
+                 target=self.target, max_jobs=4,
+                 seg_path=self.path, seg_key=self.seg_key,
+                 gt_path=self.path, gt_key=self.gt_key,
+                 output_path=res_path)
+        ret = luigi.build([t], local_scheduler=True)
+        self.assertTrue(ret)
+        self.assertTrue(os.path.exists(res_path))
+
+        with open(res_path) as f:
+            scores = json.load(f)
+        scores_exp = self.vi_scores()
+
+        for gt_id, score in scores.items():
+            self.assertIn(gt_id, scores_exp)
+            score_exp = scores_exp[gt_id]
+            self.assertAlmostEqual(score[0], score_exp[0])
+            self.assertAlmostEqual(score[1], score_exp[1])
 
 
 if __name__ == '__main__':

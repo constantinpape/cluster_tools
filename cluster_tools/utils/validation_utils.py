@@ -113,7 +113,7 @@ def variation_of_information(segmentation, groundtruth,
     return vis, vim
 
 
-def compute_object_vi_scores(a_dict, b_dict, p_ids, p_counts, n_points, use_log2):
+def compute_object_vi_scores(a_dict, b_dict, p_ids, p_counts, use_log2):
     log = np.log2 if use_log2 else np.log
 
     object_scores = {}
@@ -163,10 +163,9 @@ def object_vi(segmentation, groundtruth,
 
     # compute ids, counts and overlaps making up the contigency table
     a_dict, b_dict, p_ids, p_counts = contigency_table(groundtruth, segmentation)
-    n_points = segmentation.size
 
     # compute and return vi scores
-    object_scores = compute_object_vi_scores(a_dict, b_dict, p_ids, p_counts, n_points,
+    object_scores = compute_object_vi_scores(a_dict, b_dict, p_ids, p_counts,
                                              use_log2=use_log2)
     return object_scores
 

@@ -5,12 +5,7 @@ import sys
 import json
 from concurrent import futures
 
-# this is a task called by multiple processes,
-# so we need to restrict the number of threads used by numpy
-from cluster_tools.utils.numpy_utils import set_numpy_threads
-set_numpy_threads(1)
 import numpy as np
-
 import luigi
 import nifty.distributed as ndist
 
@@ -93,6 +88,34 @@ def overlaps_to_sizes(pairs, counts):
     return sizes
 
 
+def contigency_table_from_overlaps(overlaps):
+    # make contigency table objects, cf.
+    # https://github.com/constantinpape/cluster_tools/blob/master/cluster_tools/utils/validation_utils.py#L9
+    p_ids = np.array([[ida, idb] for ida, ovlp in overlaps.items()
+                      for idb in ovlp.keys()])
+    p_counts = np.array([ovlp_cnt for ovlp in overlaps.values()
+                         for ovlp_cnt in ovlp.values()], dtype='float64')
+
+    pairs_a = p_ids[:, 0]
+    ids_a = np.unique(pairs_a)
+    pairs_b = p_ids[:, 1]
+    ids_b = np.unique(pairs_b)
+
+    # get the sizes from the overlaps
+    sizes_a = overlaps_to_sizes(pairs_a, p_counts)
+    sizes_b = overlaps_to_sizes(pairs_b, p_counts)
+
+    a_dict = dict(zip(ids_a, sizes_a))
+    b_dict = dict(zip(ids_b, sizes_b))
+
+    # compute the total number of points
+    n_points = np.sum(sizes_a)
+    # consistency check
+    assert n_points == np.sum(sizes_b) == np.sum(p_counts)
+
+    return a_dict, b_dict, p_ids, p_counts, n_points
+
+
 def measures(job_id, config_path):
 
     fu.log("start processing job %i" % job_id)
@@ -121,32 +144,9 @@ def measures(job_id, config_path):
     for res in results:
         overlaps.update(res)
 
-    # make contigency table objects, cf.
-    # https://github.com/constantinpape/cluster_tools/blob/master/cluster_tools/utils/validation_utils.py#L9
-    p_ids = np.array([[ida, idb] for ida, ovlp in overlaps.items()
-                      for idb in ovlp.keys()])
-    p_counts = np.array([ovlp_cnt for ovlp in overlaps.values()
-                         for ovlp_cnt in ovlp.values()], dtype='float64')
-
-    pairs_a = p_ids[:, 0]
-    ids_a = np.unique(pairs_a)
-    pairs_b = p_ids[:, 1]
-    ids_b = np.unique(pairs_b)
-
-    # get the sizes from the overlaps
-    sizes_a = overlaps_to_sizes(pairs_a, p_counts)
-    sizes_b = overlaps_to_sizes(pairs_b, p_counts)
-
-    a_dict = dict(zip(ids_a, sizes_a))
-    b_dict = dict(zip(ids_b, sizes_b))
-
-    # compute the total number of points
-    n_points = np.sum(sizes_a)
-    # consistency check
-    assert n_points == np.sum(sizes_b) == np.sum(p_counts)
+    a_dict, b_dict, p_ids, p_counts, n_points = contigency_table_from_overlaps(overlaps)
 
     # compute and save voi and rand measures
-    # for some reason this is switched here
     vim, vis = val.compute_vi_scores(a_dict, b_dict, p_ids, p_counts, n_points, True)
     ari, ri = val.compute_rand_scores(a_dict, b_dict, p_counts, n_points)
 
