@@ -257,6 +257,7 @@ class LiftedMulticutSegmentationWorkflow(SegmentationWorkflowBase):
     # lifted edges (usually None -> no label is ignored)
     label_ignore_label = luigi.Parameter(default=None)
     mode = luigi.Parameter(default='all')
+    label_overlap_threshold = luigi.Parameter(default=None)
     # clear labels
     clear_labels_path = luigi.Parameter(default=None)
     clear_labels_key = luigi.Parameter(default=None)
@@ -282,6 +283,7 @@ class LiftedMulticutSegmentationWorkflow(SegmentationWorkflowBase):
                                                    nh_graph_depth=self.nh_graph_depth,
                                                    ignore_label=self.node_ignore_label,
                                                    label_ignore_label=self.label_ignore_label,
+                                                   label_overlap_threshold=self.label_overlap_threshold,
                                                    clear_labels_path=self.clear_labels_path,
                                                    clear_labels_key=self.clear_labels_key,
                                                    mode=self.mode)
