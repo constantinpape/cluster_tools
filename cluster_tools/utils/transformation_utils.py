@@ -132,8 +132,7 @@ def transform_roi(roi_start, roi_stop, matrix):
     dim = len(roi_start)
     trafo = transform_coordinate_2d if dim == 2 else transform_coordinate_3d
 
-    # TODO corners
-    corners = [corner for corner in product(roi_start, roi_stop)]
+    corners = [corner for corner in product(*zip(roi_start, roi_stop))]
     transformed_corners = [trafo(corner, matrix) for corner in corners]
 
     transformed_start = [min(corner[d] for corner in transformed_corners) for d in range(dim)]

@@ -4,7 +4,7 @@ from itertools import product
 
 import numpy as np
 import imageio
-from z5py.shape_utils import normalize_slices
+from .volume_classes import _normalize_index
 
 
 class KnossosDataset(object):
@@ -139,8 +139,7 @@ class KnossosDataset(object):
         return data
 
     def __getitem__(self, index):
-        roi = normalize_slices(index, self.shape)
-        return self._load_roi(roi)
+        return self._load_roi(_normalize_index(index, self.shape))
 
 
 class KnossosFile(object):

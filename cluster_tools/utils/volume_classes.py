@@ -26,6 +26,8 @@ def _normalize_index(index, shape):
     return index
 
 
+# we need to support origin shifts,
+# but it's probably better to do this with the affine matrix already
 class TransformedVolume:
     """ Apply affine transformation to the volume.
 
@@ -71,13 +73,17 @@ class TransformedVolume:
             self.matrix = compute_affine_matrix(scale, rotation, shear, translation)
         assert self.matrix.shape == (self.ndim + 1, self.ndim + 1), "Invalid affine matrix"
 
-        # TODO handle linalg inversion issues
+        # TODO handle linalg inversion errors
         # get the inverse matrix
         self.inverse_matrix = np.linalg.inv(self.matrix)
 
+        # comptue the extent and where the origin is mapped to in the target space
+        extent, origin = self.compute_extent_and_origin()
+        self.origin = origin
+
         # compute the shape after interpolation
         if output_shape is None:
-            self._shape = self.compute_shape()
+            self._shape = extent
         else:
             assert isinstance(output_shape, tuple)
             assert len(output_shape) == self.ndim
@@ -99,14 +105,18 @@ class TransformedVolume:
     def ndim(self):
         return self._ndim
 
-    def compute_shape(self):
-        roi_start, roi_stop = transform_roi([0] * self.ndim, self.volume.shape)
-        shape = tuple(sto - sta for sta, sto in zip(roi_start, roi_stop))
-        return shape
+    def compute_extent_and_origin(self):
+        roi_start, roi_stop = transform_roi([0] * self.ndim, self.volume.shape, self.matrix)
+        extent = tuple(int(sto - sta) for sta, sto in zip(roi_start, roi_stop))
+        return extent, roi_start
 
     def crop_to_input_space(self, roi_start, roi_stop):
         return ([max(rs, 0) for rs in roi_start],
                 [min(rs, sh) for rs, sh in zip(roi_stop, self.volume.shape)])
+
+    # FIXME this is not correct yet
+    def compute_offset(self, roi_start):
+        return [sta + orig for sta, orig in zip(roi_start, self.origin)]
 
     def __getitem__(self, index):
         # 1.) normalize the index to have a proper bounding box
@@ -128,7 +138,8 @@ class TransformedVolume:
         # 4.) apply the affine transformation
         # we need to adapt the offset for the local cutout
         tmp_mat = self.inverse_matrix.copy()
-        tmp_mat[:self.ndim, self.ndim] = tr_start  # not quite sure if we need tr_start or tr_start_cropped
+        offset = self.compute_offset(roi_start)  # TODO arguments ???
+        tmp_mat[:self.ndim, self.ndim] = offset
         out = affine_transform(input_, tmp_mat, output_shape=out_shape,
                                order=self.order, mode='constant', cval=self.fill_value)
 
