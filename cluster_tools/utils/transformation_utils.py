@@ -140,4 +140,25 @@ def transform_roi(roi_start, roi_stop, matrix):
     return transformed_start, transformed_stop
 
 
-# TODO import utils to extract scale, rotation, translation from matrix
+# TODO we assume no shear here
+# extract components from the affine matrix, cf.
+# https://math.stackexchange.com/questions/237369/given-this-transformation-matrix-how-do-i-decompose-it-into-translation-rotati/417813
+
+def translation_from_matrix(matrix):
+    """ Return the translation vector from the affine matrix """
+    ndim = matrix.shape[0] - 1
+    translation = matrix[:ndim, ndim]
+    return translation
+
+
+def scale_from_matrix(matrix):
+    """ Return the scales from the affine matrix """
+    ndim = matrix.shape[0] - 1
+    scale = [np.linalg.norm(matrix[:ndim, d]) for d in range(ndim)]
+    return scale
+
+
+# TODO need to figure out how to go from affine elements to euler angles
+def rotation_from_matrix(matrix):
+    """ Return the rotation from the affine matrix """
+    pass
