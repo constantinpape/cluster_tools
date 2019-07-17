@@ -162,3 +162,31 @@ def scale_from_matrix(matrix):
 def rotation_from_matrix(matrix):
     """ Return the rotation from the affine matrix """
     pass
+
+
+def bdv_trafo_to_affine_matrix(trafo):
+    """ Translate bdv transformation (XYZ) to affine matrix (ZYX)
+    """
+    assert len(trafo) == 12
+
+    sub_matrix = np.zeros((3, 3))
+    sub_matrix[0, 0] = trafo[10]
+    sub_matrix[0, 1] = trafo[9]
+    sub_matrix[0, 2] = trafo[8]
+
+    sub_matrix[1, 0] = trafo[6]
+    sub_matrix[1, 1] = trafo[5]
+    sub_matrix[1, 2] = trafo[4]
+
+    sub_matrix[2, 0] = trafo[2]
+    sub_matrix[2, 1] = trafo[1]
+    sub_matrix[2, 2] = trafo[0]
+
+    shift = [trafo[11], trafo[7], trafo[3]]
+
+    matrix = np.zeros((4, 4))
+    matrix[:3, :3] = sub_matrix
+    matrix[:3, 3] = shift
+    matrix[3, 3] = 1
+
+    return matrix
