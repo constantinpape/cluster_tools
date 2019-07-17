@@ -114,9 +114,9 @@ class TransformedVolume:
         return ([max(rs, 0) for rs in roi_start],
                 [min(rs, sh) for rs, sh in zip(roi_stop, self.volume.shape)])
 
-    # FIXME this is not correct yet
+    # TODO this seems to be correct for the full volume now, but not for cutouts yet
     def compute_offset(self, roi_start):
-        return [sta + orig for sta, orig in zip(roi_start, self.origin)]
+        return [-(sta + orig) for sta, orig in zip(roi_start, self.origin)]
 
     def __getitem__(self, index):
         # 1.) normalize the index to have a proper bounding box
@@ -135,11 +135,14 @@ class TransformedVolume:
                                   for sta, sto in zip(tr_start_cropped, tr_stop_cropped))
         input_ = self.volume[transformed_index]
 
-        # 4.) apply the affine transformation
-        # we need to adapt the offset for the local cutout
-        tmp_mat = self.inverse_matrix.copy()
-        offset = self.compute_offset(roi_start)  # TODO arguments ???
+        # TODO this seems to be correct for the full volume now, but not for cutouts yet
+        # 4.) adapt the matrix for the local cutout
+        tmp_mat = self.matrix.copy()
+        offset = self.compute_offset(roi_start)
         tmp_mat[:self.ndim, self.ndim] = offset
+        tmp_mat = np.linalg.inv(tmp_mat)
+
+        # 5.) apply the affine transformation
         out = affine_transform(input_, tmp_mat, output_shape=out_shape,
                                order=self.order, mode='constant', cval=self.fill_value)
 
