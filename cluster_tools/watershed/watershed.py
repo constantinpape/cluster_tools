@@ -327,7 +327,8 @@ def _ws_block(blocking, block_id, ds_in, ds_out, mask, config):
     if output_bb != input_bb:
         ws = ws[inner_bb]
         ws = vigra.analysis.labelVolumeWithBackground(ws)
-        in_mask = in_mask[inner_bb]
+        if in_mask is not None:
+            in_mask = in_mask[inner_bb]
     ws = ws.astype('uint64')
 
     # apply offset to the watershed
