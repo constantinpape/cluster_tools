@@ -2,15 +2,13 @@ import os
 import json
 from itertools import product
 
+import elf.io
 import numpy as np
-import h5py
-import z5py
 import vigra
 
+from elf.io.wrapper.resized_volume import ResizedVolume
 from scipy.ndimage.morphology import binary_erosion
 from nifty.tools import blocking
-from .knossos_wrapper import KnossosFile
-from .volume_classes import InterpolatedVolume, TransformedVolume
 
 # use vigra filters as fallback if we don't have
 # fastfilters available
@@ -20,27 +18,8 @@ except ImportError:
     import vigra.filters as ff
 
 
-def is_z5(path):
-    ext = os.path.splitext(path)[1][1:].lower()
-    return ext in ('n5', 'zr', 'zarr')
-
-
-def is_h5(path):
-    ext = os.path.splitext(path)[1][1:].lower()
-    return ext in ('h5', 'hdf5', 'hdf', 'ilp')
-
-
 def file_reader(path, mode='a'):
-    if is_z5(path):
-        return z5py.File(path, mode=mode)
-    elif is_h5(path):
-        return h5py.File(path, mode=mode)
-    else:
-        try:
-            return KnossosFile(path)
-        except RuntimeError:
-            ext = os.path.splitext(path)[1][1:].lower()
-            raise RuntimeError("Invalid file format %s" % ext)
+    return elf.io.open_file(path, mode=mode)
 
 
 def get_shape(path, key):
@@ -120,25 +99,6 @@ def normalize(input_, min_val=None, max_val=None):
     return input_
 
 
-def watershed(input_, seeds, size_filter=0, exclude=None):
-    ws, max_id = vigra.analysis.watershedsNew(input_, seeds=seeds)
-    if size_filter > 0:
-        ws, max_id = apply_size_filter(ws, input_, size_filter,
-                                       exclude=exclude)
-    return ws, max_id
-
-
-def apply_size_filter(segmentation, input_, size_filter, exclude=None):
-    ids, sizes = np.unique(segmentation, return_counts=True)
-    filter_ids = ids[sizes < size_filter]
-    if exclude is not None:
-        filter_ids = filter_ids[np.logical_not(np.in1d(filter_ids, exclude))]
-    filter_mask = np.in1d(segmentation, filter_ids).reshape(segmentation.shape)
-    segmentation[filter_mask] = 0
-    _, max_id = vigra.analysis.watershedsNew(input_, seeds=segmentation, out=segmentation)
-    return segmentation, max_id
-
-
 def _make_checkerboard(blocking):
     blocks_a = [0]
     blocks_b = []
@@ -214,7 +174,7 @@ def load_mask(mask_path, mask_key, shape):
     else:
         with file_reader(mask_path, 'r') as f_mask:
             mask = f_mask[mask_key][:].astype('bool')
-        mask = InterpolatedVolume(mask, shape, spline_order=0)
+        mask = ResizedVolume(mask, shape=shape, order=0)
     return mask
 
 

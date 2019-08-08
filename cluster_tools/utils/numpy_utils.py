@@ -4,7 +4,7 @@ import ctypes
 
 def set_numpy_threads(n_threads):
     """ Set the number of threads numpy exposes to its
-    underlying linalg library. 
+    underlying linalg library.
 
     This needs to be called BEFORE the numpy import and sets the number
     of threads statically.
