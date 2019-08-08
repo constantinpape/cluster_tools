@@ -159,3 +159,9 @@ class KnossosFile(object):
             raise ValueError("Invalid key %s" % key)
         file_prefix = '%s_%s' % (self.file_name, key)
         return KnossosDataset(ds_path, file_prefix, self.load_png)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
