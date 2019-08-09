@@ -6,7 +6,7 @@ from shutil import rmtree
 import luigi
 import z5py
 import cluster_tools.evaluation as evaluation
-import cluster_tools.utils.validation_utils as val
+import elf.evaluation as val
 
 
 class TestEvaluation(unittest.TestCase):
