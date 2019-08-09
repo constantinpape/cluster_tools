@@ -6,8 +6,8 @@ import json
 
 import numpy as np
 import luigi
+from elf.evaluation.variation_of_information import compute_object_vi_scores
 
-import cluster_tools.utils.validation_utils as val
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
@@ -111,8 +111,7 @@ def object_vi(job_id, config_path):
     overlaps = load_overlaps(path, n_chunks, n_threads)
 
     a_dict, b_dict, p_ids, p_counts, _ = contigency_table_from_overlaps(overlaps)
-    object_scores = val.compute_object_vi_scores(a_dict, b_dict, p_ids, p_counts,
-                                                 use_log2=True)
+    object_scores = compute_object_vi_scores(a_dict, b_dict, p_ids, p_counts, use_log2=True)
 
     # annoying json ...
     object_scores = {int(gt_id): score for gt_id, score in object_scores.items()}
