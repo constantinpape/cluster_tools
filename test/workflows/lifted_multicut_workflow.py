@@ -1,42 +1,21 @@
-import os
-import json
 import unittest
+import sys
 import numpy as np
-from shutil import rmtree
 
 import luigi
 import z5py
 from cluster_tools import LiftedMulticutSegmentationWorkflow
 
+try:
+    from ..base import BaseTest
+except ImportError:
+    sys.path.append('..')
+    from base import BaseTest
 
-class TestLiftedMulticutWorkflow(unittest.TestCase):
-    input_path = '/g/kreshuk/data/cremi/example/sampleA.n5'
+
+class TestLiftedMulticutWorkflow(BaseTest):
     input_key = 'volumes/affinities'
     ws_key = 'volumes/segmentation/watershed'
-
-    tmp_folder = './tmp'
-    config_folder = './tmp/configs'
-    out_path = os.path.join(tmp_folder, 'data.n5')
-
-    target = 'local'
-    block_shape = [25, 256, 256]
-    shebang = '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python'
-
-    def setUp(self):
-        os.makedirs(self.tmp_folder, exist_ok=True)
-        os.makedirs(self.config_folder, exist_ok=True)
-        config = LiftedMulticutSegmentationWorkflow.get_config()
-        global_config = config['global']
-        global_config['shebang'] = self.shebang
-        global_config['block_shape'] = self.block_shape
-        with open(os.path.join(self.config_folder, 'global.config'), 'w') as f:
-            json.dump(global_config, f)
-
-    def tearDown(self):
-        try:
-            rmtree(self.tmp_folder)
-        except OSError:
-            pass
 
     def _check_result(self):
         with z5py.File(self.out_path) as f:

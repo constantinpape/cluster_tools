@@ -2,61 +2,27 @@ import os
 import sys
 import json
 import unittest
-from shutil import rmtree
 
 import numpy as np
 import luigi
 import z5py
 from skimage.morphology import skeletonize_3d
 from skan import csr
+from cluster_tools.utils import skeleton_utils as su
 
 try:
-    from cluster_tools.skeletons import SkeletonWorkflow
-    from cluster_tools.utils import skeleton_utils as su
+    from ..base import BaseTest
 except ImportError:
-    sys.path.append('../..')
-    from cluster_tools.skeletons import SkeletonWorkflow
-    from cluster_tools.utils import skeleton_utils as su
+    sys.path.append('..')
+    from base import BaseTest
 
 
-class TestSkeletons(unittest.TestCase):
-    # path = '/g/kreshuk/pape/Work/data/cluster_tools_test_data/test_data.n5'
-    path = '/home/cpape/Work/data/cluster_tools_test_data/test_data.n5'
-
-    input_prefix = 'volumes/segmentation'
-    output_path = './tmp/skeletons.n5'
+class TestSkeletons(BaseTest):
+    input_prefix = 'volumes/segmentation/multicut'
     output_prefix = 'skeletons'
-    #
-    tmp_folder = './tmp'
-    config_folder = './tmp/configs'
-    target= 'local'
-
-    # shebang = '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python'
-    shebang = '#! /home/cpape/Work/software/conda/miniconda3/envs/main/bin/python'
-
-    @staticmethod
-    def _mkdir(dir_):
-        try:
-            os.mkdir(dir_)
-        except OSError:
-            pass
-
-    def setUp(self):
-        self._mkdir(self.tmp_folder)
-        self._mkdir(self.config_folder)
-        global_config = SkeletonWorkflow.get_config()['global']
-        global_config['shebang'] = self.shebang
-        global_config['block_shape'] = [10, 256, 256]
-        with open(os.path.join(self.config_folder, 'global.config'), 'w') as f:
-            json.dump(global_config, f)
-
-    def tearDown(self):
-        try:
-            rmtree(self.tmp_folder)
-        except OSError:
-            pass
 
     def _run_skel_wf(self, format_, max_jobs):
+        from cluster_tools.skeletons import SkeletonWorkflow
         task = SkeletonWorkflow(tmp_folder=self.tmp_folder,
                                 config_dir=self.config_folder,
                                 target=self.target, max_jobs=max_jobs,
@@ -84,6 +50,7 @@ class TestSkeletons(unittest.TestCase):
         return seg, ids
 
     def test_skeletons_n5(self):
+        from cluster_tools.skeletons import SkeletonWorkflow
         config = SkeletonWorkflow.get_config()['skeletonize']
         config.update({'chunk_len': 50})
         with open(os.path.join(self.config_folder, 'skeletonize.config'), 'w') as f:
@@ -122,8 +89,8 @@ class TestSkeletons(unittest.TestCase):
             self.assertEqual(edges.shape, edges_exp.shape)
             self.assertTrue(np.allclose(edges, edges_exp))
 
-
     def test_skeletons_swc(self):
+        from cluster_tools.skeletons import SkeletonWorkflow
         config = SkeletonWorkflow.get_config()['skeletonize']
         config.update({'chunk_len': 50})
         with open(os.path.join(self.config_folder, 'skeletonize.config'), 'w') as f:
@@ -154,8 +121,8 @@ class TestSkeletons(unittest.TestCase):
 
             # TODO check parents
 
-
     def test_skeletons_volume(self):
+        from cluster_tools.skeletons import SkeletonWorkflow
         config = SkeletonWorkflow.get_config()['skeletonize']
         config.update({'threads_per_job': 8})
         with open(os.path.join(self.config_folder, 'skeletonize.config'), 'w') as f:
@@ -172,7 +139,6 @@ class TestSkeletons(unittest.TestCase):
             mask = seg == seg_id
             exp = skeletonize_3d(mask) > 0
             self.assertTrue(np.allclose(res, exp))
-
 
 
 if __name__ == '__main__':

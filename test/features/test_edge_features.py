@@ -1,10 +1,8 @@
 import os
-import sys
-import json
 import unittest
-import numpy as np
-from shutil import rmtree
+import sys
 
+import numpy as np
 import luigi
 import z5py
 
@@ -12,47 +10,19 @@ import nifty.tools as nt
 import nifty.graph.rag as nrag
 
 try:
-    from cluster_tools.features import EdgeFeaturesWorkflow
-    from cluster_tools.cluster_tasks import BaseClusterTask
+    from ..base import BaseTest
 except ImportError:
-    sys.path.append('../..')
-    from cluster_tools.features import EdgeFeaturesWorkflow
-    from cluster_tools.cluster_tasks import BaseClusterTask
+    sys.path.append('..')
+    from base import BaseTest
 
 
-class TestEdgeFeatures(unittest.TestCase):
-    input_path = '/g/kreshuk/pape/Work/data/cluster_tools_test_data/test_data.n5'
-    input_key = 'volumes/boundaries_float32'
+class TestEdgeFeatures(BaseTest):
+    # TODO also add boundaries to example data
+    input_key = 'volumes/affinities'
     ws_key = 'volumes/watershed'
+    # TODO add graph to example data
     graph_key = 'graph'
-    tmp_folder = './tmp'
-    output_path = './tmp/features.n5'
     output_key = 'features'
-    config_folder = './tmp/configs'
-    target = 'local'
-    block_shape = [10, 256, 256]
-
-    @staticmethod
-    def _mkdir(dir_):
-        try:
-            os.mkdir(dir_)
-        except OSError:
-            pass
-
-    def setUp(self):
-        self._mkdir(self.tmp_folder)
-        self._mkdir(self.config_folder)
-        global_config = BaseClusterTask.default_global_config()
-        global_config['shebang'] = '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env/bin/python'
-        global_config['block_shape'] = self.block_shape
-        with open(os.path.join(self.config_folder, 'global.config'), 'w') as f:
-            json.dump(global_config, f)
-
-    def tearDown(self):
-        try:
-            rmtree(self.tmp_folder)
-        except OSError:
-            pass
 
     def _check_subresults(self):
         f = z5py.File(self.input_path)
@@ -128,7 +98,7 @@ class TestEdgeFeatures(unittest.TestCase):
         # self.assertTrue(np.allclose(len_nifty, features_block[:, -1]))
 
     def test_boundary_features(self):
-        max_jobs = 8
+        from cluster_tools.features import EdgeFeaturesWorkflow
         ret = luigi.build([EdgeFeaturesWorkflow(input_path=self.input_path,
                                                 input_key=self.input_key,
                                                 labels_path=self.input_path,
@@ -140,7 +110,7 @@ class TestEdgeFeatures(unittest.TestCase):
                                                 config_dir=self.config_folder,
                                                 tmp_folder=self.tmp_folder,
                                                 target=self.target,
-                                                max_jobs=max_jobs)],
+                                                max_jobs=self.max_jobs)],
                           local_scheduler=True)
         self.assertTrue(ret)
         self._check_subresults()

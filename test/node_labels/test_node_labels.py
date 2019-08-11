@@ -1,8 +1,6 @@
 import os
 import sys
-import json
 import unittest
-from shutil import rmtree
 
 import numpy as np
 import luigi
@@ -13,46 +11,16 @@ import nifty.distributed as ndist
 import nifty.tools as nt
 
 try:
-    from cluster_tools.node_labels import NodeLabelWorkflow
+    from ..base import BaseTest
 except ImportError:
-    sys.path.append('../..')
-    from cluster_tools.node_labels import NodeLabelWorkflow
+    sys.path.append('..')
+    from base import BaseTest
 
 
-class TestNodeLabels(unittest.TestCase):
-    path = '/g/kreshuk/data/cremi/example/sampleA.n5'
-    output_path = './tmp/node_labels.n5'
+class TestNodeLabels(BaseTest):
     ws_key = 'volumes/segmentation/multicut'
     input_key = 'volumes/segmentation/groundtruth'
     output_key = 'labels'
-    #
-    tmp_folder = './tmp'
-    config_folder = './tmp/configs'
-    target = 'local'
-    shebang = '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python'
-    block_shape = [10, 256, 256]
-    n_jobs = 4
-
-    def setUp(self):
-        os.makedirs(self.tmp_folder, exist_ok=True)
-        os.makedirs(self.config_folder, exist_ok=True)
-        global_config = NodeLabelWorkflow.get_config()['global']
-        global_config['shebang'] = self.shebang
-        global_config['block_shape'] = self.block_shape
-        with open(os.path.join(self.config_folder, 'global.config'), 'w') as f:
-            json.dump(global_config, f)
-
-        config = NodeLabelWorkflow.get_config()['merge_node_labels']
-        config.update({'threads_per_job': self.n_jobs})
-        with open(os.path.join(self.config_folder,
-                               'merge_node_labels.config'), 'w') as f:
-            json.dump(config, f)
-
-    def tearDown(self):
-        try:
-            rmtree(self.tmp_folder)
-        except OSError:
-            pass
 
     @staticmethod
     def compute_overlaps(seg_a, seg_b, max_overlap=True):
@@ -76,11 +44,11 @@ class TestNodeLabels(unittest.TestCase):
         # compute the expected max overlaps
         with z5py.File(self.path) as f:
             ds_ws = f[self.ws_key]
-            ds_ws.n_threads = self.n_jobs
+            ds_ws.n_threads = self.max_jobs
             ws = ds_ws[:]
 
             ds_inp = f[self.input_key]
-            ds_inp.n_threads = self.n_jobs
+            ds_inp.n_threads = self.max_jobs
             inp = ds_inp[:]
         return ws, inp
 
@@ -106,9 +74,10 @@ class TestNodeLabels(unittest.TestCase):
             self.assertTrue(np.allclose(ovlp_counts, ovlp_counts_exp))
 
     def test_max_overlap(self):
+        from cluster_tools.node_labels import NodeLabelWorkflow
         task = NodeLabelWorkflow(tmp_folder=self.tmp_folder,
                                  config_dir=self.config_folder,
-                                 target=self.target, max_jobs=self.n_jobs,
+                                 target=self.target, max_jobs=self.max_jobs,
                                  ws_path=self.path, ws_key=self.ws_key,
                                  input_path=self.path, input_key=self.input_key,
                                  output_path=self.output_path, output_key=self.output_key)
@@ -132,9 +101,10 @@ class TestNodeLabels(unittest.TestCase):
         self.assertTrue(np.allclose(overlaps, overlaps_exp))
 
     def test_subresults(self):
+        from cluster_tools.node_labels import NodeLabelWorkflow
         task = NodeLabelWorkflow(tmp_folder=self.tmp_folder,
                                  config_dir=self.config_folder,
-                                 target=self.target, max_jobs=self.n_jobs,
+                                 target=self.target, max_jobs=self.max_jobs,
                                  ws_path=self.path, ws_key=self.ws_key,
                                  input_path=self.path, input_key=self.input_key,
                                  output_path=self.output_path, output_key=self.output_key)
@@ -160,9 +130,10 @@ class TestNodeLabels(unittest.TestCase):
             self.check_overlaps(ids, overlaps, overlaps_exp)
 
     def test_overlaps(self):
+        from cluster_tools.node_labels import NodeLabelWorkflow
         task = NodeLabelWorkflow(tmp_folder=self.tmp_folder,
                                  config_dir=self.config_folder,
-                                 target=self.target, max_jobs=self.n_jobs,
+                                 target=self.target, max_jobs=self.max_jobs,
                                  ws_path=self.path, ws_key=self.ws_key,
                                  input_path=self.path, input_key=self.input_key,
                                  output_path=self.output_path, output_key=self.output_key,

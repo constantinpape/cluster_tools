@@ -1,9 +1,7 @@
 import os
 import sys
-import json
 import unittest
 import numpy as np
-from shutil import rmtree
 
 import luigi
 import z5py
@@ -11,47 +9,16 @@ import vigra
 import nifty.tools as nt
 
 try:
-    from cluster_tools.features import RegionFeaturesWorkflow
+    from ..base import BaseTest
 except ImportError:
-    sys.path.append('../..')
-    from cluster_tools.features import RegionFeaturesWorkflow
+    sys.path.append('..')
+    from base import BaseTest
 
 
-class TestEdgeFeatures(unittest.TestCase):
-    # input_path = '/g/kreshuk/pape/Work/data/cluster_tools_test_data/test_data.n5'
-    input_path = '/home/pape/Work/data/cluster_tools_test_data/test_data.n5'
+class TestEdgeFeatures(BaseTest):
     input_key = 'volumes/raw'
     seg_key = 'volumes/watershed'
-
-    tmp_folder = './tmp'
-    output_path = './tmp/features.n5'
     output_key = 'features'
-    config_folder = './tmp/configs'
-    target = 'local'
-    block_shape = [10, 256, 256]
-
-    @staticmethod
-    def _mkdir(dir_):
-        try:
-            os.mkdir(dir_)
-        except OSError:
-            pass
-
-    def setUp(self):
-        self._mkdir(self.tmp_folder)
-        self._mkdir(self.config_folder)
-        global_config = RegionFeaturesWorkflow.get_config()['global']
-        # global_config['shebang'] = '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env/bin/python'
-        global_config['shebang'] = '#! /home/pape/Work/software/conda/miniconda3/envs/main/bin/python'
-        global_config['block_shape'] = self.block_shape
-        with open(os.path.join(self.config_folder, 'global.config'), 'w') as f:
-            json.dump(global_config, f)
-
-    def tearDown(self):
-        try:
-            rmtree(self.tmp_folder)
-        except OSError:
-            pass
 
     def _check_features(self, data, labels, res, ids=None, feat_name='mean'):
         expected = vigra.analysis.extractRegionFeatures(data, labels, features=[feat_name])
@@ -111,7 +78,7 @@ class TestEdgeFeatures(unittest.TestCase):
                                  feat_name='count')
 
     def test_region_features(self):
-        max_jobs = 4
+        from cluster_tools.features import RegionFeaturesWorkflow
         ret = luigi.build([RegionFeaturesWorkflow(input_path=self.input_path,
                                                   input_key=self.input_key,
                                                   labels_path=self.input_path,
@@ -121,7 +88,7 @@ class TestEdgeFeatures(unittest.TestCase):
                                                   config_dir=self.config_folder,
                                                   tmp_folder=self.tmp_folder,
                                                   target=self.target,
-                                                  max_jobs=max_jobs)],
+                                                  max_jobs=self.max_jobs)],
                           local_scheduler=True)
         self.assertTrue(ret)
         self._check_subresults()

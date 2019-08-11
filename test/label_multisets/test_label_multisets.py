@@ -1,50 +1,39 @@
 import os
 import sys
-import json
 import unittest
-from shutil import rmtree
 
+import numpy as np
 import z5py
 import luigi
 
 try:
-    from cluster_tools.morphology import LabelMultisetWorkflow
+    from ..base import BaseTest
 except ImportError:
-    sys.path.append('../..')
-    from cluster_tools.morphology import LabelMultisetWorkflow
+    sys.path.append('..')
+    from base import BaseTest
 
 
-class TestLabelMultisets(unittest.TestCase):
-    input_path = '/g/kreshuk/pape/Work/data/cremi/sampleA+.h5'
+class TestLabelMultisets(BaseTest):
+    """ Test for the label multiset converter.
+
+    The expected data needs to be computed with 'paintera-conversion-helper'
+    (conda install -c conda-forge paintera):
+    paintera-conversion-helper -r -d sampleA.n5,raw,raw
+                               -d sampleA.n5,segmentation/multicut,label
+                               -o sampleA_paintera.n5 -b 64,64,64
+                               -s 2,2,1 2,2,1 2,2,1, 2,2,2 -m -1 -1 5 3
+    """
     input_key = 'segmentation/multicut'
-
-    expected_path = '/g/kreshuk/pape/Work/data/cremi/sampleA+_paintera.n5'
-    expected_key = 'segmentation/multicut/data'
-
-    output_path = './tmp/data.n5'
     output_key = 'data'
 
-    tmp_folder = './tmp'
-    config_folder = './tmp/configs'
-    target = 'local'
-
     def setUp(self):
-        os.makedirs(self.tmp_folder, exist_ok=True)
-        os.makedirs(self.config_folder, exist_ok=True)
-        self.config = LabelMultisetWorkflow.get_config()
-        global_config = self.config['global']
-        global_config['shebang'] = '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python'
-        global_config['block_shape'] = []  # TODO
-        with open(os.path.join(self.config_folder, 'global.config'), 'w') as f:
-            json.dump(global_config, f)
-
-    def tearDown(self):
-        try:
-            rmtree(self.tmp_folder)
-        except OSError:
-            pass
+        super().setUp()
+        self.expected_path = os.path.splitext(self.input_path)[0] + '_paintera.n5'
+        assert os.path.exists(self.expected_path)
+        self.expected_key = 'segmentation/multicut/data'
 
     def test_label_multisets(self):
+        from cluster_tools.morphology import LabelMultisetWorkflow
         task = LabelMultisetWorkflow
 
         # set scale factors and restrict sets same as paintera helper:
@@ -86,7 +75,6 @@ class TestLabelMultisets(unittest.TestCase):
                             continue
                         self.assertEqual(out.shape, out_exp.shape)
                         self.assertTrue(np.allclose(out, out_exp))
-
 
 
 if __name__ == '__main__':

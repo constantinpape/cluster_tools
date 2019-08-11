@@ -3,7 +3,6 @@ import sys
 import json
 import unittest
 import numpy as np
-from shutil import rmtree
 
 import luigi
 import z5py
@@ -12,46 +11,16 @@ import nifty.distributed as ndist
 import nifty.graph.opt.lifted_multicut as nlmc
 
 try:
-    from cluster_tools.lifted_features.sparse_lifted_neighborhood import SparseLiftedNeighborhoodLocal
-    from cluster_tools.node_labels import NodeLabelWorkflow
-    from cluster_tools.graph import GraphWorkflow
+    from ..base import BaseTest
 except ImportError:
-    sys.path.append('../..')
-    from cluster_tools.lifted_features.sparse_lifted_neighborhood import SparseLiftedNeighborhoodLocal
-    from cluster_tools.node_labels import NodeLabelWorkflow
-    from cluster_tools.graph import GraphWorkflow
+    sys.path.append('..')
+    from base import BaseTest
 
 
-class TestNHWorkflow(unittest.TestCase):
-    input_path = '/g/kreshuk/pape/Work/data/cluster_tools_test_data/test_data_lifted.n5'
+# TODO need labels for this
+class TestNHWorkflow(BaseTest):
     ws_key = 'volumes/watershed'
     labels_key = 'volumes/labels'
-
-    tmp_folder = './tmp'
-    config_folder = './tmp/configs'
-    block_shape = [50, 256, 256]
-
-    @staticmethod
-    def _mkdir(dir_):
-        try:
-            os.mkdir(dir_)
-        except OSError:
-            pass
-
-    def setUp(self):
-        self._mkdir(self.tmp_folder)
-        self._mkdir(self.config_folder)
-        global_config = SparseLiftedNeighborhoodLocal.default_global_config()
-        global_config['shebang'] = '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python'
-        global_config['block_shape'] = self.block_shape
-        with open(os.path.join(self.config_folder, 'global.config'), 'w') as f:
-            json.dump(global_config, f)
-
-    def tearDown(self):
-        try:
-            rmtree(self.tmp_folder)
-        except OSError:
-            pass
 
     def compute_nh(self, graph_depth):
         # load the graph
@@ -91,10 +60,14 @@ class TestNHWorkflow(unittest.TestCase):
         self.assertTrue(np.allclose(nh_out, nh))
 
     def test_lifted_nh_with_labels(self):
+        from cluster_tools.lifted_features.sparse_lifted_neighborhood import SparseLiftedNeighborhoodLocal
+        from cluster_tools.node_labels import NodeLabelWorkflow
+        from cluster_tools.graph import GraphWorkflow
+
         node_label_path = os.path.join(self.tmp_folder, 'node_labels.n5')
         node_label_key = 'node_labels'
         task_labels = NodeLabelWorkflow(tmp_folder=self.tmp_folder, config_dir=self.config_folder,
-                                        max_jobs=8, target='local',
+                                        max_jobs=self.max_jobs, target=self.target,
                                         ws_path=self.input_path, ws_key=self.ws_key,
                                         input_path=self.input_path, input_key=self.labels_key,
                                         output_path=node_label_path, output_key=node_label_key,
@@ -108,7 +81,7 @@ class TestNHWorkflow(unittest.TestCase):
             json.dump(graph_config, f)
 
         task_graph = GraphWorkflow(tmp_folder=self.tmp_folder, config_dir=self.config_folder,
-                                   max_jobs=8, target='local',
+                                   max_jobs=self.max_jobs, target=self.target,
                                    input_path=self.input_path, input_key=self.ws_key,
                                    graph_path=graph_path, output_key=graph_key)
         ret = luigi.build([task_labels, task_graph],
@@ -130,6 +103,9 @@ class TestNHWorkflow(unittest.TestCase):
         self._check_result(graph_depth)
 
     def test_lifted_nh(self):
+        from cluster_tools.lifted_features.sparse_lifted_neighborhood import SparseLiftedNeighborhoodLocal
+        from cluster_tools.graph import GraphWorkflow
+
         graph_path = os.path.join(self.tmp_folder, 'graph.n5')
         graph_key = 'graph'
         graph_config = GraphWorkflow.get_config()['initial_sub_graphs']
@@ -137,7 +113,7 @@ class TestNHWorkflow(unittest.TestCase):
         with open(os.path.join(self.config_folder, 'initial_sub_graphs.config'), 'w') as f:
             json.dump(graph_config, f)
         task_graph = GraphWorkflow(tmp_folder=self.tmp_folder, config_dir=self.config_folder,
-                                   max_jobs=8, target='local',
+                                   max_jobs=self.max_jobs, target=self.target,
                                    input_path=self.input_path, input_key=self.ws_key,
                                    graph_path=graph_path, output_key=graph_key)
         ret = luigi.build([task_graph],
