@@ -1,16 +1,14 @@
 #! /usr/bin/python
 
+import json
 import os
 import sys
-import json
 
 import luigi
-import numpy as np
-import nifty.tools as nt
 import nifty.distributed as ndist
 
-import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
+import cluster_tools.utils.volume_utils as vu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
@@ -30,6 +28,12 @@ class LabelBlockMappingBase(luigi.Task):
     dependency = luigi.TaskParameter()
     prefix = luigi.Parameter()
 
+    @staticmethod
+    def default_task_config():
+        config = LocalTask.default_task_config()
+        config.update({'compression': 'gzip'})
+        return config
+
     def requires(self):
         return self.dependency
 
@@ -46,13 +50,13 @@ class LabelBlockMappingBase(luigi.Task):
         # we use a chunk-size of 10k, but this could also be a parameter
         chunks = (10000,)
 
+        config = self.get_task_config()
         # create the output dataset
         with vu.file_reader(self.output_path) as f:
-            compression = 'gzip'
+            compression = config.get('compression', 'gzip')
             f.require_dataset(self.output_key, shape=ds_shape, compression=compression,
                               chunks=chunks, dtype='int8')
 
-        config = self.get_task_config()
         config.update({"input_path": self.input_path, "input_key": self.input_key,
                        "output_path": self.output_path, "output_key": self.output_key,
                        "number_of_labels": self.number_of_labels})
