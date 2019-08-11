@@ -24,7 +24,7 @@ class TestMorphology(unittest.TestCase):
 
     tmp_folder = './tmp'
     config_folder = './tmp/configs'
-    target= 'local'
+    target = 'local'
 
     @staticmethod
     def _mkdir(dir_):
