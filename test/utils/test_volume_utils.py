@@ -1,24 +1,15 @@
-import sys
 import os
 import unittest
 from shutil import rmtree
 
 import numpy as np
 
-try:
-    import cluster_tools
-except ImportError:
-    sys.path.append('../..')
-    import cluster_tools
-
 
 class TestVolumeUtil(unittest.TestCase):
+    tmp_dir = './tmp'
+
     def setUp(self):
-        self.tmp_dir = './tmp'
-        try:
-            os.mkdir(self.tmp_dir)
-        except OSError:
-            pass
+        os.makedirs(self.tmp_dir, exist_ok=True)
 
     def tearDown(self):
         try:
@@ -50,21 +41,6 @@ class TestVolumeUtil(unittest.TestCase):
         path = os.path.join(self.tmp_dir, 'a.h5')
         with file_reader(path) as f:
             _test_io(f)
-
-    def test_interpol_volume(self):
-        from cluster_tools.utils.volume_utils import InterpolatedVolume
-        big_shape = (100, 1000, 1000)
-        small_shape = (10, 100, 100)
-        vol = np.random.rand(*small_shape)
-
-        for method in ('nearest', 'linear', 'spline'):
-            ivol = InterpolatedVolume(vol, big_shape, interpolation=method)
-
-            bb = np.s_[50:75, 100:250, 300:450]
-            oshape = tuple(b.stop - b.start for b in bb)
-            out = ivol[bb]
-            self.assertEqual(out.shape, oshape)
-            self.assertFalse((out == 0).all())
 
 
 if __name__ == '__main__':

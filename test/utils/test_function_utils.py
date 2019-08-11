@@ -1,22 +1,13 @@
-import sys
 import os
 import unittest
 from shutil import rmtree
 
-try:
-    import cluster_tools
-except ImportError:
-    sys.path.append('../..')
-    import cluster_tools
-
 
 class TestFunctionUtils(unittest.TestCase):
+    tmp_dir = './tmp'
+
     def setUp(self):
-        self.tmp_dir = './tmp'
-        try:
-            os.mkdir(self.tmp_dir)
-        except OSError:
-            pass
+        os.makedirs(self.tmp_dir, exist_ok=True)
 
     def tearDown(self):
         try:
