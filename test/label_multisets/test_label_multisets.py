@@ -18,9 +18,9 @@ class TestLabelMultisets(BaseTest):
 
     The expected data needs to be computed with 'paintera-conversion-helper'
     (conda install -c conda-forge paintera):
-    paintera-conversion-helper -r -d sampleA.n5,raw,raw
-                               -d sampleA.n5,segmentation/multicut,label
-                               -o sampleA_paintera.n5 -b 64,64,64
+    paintera-conversion-helper -r -d sampleA.n5,volumes/raw,raw
+                               -d sampleA.n5,volumes/segmentation/multicut,label
+                               -o sampleA_paintera.n5 -b 256,256,25
                                -s 2,2,1 2,2,1 2,2,1, 2,2,2 -m -1 -1 5 3
     """
     input_key = 'segmentation/multicut'
@@ -36,10 +36,6 @@ class TestLabelMultisets(BaseTest):
         from cluster_tools.morphology import LabelMultisetWorkflow
         task = LabelMultisetWorkflow
 
-        # set scale factors and restrict sets same as paintera helper:
-        # paintera-conversion-helper -r -d sampleA+.h5,raw,raw -d sampleA+.h5,segmentation/multicut,label
-        #                            -o sampleA+_paintera.n5 -b 64,64,64
-        #                            -s 2,2,1 2,2,1 2,2,1, 2,2,2 -m -1 -1 5 3
         scale_factors = [[1, 2, 2], [1, 2, 2], [1, 2, 2], [2, 2, 2]]
         restrict_sets = [-1, -1, 5, 3]
         t = task(tmp_folder=self.tmp_folder, max_jobs=4,

@@ -1,20 +1,10 @@
-from distutils.core import setup
-from pkgutil import walk_packages
+import runpy
+from setuptools import setup, find_packages
 
-import cluster_tools
-from cluster_tools import __version__
-
-
-def find_packages(path, prefix):
-    yield prefix
-    prefix = prefix + "."
-    for _, name, ispkg in walk_packages(path, prefix):
-        if ispkg:
-            yield name
-
-
+version = runpy.run_path('cluster_tools/version.py')['__version__']
 setup(name='cluster_tools',
-      version=__version__,
-      description='Workflows for distributed bio-image analysis and segmentation',
+      packages=find_packages(include='cluster_tools'),
+      version=version,
       author='Constantin Pape',
-      packages=list(find_packages(cluster_tools.__path__, cluster_tools.__name__)))
+      url='https://github.com/constantinpape/cluster_tools',
+      license='MIT')
