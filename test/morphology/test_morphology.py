@@ -7,13 +7,13 @@ import z5py
 
 try:
     from ..base import BaseTest
-except ImportError:
+except ValueError:
     sys.path.append('..')
     from base import BaseTest
 
 
 class TestMorphology(BaseTest):
-    input_key = 'volumes/groundtruth'
+    input_key = 'volumes/segmentation/groundtruth'
     output_key = 'data'
 
     # TODO also check bounding box

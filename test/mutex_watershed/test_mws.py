@@ -11,7 +11,7 @@ from elf.segmentation.mutex_watershed import mutex_watershed
 
 try:
     from ..base import BaseTest
-except ImportError:
+except ValueError:
     sys.path.append('..')
     from base import BaseTest
 

@@ -13,13 +13,13 @@ import nifty.tools as nt
 
 try:
     from ..base import BaseTest
-except ImportError:
+except ValueError:
     sys.path.append('..')
     from base import BaseTest
 
 
 class TestThresholdedComponents(BaseTest):
-    input_key = 'volumes/boundaries_float32'
+    input_key = 'volumes/boundaries'
     output_key = 'data'
     assignment_key = 'assignments'
 

@@ -7,21 +7,23 @@ import luigi
 import z5py
 import vigra
 import nifty.tools as nt
+from cluster_tools.utils.volume_utils import normalize
 
 try:
     from ..base import BaseTest
-except ImportError:
+except ValueError:
     sys.path.append('..')
     from base import BaseTest
 
 
-class TestEdgeFeatures(BaseTest):
-    input_key = 'volumes/raw'
-    seg_key = 'volumes/watershed'
+class TestRegionFeatures(BaseTest):
+    input_key = 'volumes/raw/s0'
+    seg_key = 'volumes/segmentation/watershed'
     output_key = 'features'
 
     def _check_features(self, data, labels, res, ids=None, feat_name='mean'):
-        expected = vigra.analysis.extractRegionFeatures(data, labels, features=[feat_name])
+        expected = vigra.analysis.extractRegionFeatures(normalize(data),
+                                                        labels, features=[feat_name])
         expected = expected[feat_name]
 
         if ids is not None:

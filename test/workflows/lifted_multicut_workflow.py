@@ -8,7 +8,7 @@ from cluster_tools import LiftedMulticutSegmentationWorkflow
 
 try:
     from ..base import BaseTest
-except ImportError:
+except ValueError:
     sys.path.append('..')
     from base import BaseTest
 

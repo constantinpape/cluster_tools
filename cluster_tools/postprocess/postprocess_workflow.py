@@ -32,10 +32,6 @@ class SizeFilterWorkflow(WorkflowBase):
     relabel = luigi.BoolParameter(default=True)
 
     def _bg_filter(self, dep):
-        print("HEAAAAAAAAAAAAAARRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR")
-        print("HEAAAAAAAAAAAAAARRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR")
-        print("HEAAAAAAAAAAAAAARRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR")
-        print("HEAAAAAAAAAAAAAARRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR")
         filter_task = getattr(bg_tasks,
                               self._get_task_name('BackgroundSizeFilter'))
         dep = filter_task(tmp_folder=self.tmp_folder,

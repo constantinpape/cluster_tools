@@ -10,7 +10,7 @@ import elf.evaluation as val
 
 try:
     from ..base import BaseTest
-except ImportError:
+except ValueError:
     sys.path.append('..')
     from base import BaseTest
 
@@ -20,7 +20,7 @@ class TestEvaluation(BaseTest):
     gt_key = 'volumes/segmentation/groundtruth'
 
     def metrics(self):
-        f = z5py.File(self.path)
+        f = z5py.File(self.input_path)
 
         ds = f[self.seg_key]
         ds.n_threads = 8
@@ -34,7 +34,7 @@ class TestEvaluation(BaseTest):
         return vis, vim, ri
 
     def vi_scores(self):
-        f = z5py.File(self.path)
+        f = z5py.File(self.input_path)
 
         ds = f[self.seg_key]
         ds.n_threads = 8
@@ -52,8 +52,8 @@ class TestEvaluation(BaseTest):
         res_path = './tmp/res.json'
         t = task(tmp_folder=self.tmp_folder, config_dir=self.config_folder,
                  target=self.target, max_jobs=self.max_jobs,
-                 seg_path=self.path, seg_key=self.seg_key,
-                 gt_path=self.path, gt_key=self.gt_key,
+                 seg_path=self.input_path, seg_key=self.seg_key,
+                 gt_path=self.input_path, gt_key=self.gt_key,
                  output_path=res_path)
         ret = luigi.build([t], local_scheduler=True)
         self.assertTrue(ret)
@@ -76,8 +76,8 @@ class TestEvaluation(BaseTest):
         res_path = './tmp/res_objs.json'
         t = task(tmp_folder=self.tmp_folder, config_dir=self.config_folder,
                  target=self.target, max_jobs=self.max_jobs,
-                 seg_path=self.path, seg_key=self.seg_key,
-                 gt_path=self.path, gt_key=self.gt_key,
+                 seg_path=self.input_path, seg_key=self.seg_key,
+                 gt_path=self.input_path, gt_key=self.gt_key,
                  output_path=res_path)
         ret = luigi.build([t], local_scheduler=True)
         self.assertTrue(ret)

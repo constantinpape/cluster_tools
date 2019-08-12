@@ -8,13 +8,13 @@ import z5py
 
 try:
     from ..base import BaseTest
-except ImportError:
+except ValueError:
     sys.path.append('..')
     from base import BaseTest
 
 
 class TestRelabel(BaseTest):
-    input_key = 'volumes/watershed'
+    input_key = 'volumes/segmentation/watershed'
     output_key = 'data'
     assignment_key = 'assignments'
 

@@ -10,13 +10,13 @@ from elf.evaluation import rand_index
 
 try:
     from ..base import BaseTest
-except ImportError:
+except ValueError:
     sys.path.append('..')
     from base import BaseTest
 
 
 class TestPostprocess(BaseTest):
-    ws_key = 'volumes/watershed'
+    ws_key = 'volumes/segmentation/watershed'
     graph_key = 'graph'
 
     def test_size_filter_bg(self):
@@ -46,7 +46,7 @@ class TestPostprocess(BaseTest):
 
     def make_assignments(self, g, path, key):
         n_nodes = g.numberOfNodes
-        assignments = np.random.randint(0, 500, n_nodes)
+        assignments = np.random.randint(1, 500, n_nodes)
         with z5py.File(path) as f:
             f.create_dataset(key, data=assignments, chunks=(int(1e5),))
         return assignments
@@ -63,7 +63,7 @@ class TestPostprocess(BaseTest):
         t = task(tmp_folder=self.tmp_folder, config_dir=self.config_folder,
                  target=self.target, max_jobs=self.max_jobs,
                  problem_path=self.input_path, graph_key=self.graph_key,
-                 assignment_path=self.output_path, assignment_key=self.assignment_key,
+                 assignment_path=self.output_path, assignment_key=assignment_key,
                  output_path=self.output_path, assignment_out_key=out_key)
         ret = luigi.build([t], local_scheduler=True)
         self.assertTrue(ret)
@@ -73,7 +73,7 @@ class TestPostprocess(BaseTest):
             results = f[out_key][:]
 
         # compute expected components
-        expected = nifty.graph.connectedComponents(g, assignments)
+        expected = nifty.graph.connectedComponentsFromNodeLabels(g, assignments)
 
         # compare
         self.assertEqual(results.shape, expected.shape)

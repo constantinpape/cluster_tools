@@ -12,7 +12,7 @@ from cluster_tools.utils import skeleton_utils as su
 
 try:
     from ..base import BaseTest
-except ImportError:
+except ValueError:
     sys.path.append('..')
     from base import BaseTest
 

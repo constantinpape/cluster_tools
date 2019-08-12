@@ -12,19 +12,20 @@ import nifty.graph.opt.lifted_multicut as nlmc
 
 try:
     from ..base import BaseTest
-except ImportError:
+except ValueError:
     sys.path.append('..')
     from base import BaseTest
 
 
 # TODO need labels for this
 class TestNHWorkflow(BaseTest):
-    ws_key = 'volumes/watershed'
+    ws_key = 'volumes/segmentation/watershed'
     labels_key = 'volumes/labels'
+    graph_key = 'graph'
 
     def compute_nh(self, graph_depth):
         # load the graph
-        graph_path = os.path.join(self.tmp_folder, 'graph.n5', 'graph')
+        graph_path = os.path.join(self.input_path, self.graph_key)
         graph = ndist.loadAsUndirectedGraph(graph_path)
 
         # load the node labels
