@@ -5,14 +5,12 @@ from .cluster_tasks import WorkflowBase
 from .watershed import WatershedWorkflow
 from .graph import GraphWorkflow
 
-# TODO more features and options to choose which features to choose
+# TODO more features and options to choose which features to use
 from .features import EdgeFeaturesWorkflow
 from .costs import EdgeCostsWorkflow
 
-# TODO more options for lifted problems
-from .lifted_features import LiftedFeaturesFromNodeLabelsWorkflow
-
 from .multicut import MulticutWorkflow
+from .lifted_features import LiftedFeaturesFromNodeLabelsWorkflow
 from .lifted_multicut import LiftedMulticutWorkflow
 
 from .debugging import CheckSubGraphsWorkflow

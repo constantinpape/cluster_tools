@@ -2,12 +2,10 @@
 
 import os
 import sys
-import argparse
 import json
 
 import numpy as np
 import luigi
-import nifty.distributed as ndist
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -87,7 +85,6 @@ class EdgeLabelsLSF(EdgeLabelsBase, LSFTask):
 #
 
 
-# TODO parallelize
 def edge_labels(job_id, config_path):
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
