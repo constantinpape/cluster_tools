@@ -297,14 +297,15 @@ class ConnectedComponentsWorkflow(WorkflowBase):
     problem_path = luigi.Parameter()
     graph_key = luigi.Parameter()
 
-    path = luigi.Parameter()
-    fragments_key = luigi.Parameter(default='')
     assignment_path = luigi.Parameter()
     assignment_key = luigi.Parameter()
 
     output_path = luigi.Parameter()
     assignment_out_key = luigi.Parameter()
+
     output_key = luigi.Parameter(default='')
+    path = luigi.Parameter(default='')
+    fragments_key = luigi.Parameter(default='')
 
     def requires(self):
         cc_task = getattr(cc_tasks,
@@ -321,7 +322,7 @@ class ConnectedComponentsWorkflow(WorkflowBase):
         if self.output_key != '':
             write_task = getattr(write_tasks,
                                  self._get_task_name('Write'))
-            assert self.fragments_key != ''
+            assert self.fragments_key != '' and self.path != ''
             dep = write_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                              config_dir=self.config_dir, dependency=dep,
                              input_path=self.path, input_key=self.fragments_key,
