@@ -8,9 +8,10 @@ import luigi
 import numpy as np
 import nifty.tools as nt
 import vigra
+from elf.segmentation.mutex_watershed import mutex_watershed, mutex_watershed_with_seeds
+from elf.segmentation.mutex_watershed import compute_grid_graph
 
 import cluster_tools.utils.volume_utils as vu
-import cluster_tools.utils.segmentation_utils as su
 import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
@@ -155,9 +156,9 @@ def _mws_block_pass1(block_id, blocking,
     aff_bb = (slice(None),) + in_bb
     affs = vu.normalize(ds_in[aff_bb])
 
-    seg = su.mutex_watershed(affs, offsets, strides=strides, mask=bb_mask,
-                             randomize_strides=randomize_strides,
-                             noise_level=noise_level)
+    seg = mutex_watershed(affs, offsets, strides=strides, mask=bb_mask,
+                          randomize_strides=randomize_strides,
+                          noise_level=noise_level)
 
     out_bb = vu.block_to_bb(block.innerBlock)
     local_bb = vu.block_to_bb(block.innerBlockLocal)
@@ -172,7 +173,7 @@ def _mws_block_pass1(block_id, blocking,
     ds_out[out_bb] = seg
 
     # get the state of the segmentation of this block
-    grid_graph = su.compute_grid_graph(seg.shape, mask=bb_mask)
+    grid_graph = compute_grid_graph(seg.shape, mask=bb_mask)
     affs = affs[(slice(None),) + local_bb]
     # FIXME this function yields incorrect uv-ids !
     state_uvs, state_weights, state_attractive = grid_graph.compute_state_for_segmentation(affs, seg, offsets,
@@ -271,11 +272,13 @@ def _mws_block_pass2(block_id, blocking,
     attractive_weights, repulsive_weights = seed_edge_weights[attractive_mask], seed_edge_weights[repulsive_mask]
 
     # run mws segmentation with seeds
-    seg, grid_graph = su.mutex_watershed_with_seeds(affs, offsets, seeds, strides=strides,
-                                                    mask=bb_mask, randomize_strides=randomize_strides,
-                                                    noise_level=noise_level, return_graph=True,
-                                                    seed_state={'attractive': (attractive_edges, attractive_weights),
-                                                                'repulsive': (repulsive_edges, repulsive_weights)})
+    seed_state = {'attractive': (attractive_edges, attractive_weights),
+                  'repulsive': (repulsive_edges, repulsive_weights)}
+    seg, grid_graph = mutex_watershed_with_seeds(affs, offsets, seeds,
+                                                 strides=strides, mask=bb_mask,
+                                                 randomize_strides=randomize_strides,
+                                                 noise_level=noise_level, return_graph=True,
+                                                 seed_state=seed_state)
     # offset with lowest block coordinate
     offset_id = block_id * np.prod(blocking.blockShape)
     vigra.analysis.relabelConsecutive(seg, start_label=offset_id, keep_zeros=True, out=seg)

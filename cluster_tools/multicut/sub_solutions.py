@@ -6,16 +6,13 @@ import json
 from concurrent import futures
 
 import numpy as np
-import vigra
 import luigi
 import z5py
-import nifty
 import nifty.tools as nt
 import nifty.distributed as ndist
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
-import cluster_tools.utils.segmentation_utils as su
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
@@ -76,7 +73,7 @@ class SubSolutionsBase(luigi.Task):
             if global_roi_begin is not None:
                 assert all(rb >= grb for rb, grb in zip(roi_begin, global_roi_begin))
             if global_roi_end is not None:
-                assert all(re <= geb for eb, geb in zip(roi_end, global_roi_end))
+                assert all(re <= geb for re, geb in zip(roi_end, global_roi_end))
 
         # read shape
         with vu.file_reader(self.problem_path, 'r') as f:
@@ -165,7 +162,9 @@ def _read_subresults(ds_results, block_node_prefix, blocking,
             assert 0 in nodes
             return None
 
-        assert len(nodes) == len(subres), "block %i: %i, %i" % (block_id, len(nodes), len(subres))
+        assert len(nodes) == len(subres), "block %i: %i, %i" % (block_id,
+                                                                len(nodes),
+                                                                len(subres))
         return nodes, subres, int(subres.max()) + 1
 
     with futures.ThreadPoolExecutor(n_threads) as tp:
@@ -230,8 +229,8 @@ def sub_solutions(job_id, config_path):
     ws_path = config['ws_path']
     ws_key = config['ws_key']
 
-    sub_result_identifer = config.get('sub_result_identifier', 'sub_results')
-    sub_graph_identifer = config.get('sub_graph_identifier', 'sub_graphs')
+    sub_result_identifier = config.get('sub_result_identifier', 'sub_results')
+    sub_graph_identifier = config.get('sub_graph_identifier', 'sub_graphs')
 
     fu.log("reading problem from %s" % problem_path)
     problem = z5py.N5File(problem_path)
@@ -245,7 +244,7 @@ def sub_solutions(job_id, config_path):
         node_label_key = 's%i/node_labeling' % scale
         fu.log("scale %i > 1; reading node labeling from %s" % (scale, node_label_key))
         ds_node_labeling = problem[node_label_key]
-        ds_node_labeling.n_threads = n_threasd
+        ds_node_labeling.n_threads = n_threads
         initial_node_labeling = ds_node_labeling[:]
     else:
         initial_node_labeling = None

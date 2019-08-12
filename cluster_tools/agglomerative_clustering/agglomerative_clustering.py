@@ -6,10 +6,10 @@ import json
 
 import luigi
 import nifty
+from elf.segmentation.clustering import mala_clustering
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
-import cluster_tools.utils.segmentation_utils as su
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 #
@@ -135,7 +135,7 @@ def agglomerative_clustering(job_id, config_path):
     graph.insertEdges(uv_ids)
     fu.log("start agglomeration")
     # TODO also support vanilla agglomerative clustering
-    node_labeling = su.mala_clustering(graph, edge_features, edge_sizes, threshold)
+    node_labeling = mala_clustering(graph, edge_features, edge_sizes, threshold)
     fu.log("finished agglomeration")
 
     n_nodes = len(node_labeling)

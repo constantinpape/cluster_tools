@@ -8,9 +8,9 @@ import luigi
 import numpy as np
 import nifty.tools as nt
 import vigra
+from elf.segmentation.mutex_watershed import mutex_watershed
 
 import cluster_tools.utils.volume_utils as vu
-import cluster_tools.utils.segmentation_utils as su
 import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
@@ -156,9 +156,9 @@ def _mws_block(block_id, blocking,
         return
     affs = vu.normalize(affs)
 
-    seg = su.mutex_watershed(affs, offsets, strides=strides, mask=bb_mask,
-                             randomize_strides=randomize_strides,
-                             noise_level=noise_level)
+    seg = mutex_watershed(affs, offsets, strides=strides, mask=bb_mask,
+                          randomize_strides=randomize_strides,
+                          noise_level=noise_level)
     seg = seg[local_bb]
 
     # FIXME once vigra supports uint64 or we implement our own ...

@@ -11,10 +11,10 @@ import nifty.tools as nt
 import nifty
 import nifty.graph.rag as nrag
 from vigra.analysis import relabelConsecutive
+from elf.segmentation.clustering import mala_clustering, agglomerative_clustering
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
-import cluster_tools.utils.segmentation_utils as su
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
@@ -187,16 +187,16 @@ def _agglomerate_block(blocking, block_id, ds_in, ds_out, config):
     graph.insertEdges(uv_ids)
 
     if use_mala_agglomeration:
-        node_labels = su.mala_clustering(graph, edge_features,
-                                         edge_sizes, threshold)
+        node_labels = mala_clustering(graph, edge_features,
+                                      edge_sizes, threshold)
     else:
         node_ids, node_sizes = np.unique(seg, return_counts=True)
         if node_ids[0] != 0:
             node_sizes = np.concatenate([np.array([0]), node_sizes])
         n_stop = int(threshold * n_nodes)
-        node_labels = su.agglomerative_clustering(graph, edge_features,
-                                                  node_sizes, edge_sizes,
-                                                  n_stop, size_regularizer)
+        node_labels = agglomerative_clustering(graph, edge_features,
+                                               node_sizes, edge_sizes,
+                                               n_stop, size_regularizer)
 
     # run clusteting
     node_labels, max_id, _ = relabelConsecutive(node_labels, start_label=1, keep_zeros=True)

@@ -12,10 +12,11 @@ import z5py
 import nifty
 import nifty.tools as nt
 import nifty.distributed as ndist
+from elf.segmentation.lifted_multicut import get_lifted_multicut_solver
+from elf.segmentation.multicut import get_multicut_solver
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
-import cluster_tools.utils.segmentation_utils as su
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
@@ -141,9 +142,8 @@ def _find_lifted_edges(lifted_uv_ids, node_list):
 
 def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
                          costs, lifted_uvs, lifted_costs,
-                         lifted_agglomerator,
-                         agglomerator, ignore_label,
-                         blocking, out, time_limit):
+                         lifted_solver, solver,
+                         ignore_label, blocking, out, time_limit):
     fu.log("Start processing block %i" % block_id)
 
     # load the nodes in this sub-block and map them
@@ -204,14 +204,14 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
             sub_lifted_costs = lifted_costs[inner_lifted_edges]
 
             # solve multicut and relabel the result
-            sub_result = lifted_agglomerator(sub_graph, sub_costs, sub_lifted_uvs, sub_lifted_costs,
-                                             time_limit=time_limit)
+            sub_result = lifted_solver(sub_graph, sub_costs, sub_lifted_uvs, sub_lifted_costs,
+                                       time_limit=time_limit)
 
         # otherwise we run normal multicut
         else:
             fu.log("Block %i: don't have lifted edges and use multicut solver")
             # solve multicut and relabel the result
-            sub_result = agglomerator(sub_graph, sub_costs, time_limit=time_limit)
+            sub_result = solver(sub_graph, sub_costs, time_limit=time_limit)
 
         assert len(sub_result) == len(nodes), "%i, %i" % (len(sub_result), len(nodes))
         sub_edgeresult = sub_result[sub_uvs[:, 0]] != sub_result[sub_uvs[:, 1]]
@@ -295,9 +295,9 @@ def solve_lifted_subproblems(job_id, config_path):
     fu.log("ignore label is %s" % ('true' if ignore_label else 'false'))
 
     fu.log("using agglomerator %s" % agglomerator_key)
-    lifted_agglomerator = su.key_to_lifted_agglomerator(agglomerator_key)
+    lifted_solver = get_lifted_multicut_solver(agglomerator_key)
     # TODO enable different multicut agglomerator
-    agglomerator = su.key_to_agglomerator(agglomerator_key)
+    solver = get_multicut_solver(agglomerator_key)
 
     # load the lifted edges and costs
     nh_key = 's%i/lifted_nh_%s' % (scale, lifted_prefix)
@@ -329,7 +329,7 @@ def solve_lifted_subproblems(job_id, config_path):
         tasks = [tp.submit(_solve_block_problem,
                            block_id, graph, uv_ids, block_prefix,
                            costs, lifted_uvs, lifted_costs,
-                           lifted_agglomerator, agglomerator, ignore_label,
+                           lifted_solver, solver, ignore_label,
                            blocking, out, time_limit)
                  for block_id in block_list]
         [t.result() for t in tasks]

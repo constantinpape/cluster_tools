@@ -6,7 +6,7 @@ import elf.io
 import numpy as np
 import vigra
 
-from elf.io.wrapper.resized_volume import ResizedVolume
+from elf.wrapper.resized_volume import ResizedVolume
 from scipy.ndimage.morphology import binary_erosion
 from nifty.tools import blocking
 
