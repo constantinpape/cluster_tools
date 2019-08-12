@@ -54,8 +54,8 @@ class TestWatershed(BaseTest):
         return ret
 
     def _test_ws_2d(self, two_pass):
-        from cluster_tools.watershed import WatershedLocal
-        config = WatershedLocal.default_task_config()
+        from cluster_tools.watershed import WatershedWorkflow
+        config = WatershedWorkflow.get_config()['watershed']
         config['apply_presmooth_2d'] = True
         config['apply_dt_2d'] = True
         config['apply_ws_2d'] = True
@@ -75,8 +75,8 @@ class TestWatershed(BaseTest):
         self._test_ws_2d(True)
 
     def _test_ws_3d(self, two_pass):
-        from cluster_tools.watershed import WatershedLocal
-        config = WatershedLocal.default_task_config()
+        from cluster_tools.watershed import WatershedWorkflow
+        config = WatershedWorkflow.get_config()['watershed']
         config['apply_presmooth_2d'] = False
         config['apply_dt_2d'] = False
         config['apply_ws_2d'] = False
@@ -96,8 +96,8 @@ class TestWatershed(BaseTest):
         self._test_ws_3d(True)
 
     def test_ws_pixel_pitch(self):
-        from cluster_tools.watershed import WatershedLocal
-        config = WatershedLocal.default_task_config()
+        from cluster_tools.watershed import WatershedWorkflow
+        config = WatershedWorkflow.get_config()['watershed']
         config['apply_presmooth_2d'] = False
         config['apply_dt_2d'] = False
         config['apply_ws_2d'] = False
