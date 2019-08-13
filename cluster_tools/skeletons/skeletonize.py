@@ -7,8 +7,8 @@ import json
 import luigi
 import nifty.tools as nt
 
-import skeletor.io as skelio
-from skeletor import skeletonize as skel_impl, get_method_names
+import elf.skeleton.io as skelio
+from elf.skeleton import skeletonize as skel_impl, get_method_names
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
