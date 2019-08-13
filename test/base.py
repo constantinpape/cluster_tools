@@ -21,7 +21,7 @@ class BaseTest(unittest.TestCase):
     tmp_folder = './tmp'
     config_folder = './tmp/config'
     output_path = './tmp/data.n5'
-    block_shape = [25, 256, 256]
+    block_shape = [32, 256, 256]
 
     def setUp(self):
         os.makedirs(self.config_folder, exist_ok=True)

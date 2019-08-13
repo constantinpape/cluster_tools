@@ -72,7 +72,9 @@ class TestGraph(BaseTest):
     def _check_result(self):
         # check shapes
         with z5py.File(self.input_path) as f:
-            seg = f[self.input_key][:]
+            seg = f[self.input_key]
+            seg.n_threads = 8
+            seg = seg[:]
             shape = seg.shape
         with z5py.File(self.output_path) as f:
             shape_ = tuple(f.attrs['shape'])
@@ -83,7 +85,7 @@ class TestGraph(BaseTest):
         rag = nrag.gridRag(seg, numberOfLabels=int(seg.max()) + 1)
 
         # load the graph
-        graph = ndist.loadAsUndirectedGraph(os.path.join(self.output_path, 'graph'))
+        graph = ndist.Graph(os.path.join(self.output_path, 'graph'))
 
         self.assertEqual(rag.numberOfNodes, graph.numberOfNodes)
         self.assertEqual(rag.numberOfEdges, graph.numberOfEdges)

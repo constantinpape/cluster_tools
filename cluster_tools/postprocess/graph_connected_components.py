@@ -112,6 +112,7 @@ def graph_connected_components(job_id, config_path):
     assignments = ndist.connectedComponentsFromNodes(graph, assignments, True)
     vigra.analysis.relabelConsecutive(assignments, out=assignments, start_label=1,
                                       keep_zeros=True)
+    fu.log("Found %i number of components" % int(assignments.max()))
 
     with vu.file_reader(output_path) as f:
         ds_out = f.require_dataset(output_key, shape=assignments.shape,
