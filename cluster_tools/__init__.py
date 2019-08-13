@@ -3,6 +3,5 @@ from .workflows import LiftedMulticutSegmentationWorkflow
 from .workflows import AgglomerativeClusteringWorkflow
 from .workflows import SimpleStitchingWorkflow
 from .thresholded_components import ThresholdedComponentsWorkflow, ThresholdAndWatershedWorkflow
-from .mutex_watershed import TwoPassMwsWorkflow
 
 from .version import __version__
