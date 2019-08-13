@@ -47,7 +47,7 @@ class TestPostprocess(BaseTest):
         rag = nrag.gridRag(ws, numberOfLabels=int(ws.max()) + 1,
                            numberOfThreads=self.max_jobs)
         graph = nifty.graph.undirectedGraph(rag.numberOfNodes)
-        graph.insertEdges(graph.uvIds())
+        graph.insertEdges(rag.uvIds())
         return graph
 
     def make_assignments(self, g, path, key):
@@ -90,14 +90,6 @@ class TestPostprocess(BaseTest):
 
         # compare
         self.assertEqual(results.shape, expected.shape)
-
-        # FIXME
-        n_labels_a = len(np.unique(expected))
-        n_labels_b = len(np.unique(results))
-        print("Expected:", n_labels_a)
-        print("Obtained:", n_labels_b)
-        print("       /:", len(results))
-
         ri, _ = rand_index(results, expected)
         self.assertAlmostEqual(ri, 0.)
 
