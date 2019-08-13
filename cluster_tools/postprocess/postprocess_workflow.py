@@ -330,8 +330,8 @@ class ConnectedComponentsWorkflow(WorkflowBase):
 
     @staticmethod
     def get_config():
-        configs = super(WorkflowBase, WorkflowBase).get_config()
-        configs.update({'graph_connected_components': cc_tasks.default_task_config(),
+        configs = super(ConnectedComponentsWorkflow, ConnectedComponentsWorkflow).get_config()
+        configs.update({'graph_connected_components': cc_tasks.GraphConnectedComponentsLocal.default_task_config(),
                         'write': write_tasks.WriteLocal.default_task_config()})
         return configs
 
