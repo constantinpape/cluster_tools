@@ -11,7 +11,7 @@ package:
 
 
 source:
-  path: ../
+  path: ..
 
 
 build:
@@ -31,11 +31,6 @@ requirements:
 
   run:
     - python {{PY_VER}}*
-    - scikit-image
-    - nifty
-    - luigi
-    - z5py
-    - h5py
 
 test:
   imports:
