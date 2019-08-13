@@ -14,11 +14,11 @@ except ValueError:
 
 
 class TestLiftedMulticutWorkflow(BaseTest):
-    input_key = 'volumes/affinities'
+    input_key = 'volumes/boundaries'
     ws_key = 'volumes/segmentation/watershed'
 
     def _check_result(self):
-        with z5py.File(self.out_path) as f:
+        with z5py.File(self.output_path) as f:
             node_labels = f['node_labels'][:]
             mc = f['volumes/lifted_multicut'][:]
         exp_shape = z5py.File(self.input_path)[self.ws_key].shape
@@ -34,8 +34,8 @@ class TestLiftedMulticutWorkflow(BaseTest):
         max_jobs = 8
         t = task(input_path=self.input_path, input_key=self.input_key,
                  ws_path=self.input_path, ws_key=self.ws_key,
-                 problem_path=self.out_path, node_labels_key='node_labels',
-                 output_path=self.out_path, output_key='volumes/lifted_multicut',
+                 problem_path=self.output_path, node_labels_key='node_labels',
+                 output_path=self.output_path, output_key='volumes/lifted_multicut',
                  lifted_labels_path=self.input_path,
                  lifted_labels_key='volumes/segmentation/groundtruth',
                  lifted_prefix='test', n_scales=1, skip_ws=True,

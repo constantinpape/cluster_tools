@@ -19,12 +19,6 @@ except ValueError:
 
 
 class TestPostprocess(BaseTest):
-    ws_key = 'volumes/segmentation/watershed'
-    graph_key = 'graph'
-
-    # def tearDown(self):
-    #     pass
-
     def test_size_filter_bg(self):
         from cluster_tools.postprocess import SizeFilterWorkflow
         task = SizeFilterWorkflow
@@ -61,9 +55,11 @@ class TestPostprocess(BaseTest):
         from cluster_tools.postprocess import ConnectedComponentsWorkflow
         task = ConnectedComponentsWorkflow
 
+        self.compute_graph()
+
         # check the graph again
         g = self.compute_graph()
-        g1 = ndist.Graph(os.path.join(self.input_path, self.graph_key))
+        g1 = ndist.Graph(os.path.join(self.output_path, self.graph_key))
         self.assertEqual(g.numberOfNodes, g1.numberOfNodes)
         self.assertEqual(g.numberOfEdges, g1.numberOfEdges)
         self.assertTrue(np.allclose(g.uvIds(), g1.uvIds()))

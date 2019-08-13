@@ -2,7 +2,10 @@ import os
 import json
 import unittest
 from shutil import rmtree
+
+import luigi
 from cluster_tools.cluster_tasks import BaseClusterTask
+from cluster_tools.graph import GraphWorkflow
 
 INPUT_PATH = os.environ.get('CLUSTER_TOOLS_TEST_PATH',
                             '/g/kreshuk/data/cremi/example/sampleA.n5')
@@ -23,6 +26,11 @@ class BaseTest(unittest.TestCase):
     output_path = './tmp/data.n5'
     block_shape = [32, 256, 256]
 
+    graph_key = 'graph'
+    ws_key = 'volumes/segmentation/watershed'
+    boundary_key = 'volumes/boundaries'
+    aff_key = 'volumes/affinities'
+
     def setUp(self):
         os.makedirs(self.config_folder, exist_ok=True)
         config = BaseClusterTask.default_global_config()
@@ -35,3 +43,20 @@ class BaseTest(unittest.TestCase):
             rmtree(self.tmp_folder)
         except OSError:
             pass
+
+    def compute_graph(self):
+        task = GraphWorkflow
+        ret = luigi.build([task(input_path=self.input_path,
+                                input_key=self.ws_key,
+                                graph_path=self.output_path,
+                                output_key=self.graph_key,
+                                n_scales=1,
+                                config_dir=self.config_folder,
+                                tmp_folder=self.tmp_folder,
+                                target=self.target,
+                                max_jobs=self.max_jobs)], local_scheduler=True)
+        self.assertTrue(ret)
+
+    def get_target_name(self):
+        name_dict = {'local': 'Local', 'slurm': 'Slurm', 'lsf': 'LSF'}
+        return name_dict[self.target]

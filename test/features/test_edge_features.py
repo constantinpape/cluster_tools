@@ -1,3 +1,4 @@
+import json
 import os
 import unittest
 import sys
@@ -19,12 +20,12 @@ except ValueError:
 
 
 class TestEdgeFeatures(BaseTest):
-    boundary_key = 'volumes/boundaries'
-    aff_key = 'volumes/affinities'
-    ws_key = 'volumes/segmentation/watershed'
-    graph_key = 'graph'
     output_key = 'features'
     offsets = [[-1, 0, 0], [0, -1, 0], [0, 0, -1]]
+
+    def setUp(self):
+        super().setUp()
+        self.compute_graph()
 
     def _check_subresults(self, in_key, feat_func):
         f = z5py.File(self.input_path)
@@ -106,7 +107,7 @@ class TestEdgeFeatures(BaseTest):
                                 input_key=self.boundary_key,
                                 labels_path=self.input_path,
                                 labels_key=self.ws_key,
-                                graph_path=self.input_path,
+                                graph_path=self.output_path,
                                 graph_key=self.graph_key,
                                 output_path=self.output_path,
                                 output_key=self.output_key,
@@ -127,12 +128,14 @@ class TestEdgeFeatures(BaseTest):
 
         config = task.get_config()['block_edge_features']
         config.update({'offsets': self.offsets})
+        with open(os.path.join(self.config_folder, 'block_edge_features.json'), 'w') as f:
+            json.dump(config, f)
 
         ret = luigi.build([task(input_path=self.input_path,
                                 input_key=self.aff_key,
                                 labels_path=self.input_path,
                                 labels_key=self.ws_key,
-                                graph_path=self.input_path,
+                                graph_path=self.output_path,
                                 graph_key=self.graph_key,
                                 output_path=self.output_path,
                                 output_key=self.output_key,

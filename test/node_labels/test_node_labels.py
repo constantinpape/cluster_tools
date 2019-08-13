@@ -18,7 +18,6 @@ except ValueError:
 
 
 class TestNodeLabels(BaseTest):
-    ws_key = 'volumes/segmentation/multicut'
     input_key = 'volumes/segmentation/groundtruth'
     output_key = 'labels'
 
@@ -42,7 +41,7 @@ class TestNodeLabels(BaseTest):
 
     def load_data(self):
         # compute the expected max overlaps
-        with z5py.File(self.path) as f:
+        with z5py.File(self.input_path) as f:
             ds_ws = f[self.ws_key]
             ds_ws.n_threads = self.max_jobs
             ws = ds_ws[:]
@@ -78,8 +77,8 @@ class TestNodeLabels(BaseTest):
         task = NodeLabelWorkflow(tmp_folder=self.tmp_folder,
                                  config_dir=self.config_folder,
                                  target=self.target, max_jobs=self.max_jobs,
-                                 ws_path=self.path, ws_key=self.ws_key,
-                                 input_path=self.path, input_key=self.input_key,
+                                 ws_path=self.input_path, ws_key=self.ws_key,
+                                 input_path=self.input_path, input_key=self.input_key,
                                  output_path=self.output_path, output_key=self.output_key)
 
         ret = luigi.build([task], local_scheduler=True)
@@ -105,8 +104,8 @@ class TestNodeLabels(BaseTest):
         task = NodeLabelWorkflow(tmp_folder=self.tmp_folder,
                                  config_dir=self.config_folder,
                                  target=self.target, max_jobs=self.max_jobs,
-                                 ws_path=self.path, ws_key=self.ws_key,
-                                 input_path=self.path, input_key=self.input_key,
+                                 ws_path=self.input_path, ws_key=self.ws_key,
+                                 input_path=self.input_path, input_key=self.input_key,
                                  output_path=self.output_path, output_key=self.output_key)
 
         ret = luigi.build([task], local_scheduler=True)
@@ -134,8 +133,8 @@ class TestNodeLabels(BaseTest):
         task = NodeLabelWorkflow(tmp_folder=self.tmp_folder,
                                  config_dir=self.config_folder,
                                  target=self.target, max_jobs=self.max_jobs,
-                                 ws_path=self.path, ws_key=self.ws_key,
-                                 input_path=self.path, input_key=self.input_key,
+                                 ws_path=self.input_path, ws_key=self.ws_key,
+                                 input_path=self.input_path, input_key=self.input_key,
                                  output_path=self.output_path, output_key=self.output_key,
                                  max_overlap=False)
 
