@@ -32,9 +32,9 @@ class TestWatershed(BaseTest):
         self.assertEqual(res.shape, shape)
         self.assertFalse(np.allclose(res, 0))
         if with_mask:
-            self.assertTrue(0 in res)
+            self.assertNotIn(0, res)
         else:
-            self.assertFalse(0 in res)
+            self.assertIn(0, res)
         # make sure that we don't have disconnected segments
         ids0 = np.unique(res)
         res_cc = vigra.analysis.labelVolume(res)
@@ -115,7 +115,7 @@ class TestWatershed(BaseTest):
             json.dump(config, f)
         ret = self._run_ws(with_mask=True, two_pass=False)
         self.assertTrue(ret)
-        self._check_result()
+        self._check_result(with_mask=True)
 
     def test_no_mask_3d(self):
         self._test_ws_3d(with_mask=False, two_pass=False)

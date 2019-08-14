@@ -35,7 +35,7 @@ class GraphConnectedComponentsBase(luigi.Task):
     @staticmethod
     def default_task_config():
         config = LocalTask.default_task_config()
-        config.update({'paintera_hack': False})
+        config.update({'paintera_hack': False, 'ignore_label': True})
         return config
 
     def requires(self):
@@ -107,6 +107,7 @@ def graph_connected_components(job_id, config_path):
     output_key = config['output_key']
     n_threads = config.get('threads_per_job', 1)
     paintera_hack = config.get('paintera_hack', False)
+    ignore_label = config.get('ignore_label', True)
 
     with vu.file_reader(assignment_path, 'r') as f:
         ds_ass = f[assignment_key]
@@ -118,15 +119,15 @@ def graph_connected_components(job_id, config_path):
     if paintera_hack:
         paintera_ignore_id = 18446744073709551615
         fu.log("Paintera hack activated, ignoring graph node %i" % paintera_ignore_id)
-        assert graph.maxNodeId == paintera_ignore_id
-        # TODO check if we acutally have an ignore label
-        assignments = ndist.connectedComponentsFromNodes(graph, assignments, True)
+        assert graph.maxNodeId == paintera_ignore_id,\
+            "Paintera Hack: Expect graph max id to be %i, got %i" % (paintera_ignore_id,
+                                                                     graph.maxNodeId)
+        assignments = ndist.connectedComponentsFromNodes(graph, assignments, ignore_label)
     else:
         assert graph.maxNodeId + 1 == len(assignments),\
             "Expect same number of nodes and assignments, got %i, %i" % (graph.maxNodeId + 1,
                                                                          len(assignments))
-        # TODO check if we acutally have an ignore label
-        assignments = ndist.connectedComponentsFromNodes(graph, assignments, True)
+        assignments = ndist.connectedComponentsFromNodes(graph, assignments, ignore_label)
     vigra.analysis.relabelConsecutive(assignments, out=assignments, start_label=1,
                                       keep_zeros=True)
     fu.log("Found %i number of components" % int(assignments.max()))

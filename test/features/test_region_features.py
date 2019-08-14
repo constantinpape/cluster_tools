@@ -22,8 +22,7 @@ class TestRegionFeatures(BaseTest):
     output_key = 'features'
 
     def _check_features(self, data, labels, res, ids=None, feat_name='mean'):
-        expected = vigra.analysis.extractRegionFeatures(normalize(data),
-                                                        labels, features=[feat_name])
+        expected = vigra.analysis.extractRegionFeatures(data, labels, features=[feat_name])
         expected = expected[feat_name]
 
         if ids is not None:
@@ -38,15 +37,25 @@ class TestRegionFeatures(BaseTest):
             res = f[self.output_key][:]
         # compute the vigra result
         with z5py.File(self.input_path) as f:
-            inp = f[self.input_key][:]
-            seg = f[self.seg_key][:].astype('uint32')
+            inp = f[self.input_key]
+            inp.n_threads = self.max_jobs
+            inp = normalize(inp[:])
+
+            seg = f[self.seg_key]
+            seg.max_jobs = self.max_jobs
+            seg = seg[:].astype('uint32')
         self._check_features(inp, seg, res)
 
     def _check_subresults(self):
-        f = z5py.File(self.input_path)
-        dsi = f[self.input_key]
-        dsl = f[self.seg_key]
-        blocking = nt.blocking([0, 0, 0], dsi.shape, self.block_shape)
+        with z5py.File(self.input_path) as f:
+            data = f[self.input_key]
+            data.n_threads = self.max_jobs
+            data = normalize(data[:])
+
+            segmentation = f[self.seg_key]
+            segmentation.max_jobs = self.max_jobs
+            segmentation = segmentation[:].astype('uint32')
+        blocking = nt.blocking([0, 0, 0], data.shape, self.block_shape)
 
         f_feat = z5py.File(os.path.join(self.tmp_folder, 'region_features_tmp.n5'))
         ds_feat = f_feat['block_feats']
@@ -56,8 +65,8 @@ class TestRegionFeatures(BaseTest):
             # print("Checking block", block_id, "/", n_blocks)
             block = blocking.getBlock(block_id)
             bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
-            inp = dsi[bb]
-            seg = dsl[bb].astype('uint32')
+            inp = data[bb]
+            seg = segmentation[bb].astype('uint32')
 
             # load the sub-result
             chunk_id = tuple(beg // bs for beg, bs in zip(block.begin, self.block_shape))

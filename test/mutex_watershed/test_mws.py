@@ -7,7 +7,10 @@ import numpy as np
 import luigi
 import z5py
 from sklearn.metrics import adjusted_rand_score
-from elf.segmentation.mutex_watershed import mutex_watershed
+try:
+    from elf.segmentation.mutex_watershed import mutex_watershed
+except ImportError:
+    mutex_watershed = None
 
 try:
     from ..base import BaseTest
@@ -60,6 +63,7 @@ class TestMws(BaseTest):
         # view([affs.transpose((1, 2, 3, 0)), res, exp, mask.astype('uint32')],
         #      ['affs', 'result', 'expected', 'mask'])
 
+    @unittest.skipUnless(mutex_watershed, "Needs affogato")
     def test_mws(self):
         from cluster_tools.mutex_watershed import MwsWorkflow
 
@@ -72,11 +76,12 @@ class TestMws(BaseTest):
                            max_jobs=self.max_jobs, target=self.target,
                            input_path=self.input_path, input_key=self.input_key,
                            output_path=self.output_path, output_key=self.output_key,
-                           offsets=self.offsets, overlap_threshold=.75)
+                           offsets=self.offsets)
         ret = luigi.build([task], local_scheduler=True)
         self.assertTrue(ret)
         self._check_result(with_mask=False)
 
+    @unittest.skipUnless(mutex_watershed, "Needs affogato")
     def test_mws_with_mask(self):
         from cluster_tools.mutex_watershed import MwsWorkflow
 
@@ -90,7 +95,7 @@ class TestMws(BaseTest):
                            input_path=self.input_path, input_key=self.input_key,
                            output_path=self.output_path, output_key=self.output_key,
                            mask_path=self.input_path, mask_key=self.mask_key,
-                           offsets=self.offsets, overlap_threshold=.75)
+                           offsets=self.offsets)
         ret = luigi.build([task], local_scheduler=True)
         self.assertTrue(ret)
         self._check_result(with_mask=True)

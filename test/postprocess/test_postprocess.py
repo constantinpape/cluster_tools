@@ -33,7 +33,7 @@ class TestPostprocess(BaseTest):
         ret = luigi.build([t], local_scheduler=True)
         self.assertTrue(ret)
 
-    def compute_graph(self):
+    def compute_nifty_graph(self):
         with z5py.File(self.input_path) as f:
             ds = f[self.ws_key]
             ds.n_threads = self.max_jobs
@@ -55,10 +55,10 @@ class TestPostprocess(BaseTest):
         from cluster_tools.postprocess import ConnectedComponentsWorkflow
         task = ConnectedComponentsWorkflow
 
-        self.compute_graph()
+        self.compute_graph(ignore_label=False)
 
         # check the graph again
-        g = self.compute_graph()
+        g = self.compute_nifty_graph()
         g1 = ndist.Graph(os.path.join(self.output_path, self.graph_key))
         self.assertEqual(g.numberOfNodes, g1.numberOfNodes)
         self.assertEqual(g.numberOfEdges, g1.numberOfEdges)
@@ -74,7 +74,7 @@ class TestPostprocess(BaseTest):
         out_key = 'connected_components'
         t = task(tmp_folder=self.tmp_folder, config_dir=self.config_folder,
                  target=self.target, max_jobs=self.max_jobs,
-                 problem_path=self.input_path, graph_key=self.graph_key,
+                 problem_path=self.output_path, graph_key=self.graph_key,
                  assignment_path=self.output_path, assignment_key=assignment_key,
                  output_path=self.output_path, assignment_out_key=out_key)
         ret = luigi.build([t], local_scheduler=True)

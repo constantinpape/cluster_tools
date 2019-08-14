@@ -1,5 +1,3 @@
-import os
-import json
 import luigi
 
 import cluster_tools.utils.volume_utils as vu
@@ -47,7 +45,7 @@ class EdgeFeaturesWorkflow(WorkflowBase):
                         output_path=self.output_path,
                         dependency=self.dependency)
         merge_task = getattr(merge_tasks,
-                     self._get_task_name('MergeEdgeFeatures'))
+                             self._get_task_name('MergeEdgeFeatures'))
         dep = merge_task(tmp_folder=self.tmp_folder,
                          max_jobs=self.max_jobs_merge,
                          config_dir=self.config_dir,
@@ -75,6 +73,7 @@ class RegionFeaturesWorkflow(WorkflowBase):
     labels_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
+    channel = luigi.IntParameter(default=None)
 
     def read_number_of_labels(self):
         with vu.file_reader(self.labels_path, 'r') as f:
@@ -91,6 +90,7 @@ class RegionFeaturesWorkflow(WorkflowBase):
                         input_key=self.input_key,
                         labels_path=self.labels_path,
                         labels_key=self.labels_key,
+                        channel=self.channel,
                         dependency=self.dependency)
         merge_task = getattr(merge_reg_tasks,
                              self._get_task_name('MergeRegionFeatures'))
