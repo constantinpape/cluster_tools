@@ -6,13 +6,18 @@ import sys
 import numpy as np
 import luigi
 import z5py
-from failing_task import FailingTaskLocal
 
 try:
     from ..base import BaseTest
 except ValueError:
     sys.path.append('..')
     from base import BaseTest
+
+
+try:
+    from .failing_task import FailingTaskLocal
+except ValueError:
+    from failing_task import FailingTaskLocal
 
 
 class TestRetry(BaseTest):

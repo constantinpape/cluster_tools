@@ -44,8 +44,14 @@ class BaseTest(unittest.TestCase):
         except OSError:
             pass
 
-    def compute_graph(self):
+    def compute_graph(self, ignore_label=True):
         task = GraphWorkflow
+
+        config = task.get_config()['initial_sub_graphs']
+        config.update({'ignore_label': ignore_label})
+        with open(os.path.join(self.config_folder, 'initial_sub_graphs.config'), 'w') as f:
+            json.dump(config, f)
+
         ret = luigi.build([task(input_path=self.input_path,
                                 input_key=self.ws_key,
                                 graph_path=self.output_path,
