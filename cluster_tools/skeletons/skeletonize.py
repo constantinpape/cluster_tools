@@ -150,9 +150,8 @@ def _skeletonize_id_block(blocking, block_id, ds_in, ds_out,
         except Exception:
             continue
 
-        offsets = [b.start for b in bb]
-        skelio.write_n5(ds_out, seg_id,
-                        nodes, edges, offsets)
+        offsets = [b.start * res for b, res in zip(bb, resolution)]
+        skelio.write_n5(ds_out, seg_id, nodes, edges, offsets)
     fu.log_block_success(block_id)
 
 
