@@ -163,7 +163,8 @@ def _merge_nodes(problem_path, scale, blocking,
 
     # get the node results and label them consecutively
     node_labeling = ufd.find(nodes)
-    node_labeling, max_new_id, _ = relabelConsecutive(node_labeling, start_label=0, keep_zeros=False)
+    node_labeling, max_new_id, _ = relabelConsecutive(node_labeling, start_label=0,
+                                                      keep_zeros=False)
     assert node_labeling[0] == 0
     # FIXME this looks fishy, redo !!!
     # # make sure that zero is still mapped to zero

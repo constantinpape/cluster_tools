@@ -11,9 +11,10 @@ set_numpy_threads(1)
 import numpy as np
 
 import luigi
-from scipy.ndimage.morphology import binary_dilation, binary_erosion
 import nifty.tools as nt
+from scipy.ndimage.morphology import binary_dilation, binary_erosion
 from affogato.affinities import compute_affinities
+from elf.wrapper.resized_volume import ResizedVolume
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -248,7 +249,7 @@ def insert_affinities(job_id, config_path):
 
         # TODO actually check that objects are on a lower scale
         ds_objs = f_obj[objects_key]
-        objects = vu.InterpolatedVolume(ds_objs, shape)
+        objects = ResizedVolume(ds_objs, shape)
 
         blocking = nt.blocking([0, 0, 0], list(shape), block_shape)
         [_insert_affinities_block(block_id, blocking, ds_in, ds_out, objects, offsets,

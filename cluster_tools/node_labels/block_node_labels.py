@@ -8,6 +8,7 @@ import luigi
 import numpy as np
 import nifty.tools as nt
 import nifty.distributed as ndist
+from elf.wrapper.resized_volume import ResizedVolume
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -193,7 +194,7 @@ def block_node_labels(job_id, config_path):
     if any(lsh < sh for lsh, sh in zip(lab_shape, shape)):
         assert not any(lsh > sh for lsh, sh in zip(lab_shape, shape)),\
             "Can't have label shape bigger then volshape"
-        labels = vu.InterpolatedVolume(ds_labels, shape, spline_order=0)
+        labels = ResizedVolume(ds_labels, shape, order=0)
     else:
         assert lab_shape == shape, "%s, %s" % (str(lab_shape), shape)
         labels = ds_labels
