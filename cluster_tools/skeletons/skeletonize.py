@@ -7,8 +7,8 @@ import json
 import luigi
 import nifty.tools as nt
 
-import skeletor.io as skelio
-from skeletor import skeletonize as skel_impl, get_method_names
+import elf.skeleton.io as skelio
+from elf.skeleton import skeletonize as skel_impl, get_method_names
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -150,9 +150,8 @@ def _skeletonize_id_block(blocking, block_id, ds_in, ds_out,
         except Exception:
             continue
 
-        offsets = [b.start for b in bb]
-        skelio.write_n5(ds_out, seg_id,
-                        nodes, edges, offsets)
+        offsets = [b.start * res for b, res in zip(bb, resolution)]
+        skelio.write_n5(ds_out, seg_id, nodes, edges, offsets)
     fu.log_block_success(block_id)
 
 

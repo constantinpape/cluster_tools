@@ -95,4 +95,4 @@ For a list of the available segmentation worklfows, have a look at [this](https:
 Unfortunately, there is no proper documentation yet. For more details, have a look at the
 [examples](https://github.com/constantinpape/cluster_tools/blob/master/example), in particular
 [this example](https://github.com/constantinpape/cluster_tools/blob/master/example/multicut.py).
-You can donwload the example data (also used for the tests) [here](https://drive.google.com/open?id=15hZmM4cu_H_ruhlgXilNWgDZWMpuo9XK).
+You can donwload the example data (also used for the tests) [here](https://drive.google.com/file/d/1E_Wpw9u8E4foYKk7wvx5RPSWvg_NCN7U/view?usp=sharing).

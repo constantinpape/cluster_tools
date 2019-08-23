@@ -6,6 +6,7 @@ import json
 
 import numpy as np
 import luigi
+from elf.segmentation.multicut import transform_probabilities_to_costs
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -112,25 +113,6 @@ class ProbsToCostsLSF(ProbsToCostsBase, LSFTask):
 # Implementation
 #
 
-def _transform_probabilities_to_costs(costs, beta=.5, edge_sizes=None,
-                                      weighting_exponent=1.):
-    """ Transform probabilities to costs (in-place)
-    """
-    p_min = 0.001
-    p_max = 1. - p_min
-    costs = (p_max - p_min) * costs + p_min
-    # probabilities to costs, second term is boundary bias
-    costs = np.log((1. - costs) / costs) + np.log((1. - beta) / beta)
-    # weight the costs with edge sizes, if they are given
-    if edge_sizes is not None:
-        assert len(edge_sizes) == len(costs)
-        w = edge_sizes / edge_sizes.max()
-        if weighting_exponent != 1.:
-            w = w**weighting_exponent
-        costs *= w
-    return costs
-
-
 def _apply_node_labels(costs, uv_ids, mode, labels,
                        max_repulsive, max_attractive):
     # TODO for now we assume binary node labeling,
@@ -227,9 +209,9 @@ def probs_to_costs(job_id, config_path):
             fu.log("no edge weighting")
             edge_sizes = None
 
-        costs = _transform_probabilities_to_costs(costs, beta=beta,
-                                                  edge_sizes=edge_sizes,
-                                                  weighting_exponent=weighting_exponent)
+        costs = transform_probabilities_to_costs(costs, beta=beta,
+                                                 edge_sizes=edge_sizes,
+                                                 weighting_exponent=weighting_exponent)
 
         # adjust edges of nodes with labels if given
         if node_labels is not None:

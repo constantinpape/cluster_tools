@@ -12,6 +12,7 @@ import numpy as np
 
 import luigi
 import nifty.tools as nt
+from elf.wrapper.resized_volume import ResizedVolume
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -213,7 +214,7 @@ def scale_to_boundaries(job_id, config_path):
         shape = ds_out.shape
         blocking = nt.blocking([0, 0, 0], list(shape), block_shape)
 
-        ds_in = vu.InterpolatedVolume(fin[input_key], shape)
+        ds_in = ResizedVolume(fin[input_key], shape)
 
         for block_id in block_list:
             _scale_block(block_id, blocking,

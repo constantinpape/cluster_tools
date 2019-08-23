@@ -4,10 +4,16 @@ import os
 import sys
 import json
 
-import luigi
+# this is a task called by multiple processes,
+# so we need to restrict the number of threads used by numpy
+from cluster_tools.utils.numpy_utils import set_numpy_threads
+set_numpy_threads(1)
 import numpy as np
+
+import luigi
 import vigra
 import nifty.tools as nt
+from elf.segmentation.watershed import watershed as run_watershed
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -157,8 +163,8 @@ def _apply_watershed_with_seeds(input_, dt, initial_seeds, config, mask, offset)
 
             # run watershed
             hmap = _make_hmap(input_[z], dtz, alpha, sigma_weights)
-            wsz, max_id = vu.watershed(hmap, seeds=seeds, size_filter=size_filter,
-                                       exclude=initial_seeds_z)
+            wsz, max_id = run_watershed(hmap, seeds=seeds, size_filter=size_filter,
+                                        exclude=initial_seeds_z)
             wsz = wsz.astype('uint64')
             # mask the result if we have a mask
             if mask is not None:
@@ -198,8 +204,8 @@ def _apply_watershed_with_seeds(input_, dt, initial_seeds, config, mask, offset)
         # run watershed
         initial_seed_ids = np.unique(initial_seeds[initial_seed_mask])
         hmap = _make_hmap(input_, dt, alpha, sigma_weights)
-        ws, max_id = vu.watershed(hmap, seeds=seeds, size_filter=size_filter,
-                                  exclude=initial_seed_ids)
+        ws, max_id = run_watershed(hmap, seeds=seeds, size_filter=size_filter,
+                                   exclude=initial_seed_ids)
         ws = ws.astype('uint64')
         ws = nt.takeDict(new_to_old, ws)
         if mask is not None:

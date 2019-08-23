@@ -12,10 +12,10 @@ import z5py
 import nifty
 import nifty.tools as nt
 import nifty.distributed as ndist
+from elf.segmentation.multicut import get_multicut_solver
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
-import cluster_tools.utils.segmentation_utils as su
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
@@ -126,7 +126,7 @@ class SolveSubproblemsLSF(SolveSubproblemsBase, LSFTask):
 
 
 def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
-                         costs, agglomerator, ignore_label,
+                         costs, solver, ignore_label,
                          blocking, out, time_limit):
     fu.log("Start processing block %i" % block_id)
 
@@ -178,7 +178,7 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
         assert len(sub_costs) == sub_graph.numberOfEdges
 
         # solve multicut and relabel the result
-        sub_result = agglomerator(sub_graph, sub_costs, time_limit=time_limit)
+        sub_result = solver(sub_graph, sub_costs, time_limit=time_limit)
         assert len(sub_result) == len(nodes), "%i, %i" % (len(sub_result), len(nodes))
 
         sub_edgeresult = sub_result[sub_uvs[:, 0]] != sub_result[sub_uvs[:, 1]]
@@ -251,8 +251,8 @@ def solve_subproblems(job_id, config_path):
     ignore_label = problem[graph_key].attrs['ignoreLabel']
     fu.log("ignore label is %s" % ('true' if ignore_label else 'false'))
 
-    fu.log("using agglomerator %s" % agglomerator_key)
-    agglomerator = su.key_to_agglomerator(agglomerator_key)
+    fu.log("using solver %s" % agglomerator_key)
+    solver = get_multicut_solver(agglomerator_key)
 
     # the output group
     out = problem['s%i/sub_results' % scale]
@@ -266,7 +266,7 @@ def solve_subproblems(job_id, config_path):
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(_solve_block_problem,
                            block_id, graph, uv_ids, block_prefix,
-                           costs, agglomerator, ignore_label,
+                           costs, solver, ignore_label,
                            blocking, out, time_limit)
                  for block_id in block_list]
         [t.result() for t in tasks]

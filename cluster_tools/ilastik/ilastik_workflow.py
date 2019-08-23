@@ -87,7 +87,8 @@ class IlastikCarvingWorkflow(WorkflowBase):
         # TODO make param ?
         max_jobs_merge = 1
         dep = GraphWorkflow(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
-                            max_jobs=self.max_jobs, target=self.target, dependency=self.dependency,
+                            max_jobs=self.max_jobs, target=self.target,
+                            dependency=self.dependency,
                             input_path=self.watershed_path, input_key=self.watershed_key,
                             graph_path=tmp_path, output_key=graph_key)
         dep = EdgeFeaturesWorkflow(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
@@ -103,7 +104,13 @@ class IlastikCarvingWorkflow(WorkflowBase):
         uid = str(uuid.uuid1())
         dep = WriteCarving(input_path=tmp_path, graph_key=graph_key, features_key=feat_key,
                            raw_path=self.input_path, raw_key=self.input_key, uid=uid,
-                           output_path=self.output_path, copy_inputs=self.copy_inputs, dependency=dep)
+                           output_path=self.output_path, copy_inputs=self.copy_inputs,
+                           dependency=dep)
+        # TODO
+        # we need to transpose the data before copying
+        # that's why return here for now, to do the transposing outside of
+        # cluster_tools, but should implement it here as well
+        return dep
 
         copy_task = getattr(copy_tasks, self._get_task_name('CopyVolume'))
         # copy the watershed segmentation to ilastik file

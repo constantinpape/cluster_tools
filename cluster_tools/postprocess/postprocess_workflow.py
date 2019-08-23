@@ -32,10 +32,6 @@ class SizeFilterWorkflow(WorkflowBase):
     relabel = luigi.BoolParameter(default=True)
 
     def _bg_filter(self, dep):
-        print("HEAAAAAAAAAAAAAARRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR")
-        print("HEAAAAAAAAAAAAAARRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR")
-        print("HEAAAAAAAAAAAAAARRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR")
-        print("HEAAAAAAAAAAAAAARRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR")
         filter_task = getattr(bg_tasks,
                               self._get_task_name('BackgroundSizeFilter'))
         dep = filter_task(tmp_folder=self.tmp_folder,
@@ -297,14 +293,15 @@ class ConnectedComponentsWorkflow(WorkflowBase):
     problem_path = luigi.Parameter()
     graph_key = luigi.Parameter()
 
-    path = luigi.Parameter()
-    fragments_key = luigi.Parameter(default='')
     assignment_path = luigi.Parameter()
     assignment_key = luigi.Parameter()
 
     output_path = luigi.Parameter()
     assignment_out_key = luigi.Parameter()
+
     output_key = luigi.Parameter(default='')
+    path = luigi.Parameter(default='')
+    fragments_key = luigi.Parameter(default='')
 
     def requires(self):
         cc_task = getattr(cc_tasks,
@@ -321,7 +318,7 @@ class ConnectedComponentsWorkflow(WorkflowBase):
         if self.output_key != '':
             write_task = getattr(write_tasks,
                                  self._get_task_name('Write'))
-            assert self.fragments_key != ''
+            assert self.fragments_key != '' and self.path != ''
             dep = write_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                              config_dir=self.config_dir, dependency=dep,
                              input_path=self.path, input_key=self.fragments_key,
@@ -333,8 +330,8 @@ class ConnectedComponentsWorkflow(WorkflowBase):
 
     @staticmethod
     def get_config():
-        configs = super(WorkflowBase, WorkflowBase).get_config()
-        configs.update({'graph_connected_components': cc_tasks.default_task_config(),
+        configs = super(ConnectedComponentsWorkflow, ConnectedComponentsWorkflow).get_config()
+        configs.update({'graph_connected_components': cc_tasks.GraphConnectedComponentsLocal.default_task_config(),
                         'write': write_tasks.WriteLocal.default_task_config()})
         return configs
 

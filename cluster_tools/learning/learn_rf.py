@@ -18,7 +18,6 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 # Learning Tasks
 #
 
-# TODO implement graph extraction with ignore label 0
 class LearnRFBase(luigi.Task):
     """ LearnRF base class
     """

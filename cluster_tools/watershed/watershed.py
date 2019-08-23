@@ -13,6 +13,7 @@ import numpy as np
 import luigi
 import vigra
 import nifty.tools as nt
+from elf.segmentation.watershed import watershed as run_watershed
 
 # nonMaximumDistanceSuppression is only implemented on my latest nifty master:
 # https://github.com/constantinpape/nifty
@@ -223,7 +224,7 @@ def _apply_watershed(input_, dt, config, mask=None):
             dtz = dt[z]
             seeds = _make_seeds(dtz, config)
             hmap = _make_hmap(input_[z], dtz, alpha, sigma_weights)
-            wsz, max_id = vu.watershed(hmap, seeds=seeds, size_filter=size_filter)
+            wsz, max_id = run_watershed(hmap, seeds=seeds, size_filter=size_filter)
 
             # mask seeds if we have a mask
             if mask is None:
@@ -242,7 +243,7 @@ def _apply_watershed(input_, dt, config, mask=None):
     else:
         seeds = _make_seeds(dt, config)
         hmap = _make_hmap(input_, dt, alpha, sigma_weights)
-        ws, max_id = vu.watershed(hmap, seeds, size_filter=size_filter)
+        ws, max_id = run_watershed(hmap, seeds, size_filter=size_filter)
         # check if we have a mask
         if mask is not None:
             ws[np.logical_not(mask)] = 0

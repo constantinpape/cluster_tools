@@ -11,11 +11,11 @@ package:
 
 
 source:
-  path: ../
+  path: ..
 
 
 build:
-  number: 0
+  number: 1
   string: py{{py}}_{{PKG_BUILDNUM}}_g{{GIT_FULL_HASH[:7]}}
   script: "{{ PYTHON }} -m pip install . --no-deps --ignore-installed --no-cache-dir -vvv"
 
@@ -23,11 +23,6 @@ build:
 requirements:
   host:
     - python {{PY_VER}}*
-    - scikit-image
-    - nifty
-    - luigi
-    - z5py
-    - h5py
 
   run:
     - python {{PY_VER}}*
@@ -36,6 +31,8 @@ requirements:
     - luigi
     - z5py
     - h5py
+    - skan
+    - elf
 
 test:
   imports:

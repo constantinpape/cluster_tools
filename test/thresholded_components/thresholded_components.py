@@ -2,7 +2,6 @@ import os
 import sys
 import json
 import unittest
-from shutil import rmtree
 
 import numpy as np
 from skimage.morphology import label
@@ -13,46 +12,16 @@ import z5py
 import nifty.tools as nt
 
 try:
-    from cluster_tools.thresholded_components import ThresholdedComponentsWorkflow
-except ImportError:
-    sys.path.append('../..')
-    from cluster_tools.thresholded_components import ThresholdedComponentsWorkflow
+    from ..base import BaseTest
+except ValueError:
+    sys.path.append('..')
+    from base import BaseTest
 
 
-class TestThresholdedComponents(unittest.TestCase):
-    input_path = '/g/kreshuk/pape/Work/data/cluster_tools_test_data/test_data.n5'
-    input_key = 'volumes/boundaries_float32'
-
-    output_path = './tmp/ccs.n5'
+class TestThresholdedComponents(BaseTest):
+    input_key = 'volumes/boundaries'
     output_key = 'data'
     assignment_key = 'assignments'
-    #
-    tmp_folder = './tmp'
-    config_folder = './tmp/configs'
-    target= 'local'
-    shebang = '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python'
-
-    @staticmethod
-    def _mkdir(dir_):
-        try:
-            os.mkdir(dir_)
-        except OSError:
-            pass
-
-    def setUp(self):
-        self._mkdir(self.tmp_folder)
-        self._mkdir(self.config_folder)
-        global_config = ThresholdedComponentsWorkflow.get_config()['global']
-        global_config['shebang'] = self.shebang
-        global_config['block_shape'] = [10, 256, 256]
-        with open(os.path.join(self.config_folder, 'global.config'), 'w') as f:
-            json.dump(global_config, f)
-
-    def tearDown(self):
-        try:
-            rmtree(self.tmp_folder)
-        except OSError:
-            pass
 
     def _check_result(self, mode, check_for_equality=True, threshold=.5):
         with z5py.File(self.output_path) as f:
@@ -77,15 +46,16 @@ class TestThresholdedComponents(unittest.TestCase):
             self.assertAlmostEqual(score, 1., places=4)
 
     def _test_mode(self, mode, threshold=.5):
+        from cluster_tools.thresholded_components import ThresholdedComponentsWorkflow
         task = ThresholdedComponentsWorkflow(tmp_folder=self.tmp_folder,
-                                           config_dir=self.config_folder,
-                                           target=self.target, max_jobs=8,
-                                           input_path=self.input_path,
-                                           input_key=self.input_key,
-                                           output_path=self.output_path,
-                                           output_key=self.output_key,
-                                           assignment_key=self.assignment_key,
-                                           threshold=threshold, threshold_mode=mode)
+                                             config_dir=self.config_folder,
+                                             target=self.target, max_jobs=self.max_jobs,
+                                             input_path=self.input_path,
+                                             input_key=self.input_key,
+                                             output_path=self.output_path,
+                                             output_key=self.output_key,
+                                             assignment_key=self.assignment_key,
+                                             threshold=threshold, threshold_mode=mode)
         ret = luigi.build([task], local_scheduler=True)
         self.assertTrue(ret)
         self._check_result(mode, threshold=threshold)
@@ -154,7 +124,7 @@ class TestThresholdedComponents(unittest.TestCase):
         with z5py.File(self.output_path) as f:
             seg = f[self.output_key][:]
 
-        blocking = nt.blocking([0, 0, 0], list(shape), [10, 256, 256])
+        blocking = nt.blocking([0, 0, 0], list(shape), self.block_shape)
         for block_id in range(blocking.numberOfBlocks):
             block = blocking.getBlock(block_id)
             bb = tuple(slice(beg, end)

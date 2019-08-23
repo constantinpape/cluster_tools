@@ -6,4 +6,4 @@ This folder contains some example workflows, namely
 - `postprocessing.py`: Postprocess segmentation.
 - `skeletons.py`: Skeletonize segmentation.
 
-You can download the [example data](https://drive.google.com/open?id=15hZmM4cu_H_ruhlgXilNWgDZWMpuo9XK) derived from the [cremi challenge](https://cremi.org) or try it on your own data.
+You can download the [example data](https://drive.google.com/file/d/1E_Wpw9u8E4foYKk7wvx5RPSWvg_NCN7U/view?usp=sharing) derived from the [cremi challenge](https://cremi.org) or try it on your own data.

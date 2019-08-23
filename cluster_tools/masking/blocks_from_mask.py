@@ -2,14 +2,13 @@
 
 import os
 import sys
-import argparse
-import pickle
 import json
 from concurrent import futures
 
 import numpy as np
 import luigi
 import nifty.tools as nt
+from elf.wrapper.resized_volume import ResizedVolume
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -116,7 +115,7 @@ def blocks_from_mask(job_id, config_path):
         ds = f[mask_key]
         ds.n_threads = n_threads
         mask_data = ds[:]
-    mask = vu.InterpolatedVolume(mask_data, tuple(shape))
+    mask = ResizedVolume(mask_data, tuple(shape))
 
     blocking = nt.blocking([0, 0, 0], shape, list(block_shape))
     blocks_in_mask = _get_blocks_in_mask(mask, blocking, n_threads)

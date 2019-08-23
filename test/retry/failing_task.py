@@ -28,7 +28,6 @@ class FailingTaskBase(luigi.Task):
     shape = luigi.ListParameter()
 
     def clean_up_for_retry(self, block_list):
-        # TODO does this work with the mixin pattern?
         super().clean_up_for_retry(block_list)
 
     def run(self):
@@ -46,8 +45,7 @@ class FailingTaskBase(luigi.Task):
                               dtype='uint8')
 
         config.update({'output_path': self.output_path, 'output_key': self.output_key,
-                       'n_retries': self.n_retries,
-                       'block_shape': block_shape})
+                       'n_retries': self.n_retries, 'block_shape': block_shape})
 
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)

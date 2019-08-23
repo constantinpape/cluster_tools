@@ -13,7 +13,7 @@ def run_mc(input_path, tmp_folder, max_jobs,
     """ Run multicut on cremi sample or similar data.
 
     You can obtain the data used for this examle from
-    https://drive.google.com/open?id=15hZmM4cu_H_ruhlgXilNWgDZWMpuo9XK
+    https://drive.google.com/file/d/1E_Wpw9u8E4foYKk7wvx5RPSWvg_NCN7U/view?usp=sharing
 
     Args:
         input_path: n5 or hdf5 container with input data

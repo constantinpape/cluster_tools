@@ -8,8 +8,9 @@ from concurrent import futures
 import numpy as np
 import luigi
 import nifty.distributed as ndist
+from elf.evaluation.rand_index import compute_rand_scores
+from elf.evaluation.variation_of_information import compute_vi_scores
 
-import cluster_tools.utils.validation_utils as val
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
@@ -153,8 +154,8 @@ def measures(job_id, config_path):
     a_dict, b_dict, p_ids, p_counts, n_points = contigency_table_from_overlaps(overlaps)
 
     # compute and save voi and rand measures
-    vis, vim = val.compute_vi_scores(a_dict, b_dict, p_ids, p_counts, n_points, True)
-    ari, ri = val.compute_rand_scores(a_dict, b_dict, p_counts, n_points)
+    vis, vim = compute_vi_scores(a_dict, b_dict, p_ids, p_counts, n_points, True)
+    ari, ri = compute_rand_scores(a_dict, b_dict, p_counts, n_points)
 
     results = {'vi-split': vis, 'vi-merge': vim,
                'adapted-rand-error': ari, 'rand-index': ri}

@@ -35,6 +35,7 @@ class RegionFeaturesBase(luigi.Task):
     input_key = luigi.Parameter()
     labels_path = luigi.Parameter()
     labels_key = luigi.Parameter()
+    channel = luigi.IntParameter(default=None)
     dependency = luigi.TaskParameter()
 
     def requires(self):
@@ -50,7 +51,6 @@ class RegionFeaturesBase(luigi.Task):
 
     def clean_up_for_retry(self, block_list):
         super().clean_up_for_retry(block_list)
-        # TODO remove any output of failed blocks because it might be corrupted
 
     def run_impl(self):
         # get the global config and init configs
@@ -60,19 +60,27 @@ class RegionFeaturesBase(luigi.Task):
         # load the task config
         config = self.get_task_config()
 
+        # get shape and check dimension and channel param
+        shape = vu.get_shape(self.input_path, self.input_key)
+        if len(shape) == 4 and self.channel is None:
+            raise RuntimeError("Got 4d input, but channel was not specified")
+        if len(shape) == 4 and self.channel >= shape[0]:
+            raise RuntimeError("Channel %i is to large for n-channels %i" % (self.channel,
+                                                                             shape[0]))
+        if len(shape) == 3 and self.channel is not None:
+            raise RuntimeError("Channel was specified, but input is only 3d")
+
+        if len(shape) == 4:
+            shape = shape[1:]
+
         # temporary output dataset
         output_path = os.path.join(self.tmp_folder, 'region_features_tmp.n5')
         output_key = 'block_feats'
 
-        # TODO make the scale at which we extract features accessible
-        # update the config with input and output paths and keys
-        # as well as block shape
         config.update({'input_path': self.input_path, 'input_key': self.input_key,
                        'labels_path': self.labels_path, 'labels_key': self.labels_key,
                        'output_path': output_path, 'output_key': output_key,
-                       'block_shape': block_shape})
-        # TODO support multi-channel
-        shape = vu.get_shape(self.input_path, self.input_key)
+                       'block_shape': block_shape, 'channel': self.channel})
 
         # require the temporary output data-set
         f_out = z5py.File(output_path)
@@ -121,7 +129,7 @@ class RegionFeaturesLSF(RegionFeaturesBase, LSFTask):
 
 def _block_features(block_id, blocking,
                     ds_in, ds_labels, ds_out,
-                    ignore_label):
+                    ignore_label, channel):
     fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
@@ -135,12 +143,13 @@ def _block_features(block_id, blocking,
             fu.log_block_success(block_id)
             return
 
-    # TODO support multichannel
     # get global normalization values
     min_val = 0
     max_val = 255. if ds_in.dtype == np.dtype('uint8') else 1.
 
-    input_ = vu.normalize(ds_in[bb], min_val, max_val)
+    bb_in = bb if channel is None else (channel,) + bb
+    input_ = ds_in[bb_in]
+    input_ = vu.normalize(input_, min_val, max_val)
     # TODO support more features
     # TODO we might want to check for overflows and in general allow vigra to
     # work with uint64s ...
@@ -184,6 +193,7 @@ def region_features(job_id, config_path):
     output_path = config['output_path']
     output_key = config['output_key']
     block_shape = config['block_shape']
+    channel = config['channel']
     ignore_label = config['ignore_label']
 
     with vu.file_reader(input_path) as f_in,\
@@ -200,7 +210,7 @@ def region_features(job_id, config_path):
         for block_id in block_list:
             _block_features(block_id, blocking,
                             ds_in, ds_labels, ds_out,
-                            ignore_label)
+                            ignore_label, channel)
 
     fu.log_job_success(job_id)
 

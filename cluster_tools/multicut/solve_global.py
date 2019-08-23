@@ -7,10 +7,10 @@ import json
 import luigi
 import vigra
 import nifty
+from elf.segmentation.multicut import get_multicut_solver
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
-import cluster_tools.utils.segmentation_utils as su
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 #
@@ -114,12 +114,12 @@ def solve_global(job_id, config_path):
     n_threads = config['threads_per_job']
     time_limit = config.get('time_limit_solver', None)
 
-    fu.log("using agglomerator %s" % agglomerator_key)
+    fu.log("using solver %s" % agglomerator_key)
     if time_limit is None:
         fu.log("agglomeration without time limit")
     else:
         fu.log("agglomeration time limit %i" % time_limit)
-    agglomerator = su.key_to_agglomerator(agglomerator_key)
+    solver = get_multicut_solver(agglomerator_key)
 
     with vu.file_reader(problem_path, 'r') as f:
         group = f['s%i' % scale]
@@ -148,9 +148,9 @@ def solve_global(job_id, config_path):
     graph = nifty.graph.undirectedGraph(n_nodes)
     graph.insertEdges(uv_ids)
     fu.log("start agglomeration")
-    node_labeling = agglomerator(graph, costs,
-                                 n_threads=n_threads,
-                                 time_limit=time_limit)
+    node_labeling = solver(graph, costs,
+                           n_threads=n_threads,
+                           time_limit=time_limit)
     fu.log("finished agglomeration")
 
     # get the labeling of initial nodes
