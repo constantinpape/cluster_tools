@@ -64,7 +64,29 @@ class TestLinear(BaseTest):
         self._check_result(trafo)
 
     def test_slice_trafo(self):
-        pass
+        from cluster_tools.transformations import LinearTransformationWorkflow
+        task = LinearTransformationWorkflow
+
+        n_slices = z5py.File(self.input_path)[self.input_key].shape[0]
+
+        trafo_file = os.path.join(self.tmp_folder, 'trafo.json')
+        trafo = {z: {'a': np.random.rand(), 'b': np.random.rand()}
+                 for z in range(n_slices)}
+        with open(trafo_file, 'w') as f:
+            json.dump(trafo, f)
+
+        ret = luigi.build([task(input_path=self.input_path,
+                                input_key=self.input_key,
+                                output_path=self.output_path,
+                                output_key=self.output_key,
+                                transformation=trafo_file,
+                                config_dir=self.config_folder,
+                                tmp_folder=self.tmp_folder,
+                                target=self.target,
+                                max_jobs=self.max_jobs)],
+                          local_scheduler=True)
+        self.assertTrue(ret)
+        self._check_result(trafo)
 
 
 if __name__ == '__main__':

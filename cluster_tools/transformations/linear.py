@@ -29,6 +29,7 @@ class LinearBase(luigi.Task):
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
+    transformation = luigi.Parameter()
     dependency = luigi.TaskParameter(default=DummyTask())
 
     @staticmethod
@@ -87,7 +88,7 @@ class LinearBase(luigi.Task):
         self.submit_jobs(n_jobs)
 
         # wait till jobs finish and check for job success
-        self.wait_for_jobs(self.prefix)
+        self.wait_for_jobs()
         self.check_jobs(n_jobs)
 
 
@@ -126,11 +127,11 @@ def _load_transformation(trafo_file, shape):
     # 1.) global trafo specified as {'a': a, 'b': b}
     # 2.) transformation for each slcie, specified as {'1': {'a': a, 'b': b}, ...}
     if len(trafo) == 2:
-        assert set(trafo.keys) == {'a', 'b'}
+        assert set(trafo.keys()) == {'a', 'b'}
         fu.log("Found global transformation with values %f, %f" % (trafo['a'], trafo['b']))
     else:
         assert len(trafo) == shape[0]
-        assert all((len(tr) == 2 for tr in trafo))
+        assert all((len(tr) == 2 for tr in trafo.values()))
         trafo = {int(k): v for k, v in trafo.items()}
         fu.log("Found transformation per slice")
     return trafo
@@ -138,6 +139,7 @@ def _load_transformation(trafo_file, shape):
 
 def _transform_data(data, a, b):
     data = a * data + b
+    return data
 
 
 def _transform_block(ds_in, ds_out, transformation, blocking, block_id):
