@@ -278,16 +278,9 @@ class BaseClusterTask(luigi.Task):
 
     # make the tmpdir and logdirs
     def make_dirs(self):
-
-        def mkdir(dirpath):
-            try:
-                os.mkdir(dirpath)
-            except OSError:
-                pass
-
-        mkdir(self.tmp_folder)
-        mkdir(os.path.join(self.tmp_folder, 'logs'))
-        mkdir(os.path.join(self.tmp_folder, 'error_logs'))
+        os.makedirs(self.tmp_folder, exist_ok=True)
+        os.makedirs(os.path.join(self.tmp_folder, 'logs'), exist_ok=True)
+        os.makedirs(os.path.join(self.tmp_folder, 'error_logs'), exist_ok=True)
         self._write_log('created tmp-folder and log dirs @ %s' % self.tmp_folder)
 
     def _write_single_job_config(self, config, job_prefix):
