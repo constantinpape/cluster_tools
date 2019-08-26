@@ -65,12 +65,13 @@ class MergeMorphologyBase(luigi.Task):
                        'out_chunks': out_chunks})
 
         # prime and run the jobs
-        self.prepare_jobs(self.max_jobs, block_list, config, self.prefix)
-        self.submit_jobs(self.max_jobs, self.prefix)
+        n_jobs = min(len(block_list), self.max_jobs)
+        self.prepare_jobs(n_jobs, block_list, config, self.prefix)
+        self.submit_jobs(n_jobs, self.prefix)
 
         # wait till jobs finish and check for job success
         self.wait_for_jobs(self.prefix)
-        self.check_jobs(self.max_jobs, self.prefix)
+        self.check_jobs(n_jobs, self.prefix)
 
     # part of the luigi API
     def output(self):
