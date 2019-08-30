@@ -31,7 +31,7 @@ class MorphologyWorkflow(WorkflowBase):
                          prefix=self.prefix)
         merge_task = getattr(merge_tasks,
                              self._get_task_name('MergeMorphology'))
-        with vu.file_reader(self.input_path) as f:
+        with vu.file_reader(self.input_path, 'r') as f:
             number_of_labels = f[self.input_key].attrs['maxId'] + 1
         max_jobs_merge = self.max_jobs if self.max_jobs_merge is None else self.max_jobs_merge
         dep = merge_task(max_jobs=max_jobs_merge,
