@@ -18,27 +18,30 @@ class TestLabelMultisets(BaseTest):
 
     The expected data needs to be computed with 'paintera-conversion-helper'
     (conda install -c conda-forge paintera):
-    paintera-conversion-helper -r -d sampleA.n5,volumes/raw,raw
+    paintera-conversion-helper -r -d sampleA.n5,volumes/raw/s0,raw
                                -d sampleA.n5,volumes/segmentation/multicut,label
                                -o sampleA_paintera.n5 -b 256,256,25
                                -s 2,2,1 2,2,1 2,2,1, 2,2,2 -m -1 -1 5 3
     """
-    input_key = 'segmentation/multicut'
+    input_key = 'volumes/segmentation/multicut'
     output_key = 'data'
 
     def setUp(self):
         super().setUp()
         self.expected_path = os.path.splitext(self.input_path)[0] + '_paintera.n5'
         assert os.path.exists(self.expected_path)
-        self.expected_key = 'segmentation/multicut/data'
+        self.expected_key = os.path.join(self.input_key, 'data')
+
+    def tearDown(self):
+        pass
 
     def test_label_multisets(self):
-        from cluster_tools.morphology import LabelMultisetWorkflow
+        from cluster_tools.label_multisets import LabelMultisetWorkflow
         task = LabelMultisetWorkflow
 
         scale_factors = [[1, 2, 2], [1, 2, 2], [1, 2, 2], [2, 2, 2]]
         restrict_sets = [-1, -1, 5, 3]
-        t = task(tmp_folder=self.tmp_folder, max_jobs=4,
+        t = task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                  config_dir=self.config_folder, target=self.target,
                  input_path=self.input_path, input_key=self.input_key,
                  output_path=self.output_path, output_prefix=self.output_key,
@@ -70,7 +73,7 @@ class TestLabelMultisets(BaseTest):
                             self.assertTrue(out_exp is None)
                             continue
                         self.assertEqual(out.shape, out_exp.shape)
-                        self.assertTrue(np.allclose(out, out_exp))
+                        self.assertTrue(np.array_equal(out, out_exp))
 
 
 if __name__ == '__main__':
