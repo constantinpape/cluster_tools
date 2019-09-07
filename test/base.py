@@ -1,5 +1,6 @@
-import os
 import json
+import multiprocessing
+import os
 import unittest
 from shutil import rmtree
 
@@ -11,7 +12,7 @@ INPUT_PATH = os.environ.get('CLUSTER_TOOLS_TEST_PATH',
                             '/g/kreshuk/data/cremi/example/sampleA.n5')
 SHEBANG = os.environ.get('CLUSTER_TOOLS_TEST_SHEBANG',
                          '#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python')
-MAX_JOBS = os.environ.get('CLUSTER_TOOS_TEST_MAX_JOBS', 8)
+MAX_JOBS = os.environ.get('CLUSTER_TOOS_TEST_MAX_JOBS', multiprocessing.cpu_count())
 TARGET = os.environ.get('CLUSTER_TOOLS_TEST_TARGET', 'local')
 
 
