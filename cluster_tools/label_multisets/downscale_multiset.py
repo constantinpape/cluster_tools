@@ -17,9 +17,9 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 from cluster_tools.utils.numpy_utils import set_numpy_threads
 set_numpy_threads(1)
 import numpy as np
-from elf.label_multiset import (LabelMultiset, LabelMultisetGrid,
-                                deserialize_multiset, serialize_multiset,
-                                create_multiset_from_multiset)
+from elf.label_multiset import (deserialize_multiset, serialize_multiset,
+                                downsample_multiset, merge_multisets,
+                                LabelMultiset)
 
 
 class DownscaleMultisetBase(luigi.Task):
@@ -173,11 +173,11 @@ def _downscale_multiset_block(blocking, block_id, ds_in, ds_out,
                  for mset, block_prev in zip(multisets, blocks_prev)]
 
     chunk_ids_prev = normalize_chunks(chunk_ids_prev)
-    multiset_grid = LabelMultisetGrid(multisets, chunk_ids_prev,
-                                      roi_shape_prev, blocking_prev.blockShape)
+    multiset = merge_multisets(multisets, chunk_ids_prev,
+                               roi_shape_prev, blocking_prev.blockShape)
 
     # compute multiset from input labels
-    multiset = create_multiset_from_multiset(multiset_grid, scale_factor, restrict_set)
+    multiset = downsample_multiset(multiset, scale_factor, restrict_set)
     ser = serialize_multiset(multiset)
 
     chunk_id = tuple(beg // ch for beg, ch in zip(block.begin, ds_out.chunks))
