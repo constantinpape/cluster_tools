@@ -48,42 +48,39 @@ class WriteDownscalingMetadata(luigi.Task):
         with open(log_file, 'a') as f:
             f.write('%s: %s\n' % (str(datetime.now()), msg))
 
-    def _write_metadata_paintera(self, out_key, effective_scale):
-        with file_reader(self.output_path) as f:
-            ds = f[out_key]
-            ds.attrs['downsamplingFactors'] = effective_scale[::-1]
-
-    def _copy_max_id(self, f):
+    def _copy_max_id(self, g):
         level0 = 's%i' % self.scale_offset
-        attrs0 = f['%s/%s' % (self.output_key_prefix, level0)].attrs
+        attrs0 = g[level0].attrs
         if 'maxId' in attrs0:
-            f[self.output_key_prefix].attrs['maxId'] = attrs0['maxId']
+            g.attrs['maxId'] = attrs0['maxId']
 
     def _paintera_metadata(self):
         effective_scale = [1, 1, 1]
-        for scale, scale_factor in enumerate(self.scale_factors):
-            # we offset the scale by 1 because
-            # 's0' indicates the original resoulution
-            prefix = 's%i' % (scale + self.scale_offset + 1,)
-            out_key = os.path.join(self.output_key_prefix, prefix)
-            # write metadata for this scale level,
-            # most importantly the effective downsampling factor
-            # compared to the original resolution
-            if isinstance(scale_factor, int):
-                effective_scale = [eff * scale_factor for eff in effective_scale]
-            else:
-                effective_scale = [eff * sf for sf, eff in zip(scale_factor, effective_scale)]
-            self._write_metadata_paintera(out_key, effective_scale)
-        # write multiscale attribute and metadata
         with file_reader(self.output_path) as f:
-            f[self.output_key_prefix].attrs["multiScale"] = True
-            resolution = self.metadata_dict.get("resolution", 3 * [1.])[::-1]
-            f[self.output_key_prefix].attrs["resolution"] = resolution
+            g = f[self.output_key_prefix]
 
+            # write metadata for the scale datasets: effective downsampling
+            # facor compared to level 0
+            for scale, scale_factor in enumerate(self.scale_factors, 1):
+
+                scale_key = 's%i' % (scale + self.scale_offset,)
+
+                if isinstance(scale_factor, int):
+                    effective_scale = [eff * scale_factor for eff in effective_scale]
+                else:
+                    effective_scale = [eff * sf for sf, eff in zip(scale_factor, effective_scale)]
+                g[scale_key].attrs['downsamplingFactors'] = effective_scale[::-1]
+
+            # write attributes for the root multi-scale group
+            resolution = self.metadata_dict.get("resolution", 3 * [1.])[::-1]
             offsets = self.metadata_dict.get("offsets", 3 * [0.])[::-1]
-            f[self.output_key_prefix].attrs["offset"] = offsets
-            # copy max-id if it exists
-            self._copy_max_id(f)
+
+            g.attrs["multiScale"] = True
+            g.attrs["resolution"] = resolution
+            g.attrs["offset"] = offsets
+
+            # copy maxId attribute if it exists
+            self._copy_max_id(g)
 
     def _write_metadata_bdv(self, scales, chunks):
         with file_reader(self.output_path) as f:
@@ -167,7 +164,6 @@ class WriteDownscalingMetadata(luigi.Task):
     def _bdv_metadata(self):
         effective_scale = [1, 1, 1]
 
-        # FIXME we can move this in the main loop !
         # get the scale and chunks for the initial (0th) scale
         scales = [deepcopy(effective_scale)]
         with file_reader(self.output_path, 'r') as f:
@@ -222,7 +218,10 @@ class DownscalingWorkflow(WorkflowBase):
     halos = luigi.ListParameter()
     metadata_format = luigi.Parameter(default='paintera')
     metadata_dict = luigi.DictParameter(default={})
+    # the output path is optional, if not given, we take the same as input path
+    output_path = luigi.Parameter(default='')
     output_key_prefix = luigi.Parameter(default='')
+    force_copy = luigi.BoolParameter(default=False)
     skip_existing_levels = luigi.BoolParameter(default=False)
     scale_offset = luigi.IntParameter(default=0)
 
@@ -253,16 +252,14 @@ class DownscalingWorkflow(WorkflowBase):
             assert self.output_key_prefix == '',\
                 "Must not give output_key_prefix for bdv data format"
 
-    # we offset the scale by 1 because
-    # 0 indicates the original resoulution
     def get_scale_key(self, scale):
         if self.metadata_format == 'paintera':
-            prefix = 's%i' % (scale + 1,)
+            prefix = 's%i' % scale
             out_key = os.path.join(self.output_key_prefix, prefix)
         elif self.metadata_format == 'bdv':
             # we only support a single time-point and single set-up for now
             # TODO support multiple set-ups for multi-channel data
-            out_key = 't00000/s00/%i/cells' % (scale + 1,)
+            out_key = 't00000/s00/%i/cells' % scale
         return out_key
 
     def _link_scale_zero_h5(self, trgt):
@@ -273,8 +270,6 @@ class DownscalingWorkflow(WorkflowBase):
     def _link_scale_zero_n5(self, trgt):
         with file_reader(self.input_path) as f:
             if trgt not in f:
-                print(trgt)
-                print(self.input_key)
                 os.makedirs(os.path.split(os.path.join(self.input_path, trgt))[0], exist_ok=True)
                 src_path = os.path.abspath(os.path.realpath(os.path.join(self.input_path, self.input_key)))
                 trgt_path = os.path.abspath(os.path.realpath(os.path.join(self.input_path, trgt)))
@@ -285,24 +280,44 @@ class DownscalingWorkflow(WorkflowBase):
         with file_reader(self.input_path) as f:
             return key in f
 
+    def _copy_scale_zero(self, out_path, out_key, dep):
+        task = getattr(copy_tasks, self._get_task_name('CopyVolume'))
+        prefix = 'initial_scale'
+        dep = task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                   config_dir=self.config_dir,
+                   input_path=self.input_path, input_key=self.input_key,
+                   output_path=out_path, output_key=out_key,
+                   prefix=prefix, dependency=dep)
+        return dep
+
+    def require_initial_scale(self, out_path, out_key, dep):
+        """ Link or copy the initial dataset to self.output_key_prefix.
+        We copy if input_path != output_path or force_copy is set.
+        """
+        copy_initial_ds = True if self.force_copy else self.output_path != ''
+
+        if copy_initial_ds:
+            dep = self._copy_scale_zero(out_path, out_key, dep)
+        else:
+            if self.metadata_format == 'bdv':
+                self._link_scale_zero_h5(out_key)
+            elif self.metadata_format == 'paintera':
+                self._link_scale_zero_n5(out_key)
+        return dep
+
     def requires(self):
         self.validate_scale_factors(self.scale_factors)
         halos = self.validate_halos(self.halos, len(self.scale_factors))
         self.validate_format()
 
-        ds_task = getattr(downscale_tasks,
-                          self._get_task_name('Downscaling'))
+        out_path = self.input_path if self.output == '' else self.output_path
+        in_key = self.get_scale_key(self.scale_offset)
+        # require the initial scale dataset
+        dep = self.require_initial_scale(out_path, in_key, self.dependency)
 
-        in_key = self.get_scale_key(-1 + self.scale_offset)
-        if self.metadata_format == 'bdv':
-            self._link_scale_zero_h5(in_key)
-        elif self.metadata_format == 'paintera':
-            self._link_scale_zero_n5(in_key)
-        t_prev = self.dependency
-
+        task = getattr(downscale_tasks, self._get_task_name('Downscaling'))
         effective_scale = [1, 1, 1]
-        for scale, scale_factor in enumerate(self.scale_factors):
-            scale += self.scale_offset
+        for scale, (scale_factor, halo) in enumerate(zip(self.scale_factors, halos), self.scale_offset + 1):
             out_key = self.get_scale_key(scale)
 
             if isinstance(scale_factor, int):
@@ -310,35 +325,31 @@ class DownscalingWorkflow(WorkflowBase):
             else:
                 effective_scale = [eff * sf for sf, eff in zip(scale_factor, effective_scale)]
 
-            prefix = 's%i' % (scale + 1,)
             # check if this scale already exists.
             # if so, skip it if we have `skip_existing_levels` set to True
             if self.skip_existing_levels and self._have_scale(scale):
                 in_key = out_key
                 continue
 
-            t = ds_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
-                        config_dir=self.config_dir,
-                        input_path=self.input_path, input_key=in_key,
-                        output_path=self.input_path, output_key=out_key,
-                        scale_factor=scale_factor, scale_prefix=prefix,
-                        effective_scale_factor=effective_scale,
-                        halo=halos[scale - self.scale_offset],
-                        dependency=t_prev)
-
-            t_prev = t
+            dep = task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                       config_dir=self.config_dir,
+                       input_path=out_path, input_key=in_key,
+                       output_path=out_path, output_key=out_key,
+                       scale_factor=scale_factor, scale_prefix='s%i' % scale,
+                       effective_scale_factor=effective_scale,
+                       halo=halo, dependency=dep)
             in_key = out_key
 
         # task to write the metadata
-        t_meta = WriteDownscalingMetadata(tmp_folder=self.tmp_folder,
-                                          output_path=self.input_path,
-                                          output_key_prefix=self.output_key_prefix,
-                                          metadata_format=self.metadata_format,
-                                          metadata_dict=self.metadata_dict,
-                                          scale_factors=self.scale_factors,
-                                          scale_offset=self.scale_offset,
-                                          dependency=t_prev)
-        return t_meta
+        dep = WriteDownscalingMetadata(tmp_folder=self.tmp_folder,
+                                       output_path=out_path,
+                                       output_key_prefix=self.output_key_prefix,
+                                       metadata_format=self.metadata_format,
+                                       metadata_dict=self.metadata_dict,
+                                       scale_factors=self.scale_factors,
+                                       scale_offset=self.scale_offset,
+                                       dependency=dep)
+        return dep
 
     @staticmethod
     def get_config():
@@ -388,9 +399,7 @@ class PainteraToBdvWorkflow(WorkflowBase):
         return list(sorted(scales))
 
     def requires(self):
-
-        copy_task = getattr(copy_tasks,
-                            self._get_task_name('CopyVolume'))
+        task = getattr(copy_tasks, self._get_task_name('CopyVolume'))
 
         # get scales that need to be copied
         scales = self.get_scales()
@@ -420,12 +429,12 @@ class PainteraToBdvWorkflow(WorkflowBase):
                         continue
 
             prefix = 's%i' % scale
-            dep = copy_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
-                            config_dir=self.config_dir,
-                            input_path=self.input_path, input_key=in_key,
-                            output_path=self.output_path, output_key=out_key,
-                            prefix=prefix, effective_scale_factor=effective_scale,
-                            dtype=self.dtype, dependency=dep)
+            dep = task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                       config_dir=self.config_dir,
+                       input_path=self.input_path, input_key=in_key,
+                       output_path=self.output_path, output_key=out_key,
+                       prefix=prefix, effective_scale_factor=effective_scale,
+                       dtype=self.dtype, dependency=dep)
 
         # get the metadata for this dataset
         # if we have the `resolution` or `offset` attribute

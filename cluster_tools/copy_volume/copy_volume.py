@@ -67,11 +67,13 @@ class CopyVolumeBase(luigi.Task):
         # load the config
         task_config = self.get_task_config()
 
+        ndim = len(shape)
+        assert ndim in (3, 4), "Copying is only supported for 3d and 4d inputs"
         # if we have a roi, we need to:
         # - scale the roi to the effective scale, if effective scale is given
         # - shrink the shape to the roi, if fit_to_roi is True
         if roi_begin is not None:
-            assert len(shape) == 3, "Don't support roi for 4d yet"
+            assert ndim == 3, "Don't support roi for 4d yet"
             assert roi_end is not None
             if self.effective_scale_factor:
                 roi_begin = [int(rb // sf)
@@ -96,15 +98,9 @@ class CopyVolumeBase(luigi.Task):
         dtype = str(ds_dtype) if self.dtype is None else self.dtype
 
         chunks = task_config.pop('chunks', None)
-        if chunks is None:
-            chunks = ds_chunks
-        chunks = tuple(min(chnk, osh) for chnk, osh in zip(chunks, out_shape))
-        if len(chunks) == 3:
-            assert all(bs % ch == 0 for bs, ch in zip(block_shape, chunks)), "%s, %s" % (str(block_shape),
-                                                                                         str(chunks))
-        else:
-            assert all(bs % ch == 0 for bs, ch in zip(block_shape, chunks[1:])), "%s, %s" % (str(block_shape),
-                                                                                             str(chunks))
+        chunks = tuple(block_shape) if chunks is None else chunks
+        if len(chunks) == 3 and ndim == 4:
+            chunks = (ds_chunks[0],) + chunks
 
         # require output dataset
         with vu.file_reader(self.output_path) as f:
@@ -250,6 +246,13 @@ def copy_volume(job_id, config_path):
         blocking = nt.blocking([0, 0, 0], shape, block_shape)
         _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin,
                      reduce_function)
+
+        # copy the attributes with job 0
+        if job_id == 0:
+            attrs_in = ds_in.attrs
+            attrs_out = ds_out.attrs
+            for k, v in attrs_in.items():
+                attrs_out[k] = v
 
     # log success
     fu.log_job_success(job_id)
