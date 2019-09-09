@@ -18,8 +18,6 @@ from cluster_tools.utils.task_utils import DummyTask
 # copy tasks
 #
 
-# TODO enable shrink to roi and scale factors
-# to also replace `downscaling/copy_to_h5`
 class CopyVolumeBase(luigi.Task):
     """ copy_volume base class
     """
@@ -101,6 +99,8 @@ class CopyVolumeBase(luigi.Task):
         chunks = tuple(block_shape) if chunks is None else chunks
         if len(chunks) == 3 and ndim == 4:
             chunks = (ds_chunks[0],) + chunks
+        assert all(bs % ch == 0 for bs, ch in zip(block_shape,
+                                                  chunks[1:] if ndim == 4 else chunks))
 
         # require output dataset
         with vu.file_reader(self.output_path) as f:
