@@ -192,7 +192,7 @@ def write_metadata(ds_out, max_id, restrict_set, scale_factor):
     attrs['isLabelMultiset'] = True
     attrs['maxNumEntries'] = restrict_set
     # we reverse the scale factor, because java axis conventions are XYZ and we have ZYX
-    attrs['downsamlingFactors'] = [float(sf) for sf in reversed(scale_factor)]
+    attrs['downsamplingFactors'] = [float(sf) for sf in reversed(scale_factor)]
 
 
 def downscale_multiset(job_id, config_path):
