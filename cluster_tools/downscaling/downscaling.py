@@ -16,6 +16,7 @@ import luigi
 import vigra
 import nifty.tools as nt
 from skimage.measure import block_reduce
+from elf.util import downscale_shape as _downsample_shape
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -67,16 +68,10 @@ class DownscalingBase(luigi.Task):
         # TODO remove any output of failed blocks because it might be corrupted
 
     def downsample_shape(self, shape):
-        start = 1 if len(shape) == 4 else 0
-
-        if isinstance(self.scale_factor, (list, tuple)):
-            new_shape = tuple(sh // sf if sh % sf == 0 else sh // sf + (sf - sh % sf)
-                              for sh, sf in zip(shape[start:], self.scale_factor))
+        if len(shape) == 4:
+            new_shape = (shape[0],) + _downsample_shape(shape[1:], self.scale_factor)
         else:
-            sf = self.scale_factor
-            new_shape = tuple(sh // sf if sh % sf == 0 else sh // sf + (sf - sh % sf)
-                              for sh in shape[start:])
-
+            new_shape = _downsample_shape(shape, self.scale_factor)
         return new_shape
 
     def run_impl(self):

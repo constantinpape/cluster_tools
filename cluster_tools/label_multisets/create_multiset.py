@@ -112,10 +112,10 @@ def _create_multiset_block(blocking, block_id, ds_in, ds_out):
 
     labels = ds_in[bb]
 
-    # TODO I don't know if paintera supports this
-    if labels.sum() == 0:
-        fu.log_block_success(block_id)
-        return
+    # # TODO I don't know if paintera supports this
+    # if labels.sum() == 0:
+    #     fu.log_block_success(block_id)
+    #     return
 
     # compute multiset from input labels
     multiset = create_multiset_from_labels(labels)

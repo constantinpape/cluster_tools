@@ -6,7 +6,7 @@ import json
 
 import luigi
 import nifty.tools as nt
-from elf.util import chunks_overlapping_roi
+from elf.util import chunks_overlapping_roi, downscale_shape
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -38,6 +38,7 @@ class DownscaleMultisetBase(luigi.Task):
     # scale factors and restrict set
     scale_factor = luigi.Parameter()
     effective_scale_factor = luigi.Parameter()
+    scale_prefix = luigi.Parameter()
     restrict_set = luigi.Parameter()
     # dependency
     dependency = luigi.TaskParameter()
@@ -51,11 +52,6 @@ class DownscaleMultisetBase(luigi.Task):
         config.update({'compression': 'gzip'})
         return config
 
-    def downsample_shape(self, in_shape):
-        scale_factor = self.scale_factor if isinstance(self.scale_factor, (tuple, list))\
-            else [self.scale_factor] * len(in_shape)
-        return tuple(sh // sc for sh, sc in zip(in_shape, scale_factor))
-
     def run_impl(self):
         # get the global config and init configs
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
@@ -68,7 +64,7 @@ class DownscaleMultisetBase(luigi.Task):
         config = self.get_task_config()
 
         compression = config.get('compression', 'gzip')
-        out_shape = self.downsample_shape(shape)
+        out_shape = downscale_shape(shape, self.scale_factor)
         # require output dataset
         with vu.file_reader(self.output_path) as f:
             f.require_dataset(self.output_key, shape=out_shape, chunks=tuple(block_shape),
@@ -83,14 +79,19 @@ class DownscaleMultisetBase(luigi.Task):
         block_list = vu.blocks_in_volume(out_shape, block_shape, roi_begin, roi_end)
         self._write_log('scheduling %i blocks to be processed' % len(block_list))
         n_jobs = min(len(block_list), self.max_jobs)
+        self._write_log("submitting %i blocks with %i jobs" % (len(block_list), n_jobs))
 
         # prime and run the jobs
-        self.prepare_jobs(n_jobs, block_list, config)
-        self.submit_jobs(n_jobs)
+        self.prepare_jobs(n_jobs, block_list, config, self.scale_prefix)
+        self.submit_jobs(n_jobs, self.scale_prefix)
 
         # wait till jobs finish and check for job success
         self.wait_for_jobs()
-        self.check_jobs(n_jobs)
+        self.check_jobs(n_jobs, self.scale_prefix)
+
+    def output(self):
+        return luigi.LocalTarget(os.path.join(self.tmp_folder,
+                                              '%s_%s.log' % (self.task_name, self.scale_prefix)))
 
 
 class DownscaleMultisetLocal(DownscaleMultisetBase, LocalTask):
@@ -146,7 +147,7 @@ def _downscale_multiset_block(blocking, block_id, ds_in, ds_out,
     block = blocking.getBlock(block_id)
 
     ndim = ds_in.ndim
-    # get the corresponding blocks and chunk ids
+    # get the blocks and chunk ids
     # corresponding to this block in the previous scale level
     roi_begin_prev = [beg * sc for beg, sc in zip(block.begin, scale_factor)]
     roi_end_prev = [min(end * sc, sh) for end, sc, sh in zip(block.end,

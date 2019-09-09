@@ -16,7 +16,7 @@ class LabelMultisetWorkflow(WorkflowBase):
     restrict_sets = luigi.ListParameter()
 
     def _downscale(self, in_path, in_key, out_key,
-                   scale_factor, effective_scale_factor,
+                   level, scale_factor, effective_scale_factor,
                    restrict_set, dep):
         downscale_task = getattr(downscale_tasks,
                                  self._get_task_name('DownscaleMultiset'))
@@ -25,7 +25,8 @@ class LabelMultisetWorkflow(WorkflowBase):
                               input_path=in_path, input_key=in_key,
                               output_path=self.output_path, output_key=out_key,
                               scale_factor=scale_factor, restrict_set=restrict_set,
-                              effective_scale_factor=effective_scale_factor)
+                              effective_scale_factor=effective_scale_factor,
+                              scale_prefix='s%i' % level)
 
     def requires(self):
         n_scales = len(self.scale_factors)
@@ -50,7 +51,7 @@ class LabelMultisetWorkflow(WorkflowBase):
                                                                   scale_factor)]
             out_key = os.path.join(self.output_prefix, 's%i' % level)
             dep = self._downscale(self.output_path, in_key, out_key,
-                                  scale_factor, effective_scale_factor,
+                                  level, scale_factor, effective_scale_factor,
                                   restrict_set, dep)
             in_key = out_key
 
