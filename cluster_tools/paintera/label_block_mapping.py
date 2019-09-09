@@ -42,11 +42,8 @@ class LabelBlockMappingBase(luigi.Task):
         shebang, _, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 
-        # TODO adapt blocks that are searched to roi
-        # assert roi_begin is None and roi_end is None
-
         # shape and chunks for the id space
-        ds_shape = (int(2**63 - 1),) # open-ended shape
+        ds_shape = (int(2**63 - 1),)  # open-ended shape
         # we use a chunk-size of 10k, but this could also be a parameter
         chunks = (10000,)
 
@@ -104,21 +101,6 @@ class LabelBlockMappingLSF(LabelBlockMappingBase, LSFTask):
 #
 
 
-def _label_to_block_mapping(input_path, input_key,
-                            output_path, output_key,
-                            blocking, block_list):
-    for block_id in block_list:
-        id_space_block = blocking.getBlock(block_id)
-        id_start, id_stop = id_space_block.begin[0], id_space_block.end[0]
-        fu.log("serializing ids in block %i with labels from %i to %i" % (block_id,
-                                                                          id_start,
-                                                                          id_stop))
-        ndist.serializeBlockMapping(os.path.join(input_path, input_key),
-                                    os.path.join(output_path, output_key),
-                                    id_start, id_stop)
-        fu.log_block_success(block_id)
-
-
 def label_block_mapping(job_id, config_path):
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
@@ -143,12 +125,10 @@ def label_block_mapping(job_id, config_path):
         roi_end = []
 
     n_threads = config.get('threads_per_job', 1)
-
-    ndist.serializeBlockMapping(os.path.join(input_path, input_key),
-                                os.path.join(output_path, output_key),
+    ndist.serializeBlockMapping(input_path, input_key,
+                                output_path, output_key,
                                 number_of_labels, n_threads,
                                 roi_begin, roi_end)
-
     # log success
     fu.log_job_success(job_id)
 

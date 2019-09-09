@@ -5,8 +5,14 @@ import sys
 import json
 
 import luigi
-import numpy as np
 import nifty.tools as nt
+
+# this is a task called by multiple processes,
+# so we need to restrict the number of threads used by numpy
+from cluster_tools.utils.numpy_utils import set_numpy_threads
+set_numpy_threads(1)
+import numpy as np
+from elf.label_multiset import deserialize_multiset
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -43,9 +49,6 @@ class UniqueBlockLabelsBase(luigi.Task):
             chunks = ds.chunks
             dtype = ds.dtype
             is_multiset = ds.attrs.get('isLabelMultiset', False)
-        # TODO implement label multiset
-        if is_multiset:
-            raise NotImplementedError("Multiset is not supported yet")
 
         # we use the chunks as block-shape
         block_shape = chunks
@@ -120,28 +123,24 @@ class UniqueBlockLabelsLSF(UniqueBlockLabelsBase, LSFTask):
 #
 
 
-def _uniques_default(ds, ds_out, blocking, block_list):
+def _uniques(ds, ds_out, blocking, block_list, is_multiset):
     for block_id in block_list:
-        block_coord = blocking.getBlock(block_id).begin
-        chunk_id = tuple(bl // ch for bl, ch in zip(block_coord, ds.chunks))
+        fu.log("start processing block %i" % block_id)
+        block = blocking.getBlock(block_id)
+        chunk_id = tuple(beg // ch for beg, ch in zip(block.begin, ds.chunks))
 
         labels = ds.read_chunk(chunk_id)
         if labels is None:
-            # TODO can we skip blocks with only 0 as  label in paintera format ??
+            # TODO can we skip blocks with only 0 as label in paintera format ??
             # fu.log_block_success(block_id)
             # return
             uniques = np.zeros(1, dtype='uint64')
         else:
+            if is_multiset:
+                labels = deserialize_multiset(labels, block.shape).ids
             uniques = np.unique(labels)
         ds_out.write_chunk(chunk_id, uniques, True)
         fu.log_block_success(block_id)
-
-
-# TODO implement properly
-def _uniques_multiset(ds, ds_out, blocking, block_list):
-    for block_id in block_list:
-        block_coord = blocking.getBlock(block_id).begin
-        chunk_id = tuple(bl // ch for bl, ch in zip(block_coord, ds.chunks))
 
 
 def unique_block_labels(job_id, config_path):
@@ -170,11 +169,7 @@ def unique_block_labels(job_id, config_path):
             "Chunks %s and block shape %s must agree" % (str(chunks), str(block_shape))
 
         blocking = nt.blocking([0, 0, 0], shape, block_shape)
-
-        if is_multiset:
-            _uniques_multiset(ds, ds_out, blocking, block_list)
-        else:
-            _uniques_default(ds, ds_out, blocking, block_list)
+        _uniques(ds, ds_out, blocking, block_list, is_multiset)
 
     # log success
     fu.log_job_success(job_id)

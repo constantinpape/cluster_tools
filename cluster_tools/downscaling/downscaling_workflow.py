@@ -294,7 +294,7 @@ class DownscalingWorkflow(WorkflowBase):
         """ Link or copy the initial dataset to self.output_key_prefix.
         We copy if input_path != output_path or force_copy is set.
         """
-        copy_initial_ds = True if self.force_copy else self.output_path != ''
+        copy_initial_ds = True if self.force_copy else out_path != self.input_path
 
         if copy_initial_ds:
             dep = self._copy_scale_zero(out_path, out_key, dep)

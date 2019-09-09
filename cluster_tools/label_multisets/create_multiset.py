@@ -16,7 +16,6 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 from cluster_tools.utils.numpy_utils import set_numpy_threads
 set_numpy_threads(1)
 from elf.label_multiset import create_multiset_from_labels, serialize_multiset
-from cluster_tools.label_multisets.downscale_multiset import write_metadata
 
 
 class CreateMultisetBase(luigi.Task):
@@ -126,6 +125,12 @@ def _create_multiset_block(blocking, block_id, ds_in, ds_out):
     fu.log_block_success(block_id)
 
 
+def write_metadata(ds_out, max_id):
+    attrs = ds_out.attrs
+    attrs['maxId'] = max_id
+    attrs['isLabelMultiset'] = True
+
+
 def create_multiset(job_id, config_path):
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
@@ -157,7 +162,7 @@ def create_multiset(job_id, config_path):
 
         if job_id == 0:
             max_id = ds_in.attrs['maxId']
-            write_metadata(ds_out, max_id, -1, [1, 1, 1])
+            write_metadata(ds_out, max_id)
 
     # log success
     fu.log_job_success(job_id)
