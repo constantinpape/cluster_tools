@@ -5,6 +5,7 @@ import unittest
 import nifty.tools as nt
 import numpy as np
 import luigi
+from tqdm import trange
 import z5py
 from elf.label_multiset import deserialize_multiset
 
@@ -34,38 +35,54 @@ class TestLabelMultisets(BaseTest):
         assert os.path.exists(self.expected_path)
         self.expected_key = os.path.join(self.input_key, 'data')
 
-    def tearDown(self):
-        pass
-
-    def check_multisets(self, l1, l2):
-        # check number of sets and entries
-        self.assertEqual(l1.size, l2.size)
-        self.assertEqual(l1.n_entries, l2.n_entries)
-        # check amax vector
-        self.assertTrue(np.array_equal(l1.argmax, l2.argmax))
-        # check offset vector
-        # print(len(l1.offsets))
-        # print(np.unique(l1.offsets))
-        # print(l1.offsets)
-        # print(len(l2.offsets))
-        # print(np.unique(l2.offsets))
-        # print(l2.offsets)
-        self.assertTrue(np.array_equal(l1.offsets, l2.offsets))
-        # check ids and counts
-        self.assertTrue(np.array_equal(l1.ids, l2.ids))
-        self.assertTrue(np.array_equal(l1.counts, l2.counts))
-
-    # TODO more complex checks fail, but I am not sure if this is
-    # due to permutation invariance of multi-set, need to check closer
-    def check_chunk(self, res, exp, shape):
-        # check deserialized multisets
-        # l1 = deserialize_multiset(res, shape)
-        # l2 = deserialize_multiset(exp, shape)
-        # self.check_multisets(l1, l2)
-
-        # check serialization
+    def check_serialization(self, res, exp):
         self.assertEqual(res.shape, exp.shape)
-        # self.assertTrue(np.array_equal(res, exp))
+        if not np.array_equal(res, exp):
+            return False
+        return True
+
+    def check_multisets(self, res, exp):
+        # check number of sets and entries
+        self.assertEqual(res.size, exp.size)
+        self.assertEqual(res.n_entries, exp.n_entries)
+        # check amax vector
+        self.assertTrue(np.array_equal(res.argmax, exp.argmax))
+        # check offset vector
+        if not np.array_equal(res.offsets, exp.offsets):
+            return False
+        # check ids and counts
+        if not np.array_equal(res.ids, exp.ids) or not np.array_equal(res.counts, exp.counts):
+            return False
+        return True
+
+    def check_pixels(self, res, exp):
+        # only check 4 cubed blocks to save time
+        blocking = nt.blocking([0, 0, 0], res.shape, [4, 4, 4])
+        for block_id in trange(blocking.numberOfBlocks):
+            block = blocking.getBlock(block_id)
+            bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
+            ids_res, counts_res = res[bb]
+            ids_exp, counts_exp = exp[bb]
+            self.assertTrue(np.array_equal(ids_res, ids_exp))
+            self.assertTrue(np.array_equal(counts_res, counts_exp))
+
+    def check_chunk(self, res, exp, shape):
+        # 1.) check direct serialization, if it matches, its fine
+        # otherwise, we need to continue with checks
+        # (failures might be due to permutation invariance)
+        match = self.check_serialization(res, exp)
+        if match:
+            return
+
+        # 2.) check multi-set members
+        res = deserialize_multiset(res, shape)
+        exp = deserialize_multiset(exp, shape)
+        match = self.check_multisets(res, exp)
+        if match:
+            return
+
+        # 3.) check pixel-wise agreement
+        self.check_pixels(res, exp)
 
     def test_label_multisets(self):
         from cluster_tools.label_multisets import LabelMultisetWorkflow
