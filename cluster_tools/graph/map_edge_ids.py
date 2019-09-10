@@ -5,7 +5,6 @@ import sys
 import json
 
 import luigi
-import nifty.tools as nt
 import nifty.distributed as ndist
 
 import cluster_tools.utils.volume_utils as vu
