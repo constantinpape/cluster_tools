@@ -142,8 +142,8 @@ def merge_node_labels(job_id, config_path):
         block = blocking.getBlock(block_id)
         label_begin = block.begin[0]
         label_end = block.end[0]
-        ndist.mergeAndSerializeOverlaps(os.path.join(input_path, input_key),
-                                        os.path.join(output_path, output_key),
+        ndist.mergeAndSerializeOverlaps(input_path, input_key,
+                                        output_path, output_key,
                                         max_overlap=max_overlap,
                                         labelBegin=label_begin, labelEnd=label_end,
                                         numberOfThreads=n_threads,

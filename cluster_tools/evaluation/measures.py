@@ -91,9 +91,7 @@ def overlaps_to_sizes(pairs, counts):
 
 def contigency_table_from_overlaps(overlaps):
     # make contigency table objects, cf.
-    # https://github.com/constantinpape/cluster_tools/blob/master/cluster_tools/utils/validation_utils.py#L9
-    # NOTE this is reversed compared to the above computation because we calculate the overlaps
-    # the other way around (overlaps of seg with gt)
+    # https://github.com/constantinpape/elf/blob/master/elf/evaluation/util.py#L22
     p_ids = np.array([[ida, idb] for idb, ovlp in overlaps.items()
                       for ida in ovlp.keys()])
     p_counts = np.array([ovlp_cnt for ovlp in overlaps.values()
@@ -119,9 +117,9 @@ def contigency_table_from_overlaps(overlaps):
     return a_dict, b_dict, p_ids, p_counts, n_points
 
 
-def load_overlaps(path, n_chunks, n_threads):
+def load_overlaps(path, key, n_chunks, n_threads):
     with futures.ThreadPoolExecutor(n_threads) as tp:
-        tasks = [tp.submit(ndist.deserializeOverlapChunk, path, [chunk_id])
+        tasks = [tp.submit(ndist.deserializeOverlapChunk, path, key, [chunk_id])
                  for chunk_id in range(n_chunks)]
         results = [t.result()[0] for t in tasks]
     overlaps = {}
@@ -148,9 +146,8 @@ def measures(job_id, config_path):
     f = vu.file_reader(input_path, 'r')
     # load overlaps in parallel and merge them
     n_chunks = f[overlap_key].number_of_chunks
-    path = os.path.join(input_path, overlap_key)
 
-    overlaps = load_overlaps(path, n_chunks, n_threads)
+    overlaps = load_overlaps(input_path, overlap_key, n_chunks, n_threads)
     a_dict, b_dict, p_ids, p_counts, n_points = contigency_table_from_overlaps(overlaps)
 
     # compute and save voi and rand measures

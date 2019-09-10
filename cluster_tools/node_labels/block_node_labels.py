@@ -124,8 +124,8 @@ class BlockNodeLabelsLSF(BlockNodeLabelsBase, LSFTask):
 #
 
 def _labels_for_block(block_id, blocking,
-                      ds_ws, out_path, labels,
-                      ignore_label):
+                      ds_ws, output_path, output_key,
+                      labels, ignore_label):
     fu.log("start processing block %i" % block_id)
     # read labels and input in this block
     block = blocking.getBlock(block_id)
@@ -152,7 +152,7 @@ def _labels_for_block(block_id, blocking,
                      for beg, ch in zip(block.begin,
                                         blocking.blockShape))
     ndist.computeAndSerializeLabelOverlaps(ws, labs,
-                                           out_path, chunk_id,
+                                           output_path, output_key, chunk_id,
                                            withIgnoreLabel=False if ignore_label is None else True,
                                            ignoreLabel=0 if ignore_label is None else ignore_label)
     fu.log_block_success(block_id)
@@ -206,10 +206,9 @@ def block_node_labels(job_id, config_path):
 
     with vu.file_reader(ws_path, 'r') as f_in:
         ds_ws = f_in[ws_key]
-        out_path = os.path.join(output_path, output_key)
         [_labels_for_block(block_id, blocking,
-                           ds_ws, out_path, labels,
-                           ignore_label)
+                           ds_ws, output_path, output_key,
+                           labels, ignore_label)
          for block_id in block_list]
 
     f_lab.close()

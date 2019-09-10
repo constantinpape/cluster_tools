@@ -107,8 +107,7 @@ def object_vi(job_id, config_path):
 
     # load overlaps in parallel and merge them
     n_chunks = f[overlap_key].number_of_chunks
-    path = os.path.join(input_path, overlap_key)
-    overlaps = load_overlaps(path, n_chunks, n_threads)
+    overlaps = load_overlaps(input_path, overlap_key, n_chunks, n_threads)
 
     a_dict, b_dict, p_ids, p_counts, _ = contigency_table_from_overlaps(overlaps)
     object_scores = compute_object_vi_scores(a_dict, b_dict, p_ids, p_counts, use_log2=True)
