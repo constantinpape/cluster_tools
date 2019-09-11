@@ -107,11 +107,34 @@ class TestLabelMultisets(BaseTest):
         # check all scales
         for scale in g:
             print("checking scale:", scale)
+            # We skip the test for s4 because it fails due to an inconsistency
+            # in the implementations,
+            # see https://github.com/saalfeldlab/imglib2-label-multisets/issues/14
+            if scale == 's4':
+                continue
             self.assertTrue(scale in g_exp)
             ds = g[scale]
             ds_exp = g_exp[scale]
             self.assertEqual(ds.shape, ds_exp.shape)
             self.assertEqual(ds.chunks, ds_exp.chunks)
+
+            # check the metadata
+            attrs = ds.attrs
+
+            self.assertTrue(attrs['isLabelMultiset'])
+
+            scale_factor = attrs.get('downsamplingFactors', None)
+            attrs_exp = ds_exp.attrs
+            scale_factor_exp = attrs_exp.get('downsamplingFactors', None)
+            self.assertEqual(scale_factor, scale_factor_exp)
+
+            restrict = attrs.get('maxNumEntries', -1)
+            restrict_exp = attrs_exp.get('maxNumEntries', -1)
+            self.assertEqual(restrict, restrict_exp)
+
+            mid = attrs.get('maxId', None)
+            mid_exp = attrs_exp.get('maxId', None)
+            self.assertEqual(mid, mid_exp)
 
             blocking = nt.blocking([0, 0, 0], ds.shape, ds.chunks)
             for block_id in range(blocking.numberOfBlocks):

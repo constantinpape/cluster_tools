@@ -36,10 +36,10 @@ class DownscaleMultisetBase(luigi.Task):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     # scale factors and restrict set
-    scale_factor = luigi.Parameter()
-    effective_scale_factor = luigi.Parameter()
+    scale_factor = luigi.ListParameter()
+    effective_scale_factor = luigi.ListParameter()
     scale_prefix = luigi.Parameter()
-    restrict_set = luigi.Parameter()
+    restrict_set = luigi.IntParameter()
     # dependency
     dependency = luigi.TaskParameter()
 
@@ -186,9 +186,8 @@ def _downscale_multiset_block(blocking, block_id, ds_in, ds_out,
     fu.log_block_success(block_id)
 
 
-def write_metadata(ds_out, max_id, restrict_set, scale_factor):
+def write_metadata(ds_out, restrict_set, scale_factor):
     attrs = ds_out.attrs
-    attrs['maxId'] = max_id
     attrs['isLabelMultiset'] = True
     attrs['maxNumEntries'] = restrict_set
     # we reverse the scale factor, because java axis conventions are XYZ and we have ZYX
@@ -239,8 +238,7 @@ def downscale_multiset(job_id, config_path):
                                       effective_pixel_size)
 
         if job_id == 0:
-            max_id = ds_in.attrs['maxId']
-            write_metadata(ds_out, max_id, restrict_set, scale_factor)
+            write_metadata(ds_out, restrict_set, effective_scale_factor)
 
     # log success
     fu.log_job_success(job_id)
