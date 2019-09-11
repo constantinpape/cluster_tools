@@ -10,6 +10,7 @@ import nifty.distributed as ndist
 import cluster_tools.utils.function_utils as fu
 import cluster_tools.utils.volume_utils as vu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
+from cluster_tools.utils.task_utils import DummyTask
 
 
 #
@@ -38,8 +39,7 @@ class SparseLiftedNeighborhoodBase(luigi.Task):
     # "same": add lifted edges only between nodes with the same label
     # "different": add lifted edges only between nodes with different labels
     mode = luigi.Parameter(default='all')
-    #
-    dependency = luigi.TaskParameter()
+    dependency = luigi.TaskParameter(default=DummyTask())
 
     modes = ('all', 'same', 'different')
 
@@ -129,10 +129,11 @@ def sparse_lifted_neighborhood(job_id, config_path):
     fu.log("have ignore label: %i" % node_ignore_label)
 
     fu.log("start lifted neighborhood extraction for depth %i" % graph_depth)
-    ndist.computeLiftedNeighborhoodFromNodeLabels(os.path.join(graph_path, graph_key),
-                                                  os.path.join(node_label_path, node_label_key),
-                                                  os.path.join(output_path, output_key),
-                                                  graph_depth, n_threads, mode, node_ignore_label)
+    ndist.computeLiftedNeighborhoodFromNodeLabels(graph_path, graph_key,
+                                                  node_label_path, node_label_key,
+                                                  output_path, output_key,
+                                                  graph_depth, n_threads,
+                                                  mode, node_ignore_label)
     with vu.file_reader(output_path, 'r') as f:
         n_lifted = f[output_key].shape[0]
     fu.log("extracted %i lifted edges" % n_lifted)

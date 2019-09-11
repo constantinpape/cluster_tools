@@ -24,15 +24,12 @@ class TestNHWorkflow(BaseTest):
         super().setUp()
         self.compute_graph()
 
-    def compute_nh(self, graph_depth):
+    def compute_nh(self, graph_depth, label_path, label_key):
         # load the graph
-        graph_path = os.path.join(self.input_path, self.graph_key)
-        graph = ndist.loadAsUndirectedGraph(graph_path)
+        graph = ndist.loadAsUndirectedGraph(self.output_path, self.graph_key)
 
         # load the node labels
-        node_label_path = os.path.join(self.tmp_folder, 'node_labels.n5')
-        node_label_key = 'node_labels'
-        node_labels = z5py.File(node_label_path)[node_label_key][:]
+        node_labels = z5py.File(label_path)[label_key][:]
         self.assertEqual(len(node_labels), graph.numberOfNodes)
 
         # run bfs up to depth 4 to get complete lifted nh
@@ -50,9 +47,9 @@ class TestNHWorkflow(BaseTest):
         nh = nh[np.lexsort(np.rot90(nh))]
         return nh
 
-    def _check_result(self, graph_depth):
+    def check_result(self, graph_depth, label_path, label_key):
         # compute nh in memory
-        nh = self.compute_nh(graph_depth)
+        nh = self.compute_nh(graph_depth, label_path, label_key)
         # load the nh
         out_key = 'lifted_nh'
         nh_out = z5py.File(self.output_path)[out_key][:]
@@ -75,10 +72,10 @@ class TestNHWorkflow(BaseTest):
         self.assertTrue(ret)
 
         base_name = "SparseLiftedNeighborhood"
-        name = base_name + self.gt_target_name()
+        name = base_name + self.get_target_name()
         task = getattr(nh_tasks, name)
 
-        # TODO try different graph depth and different number of threads !
+        # try different graph depth and different number of threads !
         graph_depth = 3
         out_key = 'lifted_nh'
         t = task(tmp_folder=self.tmp_folder, config_dir=self.config_folder, max_jobs=1,
@@ -88,13 +85,12 @@ class TestNHWorkflow(BaseTest):
                  prefix='', nh_graph_depth=graph_depth)
         ret = luigi.build([t], local_scheduler=True)
         self.assertTrue(ret)
-        self._check_result(graph_depth)
+        self.check_result(graph_depth, self.output_path, self.node_label_key)
 
     def test_lifted_nh(self):
         import cluster_tools.lifted_features.sparse_lifted_neighborhood as nh_tasks
 
-        graph = ndist.loadAsUndirectedGraph(os.path.join(self.output_path,
-                                                         self.graph_key))
+        graph = ndist.loadAsUndirectedGraph(self.output_path, self.graph_key)
         n_nodes = graph.numberOfNodes
         node_labels = np.ones(n_nodes, dtype='uint64')
 
@@ -107,10 +103,10 @@ class TestNHWorkflow(BaseTest):
             ds[:] = node_labels
 
         base_name = "SparseLiftedNeighborhood"
-        name = base_name + self.gt_target_name()
+        name = base_name + self.get_target_name()
         task = getattr(nh_tasks, name)
 
-        # TODO try different graph depth and different number of threads !
+        # try different graph depth and different number of threads !
         graph_depth = 3
         out_key = 'lifted_nh'
         t = task(tmp_folder=self.tmp_folder, config_dir=self.config_folder, max_jobs=1,
@@ -120,7 +116,7 @@ class TestNHWorkflow(BaseTest):
                  prefix='', nh_graph_depth=graph_depth)
         ret = luigi.build([t], local_scheduler=True)
         self.assertTrue(ret)
-        self._check_result(graph_depth)
+        self.check_result(graph_depth, node_label_path, node_label_key)
 
 
 if __name__ == '__main__':

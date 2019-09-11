@@ -19,7 +19,7 @@ class TestLiftedFeatureWorkflow(BaseTest):
         super().setUp()
         self.compute_graph()
 
-    def _check_result(self):
+    def check_result(self):
         with z5py.File(self.output_path) as f:
             uv_ids = f['lifted_nh'][:]
             costs = f['lifted_feats'][:]
@@ -46,7 +46,7 @@ class TestLiftedFeatureWorkflow(BaseTest):
                                 max_jobs=self.max_jobs)],
                           local_scheduler=True)
         self.assertTrue(ret)
-        self._check_result()
+        self.check_result()
 
 
 if __name__ == '__main__':
