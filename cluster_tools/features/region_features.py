@@ -20,9 +20,8 @@ import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
-# TODO support multi-channel inputs
-# TODO for now we only support 'mean', but we should at
-# least support all trivially mergeable region features
+# TODO for now we only support 'mean', but we should support trivially mergeable features:
+# - min, max, ???
 class RegionFeaturesBase(luigi.Task):
     """ Block edge feature base class
     """
@@ -41,7 +40,7 @@ class RegionFeaturesBase(luigi.Task):
     def requires(self):
         return self.dependency
 
-    # TODO specify which features to use here
+    # specify features once we support more than mean here
     @staticmethod
     def default_task_config():
         # we use this to get also get the common default config

@@ -21,8 +21,9 @@ class TestRegionFeatures(BaseTest):
     seg_key = 'volumes/segmentation/watershed'
     output_key = 'features'
 
-    def _check_features(self, data, labels, res, ids=None, feat_name='mean'):
-        expected = vigra.analysis.extractRegionFeatures(data, labels, features=[feat_name])
+    def check_features(self, data, labels, res, ids=None, feat_name='mean'):
+        expected = vigra.analysis.extractRegionFeatures(data, labels, features=[feat_name],
+                                                        ignoreLabel=0)
         expected = expected[feat_name]
 
         if ids is not None:
@@ -31,7 +32,7 @@ class TestRegionFeatures(BaseTest):
         self.assertEqual(res.shape, expected.shape)
         self.assertTrue(np.allclose(res, expected))
 
-    def _check_result(self):
+    def check_result(self):
         # load the result
         with z5py.File(self.output_path) as f:
             res = f[self.output_key][:]
@@ -39,18 +40,18 @@ class TestRegionFeatures(BaseTest):
         with z5py.File(self.input_path) as f:
             inp = f[self.input_key]
             inp.n_threads = self.max_jobs
-            inp = normalize(inp[:])
+            inp = normalize(inp[:], 0, 255)
 
             seg = f[self.seg_key]
             seg.max_jobs = self.max_jobs
             seg = seg[:].astype('uint32')
-        self._check_features(inp, seg, res)
+        self.check_features(inp, seg, res)
 
-    def _check_subresults(self):
+    def check_subresults(self):
         with z5py.File(self.input_path) as f:
             data = f[self.input_key]
             data.n_threads = self.max_jobs
-            data = normalize(data[:])
+            data = normalize(data[:], 0, 255)
 
             segmentation = f[self.seg_key]
             segmentation.max_jobs = self.max_jobs
@@ -62,7 +63,6 @@ class TestRegionFeatures(BaseTest):
 
         n_blocks = blocking.numberOfBlocks
         for block_id in range(n_blocks):
-            # print("Checking block", block_id, "/", n_blocks)
             block = blocking.getBlock(block_id)
             bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
             inp = data[bb]
@@ -71,7 +71,9 @@ class TestRegionFeatures(BaseTest):
             # load the sub-result
             chunk_id = tuple(beg // bs for beg, bs in zip(block.begin, self.block_shape))
             res = ds_feat.read_chunk(chunk_id)
-            self.assertFalse(res is None)
+            if res is None:
+                self.assertEqual(seg.sum(), 0)
+                continue
 
             # check that ids are correct
             ids = res[::3].astype('uint32')
@@ -81,12 +83,12 @@ class TestRegionFeatures(BaseTest):
 
             # check that mean is correct
             mean = res[2::3]
-            self._check_features(inp, seg, mean, ids)
+            self.check_features(inp, seg, mean, ids)
 
             # check that counts are correct
             counts = res[1::3]
-            self._check_features(inp, seg, counts, ids,
-                                 feat_name='count')
+            self.check_features(inp, seg, counts, ids,
+                                feat_name='count')
 
     def test_region_features(self):
         from cluster_tools.features import RegionFeaturesWorkflow
@@ -102,8 +104,8 @@ class TestRegionFeatures(BaseTest):
                                                   max_jobs=self.max_jobs)],
                           local_scheduler=True)
         self.assertTrue(ret)
-        self._check_subresults()
-        self._check_result()
+        self.check_subresults()
+        self.check_result()
 
 
 if __name__ == '__main__':

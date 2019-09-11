@@ -126,6 +126,7 @@ def _extract_and_merge_region_features(blocking, ds_in, ds, node_begin, node_end
         out_features[overlapping_ids] = out_feats
         out_counts[overlapping_ids] += overlapping_counts
 
+    out_features[np.isnan(out_features)] = 0.
     ds[node_begin:node_end] = out_features
 
 
