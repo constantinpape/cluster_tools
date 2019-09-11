@@ -2,7 +2,6 @@
 
 import os
 import sys
-import argparse
 import json
 
 import numpy as np
@@ -15,14 +14,12 @@ import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
-# TODO implement retry (can we simply drop the consecutive requirement ???)
 class MergeEdgeFeaturesBase(luigi.Task):
     """ Merge edge feature base class
     """
 
     task_name = 'merge_edge_features'
     src_file = os.path.abspath(__file__)
-    # retry is too complecated for now ...
     allow_retry = False
 
     # input and output volumes
@@ -64,8 +61,7 @@ class MergeEdgeFeaturesBase(luigi.Task):
         # if we don't have a roi, we only serialize the number of blocks
         # otherwise we serialize the blocks in roi
         if roi_begin is None:
-            block_ids = nt.blocking([0, 0, 0], list(shape),
-                                     list(block_shape)).numberOfBlocks
+            block_ids = nt.blocking([0, 0, 0], shape, block_shape).numberOfBlocks
         else:
             block_ids = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
 
@@ -76,18 +72,15 @@ class MergeEdgeFeaturesBase(luigi.Task):
         n_features = self._read_num_features(range(block_ids) if isinstance(block_ids, int)
                                              else block_ids)
 
-        # TODO use float32 features to save some memory
         # require the output dataset
         with vu.file_reader(self.output_path) as f:
             f.require_dataset(self.output_key, dtype='float64', shape=(n_edges, n_features),
                               chunks=(chunk_size, 1), compression='gzip')
 
         # update the task config
-        # TODO make scale we extract features at accessible
-        feat_block_prefix = os.path.join(self.output_path, 'blocks', 'block_')
-        config.update({'graph_block_prefix': os.path.join(self.graph_path, 's0',
-                                                          'sub_graphs', 'block_'),
-                       'feature_block_prefix': feat_block_prefix,
+        config.update({'graph_path': self.graph_path,
+                       'block_prefix': os.path.join('s0', 'sub_graphs', 'block_'),
+                       'in_path': self.output_path, 'in_prefix': 'blocks/block_',
                        'output_path': self.output_path, 'output_key': self.output_key,
                        'edge_chunk_size': chunk_size, 'block_ids': block_ids,
                        'n_edges': n_edges})
@@ -135,8 +128,10 @@ def merge_edge_features(job_id, config_path):
     # get the config
     with open(config_path, 'r') as f:
         config = json.load(f)
-    graph_block_prefix = config['graph_block_prefix']
-    feature_block_prefix = config['feature_block_prefix']
+    graph_path = config['graph_path']
+    block_prefix = config['block_prefix']
+    in_path = config['in_path']
+    in_prefix = config['in_prefix']
     output_path = config['output_path']
     output_key = config['output_key']
     n_threads = config['threads_per_job']
@@ -156,9 +151,9 @@ def merge_edge_features(job_id, config_path):
     # the block list might either be the number of blocks or a list of blocks
     block_ids = list(range(block_ids)) if isinstance(block_ids, int) else block_ids
 
-    ndist.mergeFeatureBlocks(graph_block_prefix,
-                             feature_block_prefix,
-                             os.path.join(output_path, output_key),
+    ndist.mergeFeatureBlocks(graph_path, block_prefix,
+                             in_path, in_prefix,
+                             output_path, output_key,
                              blockIds=block_ids,
                              edgeIdBegin=edge_begin,
                              edgeIdEnd=edge_end,

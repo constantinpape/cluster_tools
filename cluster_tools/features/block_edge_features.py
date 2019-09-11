@@ -64,8 +64,7 @@ class BlockEdgeFeaturesBase(luigi.Task):
         config.update({'input_path': self.input_path, 'input_key': self.input_key,
                        'labels_path': self.labels_path, 'labels_key': self.labels_key,
                        'output_path': self.output_path, 'block_shape': block_shape,
-                       'graph_block_prefix': os.path.join(self.graph_path, 's0',
-                                                          'sub_graphs', 'block_')})
+                       'graph_path': self.graph_path, 'block_prefix': os.path.join('s0', 'sub_graphs', 'block_')})
 
         if self.n_retries == 0:
             # get shape and make block config
@@ -113,32 +112,37 @@ class BlockEdgeFeaturesLSF(BlockEdgeFeaturesBase, LSFTask):
 def _accumulate(input_path, input_key,
                 labels_path, labels_key,
                 output_path, block_list,
-                graph_block_prefix, offsets):
+                graph_path, block_prefix,
+                offsets):
 
     fu.log("accumulate features without applying filters")
     with vu.file_reader(input_path, 'r') as f:
         dtype = f[input_key].dtype
         input_dim = f[input_key].ndim
-    out_prefix = os.path.join(output_path, 'blocks')
+
+    out_prefix = os.path.join('blocks', 'block_')
     if offsets is None:
         assert input_dim == 3, str(input_dim)
         fu.log('accumulate boundary map for type %s' % str(dtype))
         boundary_function = ndist.extractBlockFeaturesFromBoundaryMaps_uint8 if dtype == 'uint8' else \
             ndist.extractBlockFeaturesFromBoundaryMaps_float32
-        boundary_function(graph_block_prefix,
+        boundary_function(graph_path, block_prefix,
                           input_path, input_key,
                           labels_path, labels_key,
-                          block_list, out_prefix,
+                          block_list,
+                          output_path, out_prefix,
                           increaseRoi=True)
     else:
         assert input_dim == 4, str(input_dim)
         fu.log('accumulate affinity map for type %s' % str(dtype))
         affinity_function = ndist.extractBlockFeaturesFromAffinityMaps_uint8 if dtype == 'uint8' else \
             ndist.extractBlockFeaturesFromAffinityMaps_float32
-        affinity_function(graph_block_prefix,
+        affinity_function(graph_path, block_prefix,
                           input_path, input_key,
                           labels_path, labels_key,
-                          block_list, out_prefix, offsets)
+                          block_list,
+                          output_path, out_prefix,
+                          offsets)
 
 
 def _accumulate_filter(input_, graph, labels, bb_local,
@@ -164,13 +168,14 @@ def _accumulate_filter(input_, graph, labels, bb_local,
 
 def _accumulate_block(block_id, blocking,
                       ds_in, ds_labels,
-                      out_prefix, graph_block_prefix,
+                      f_out, out_prefix,
+                      graph_path, block_prefix,
                       filters, sigmas, halo, ignore_label,
                       apply_in_2d, channel_agglomeration):
 
     fu.log("start processing block %i" % block_id)
     # load graph and check if this block has edges
-    graph = ndist.Graph(graph_block_prefix + str(block_id))
+    graph = ndist.Graph(graph_path, block_prefix + str(block_id))
     if graph.numberOfEdges == 0:
         fu.log("block %i has no edges" % block_id)
         fu.log_block_success(block_id)
@@ -222,20 +227,16 @@ def _accumulate_block(block_id, blocking,
     edge_features = np.concatenate(edge_features, axis=1)
 
     # save the features
-    save_path = out_prefix + str(block_id)
-    fu.log("saving feature result of shape %s to %s" % (str(edge_features.shape),
-                                                        save_path))
-    save_root, save_key = os.path.split(save_path)
-    with z5py.N5File(save_root) as f:
-        f.create_dataset(save_key, data=edge_features,
-                         chunks=edge_features.shape)
+    fu.log("saving feature result of shape %s" % str(edge_features.shape))
+    f_out.create_dataset(out_prefix + str(block_id),
+                         data=edge_features, chunks=edge_features.shape)
 
     fu.log_block_success(block_id)
 
 
 def _accumulate_with_filters(input_path, input_key,
                              labels_path, labels_key,
-                             output_path, graph_block_prefix,
+                             output_path, graph_path, block_prefix,
                              block_list, block_shape,
                              filters, sigmas, halo,
                              apply_in_2d, channel_agglomeration):
@@ -254,16 +255,22 @@ def _accumulate_with_filters(input_path, input_key,
                            list(block_shape))
 
     # determine if we have an ignore label
-    with z5py.File(graph_block_prefix + str(block_list[0])) as f:
-        ignore_label = f.attrs['ignoreLabel']
+    with z5py.File(graph_path, 'r') as f:
+        g = f[block_prefix + str(block_list[0])]
+        ignore_label = g.attrs['ignoreLabel']
 
-    with vu.file_reader(input_path) as f, vu.file_reader(labels_path) as f_l:
+    with vu.file_reader(input_path, 'r') as f,\
+            vu.file_reader(labels_path, 'r') as fl,\
+            vu.file_reader(output_path) as fo:
+
         ds_in = f[input_key]
-        ds_labels = f_l[labels_key]
+        ds_labels = fl[labels_key]
+
         for block_id in block_list:
             _accumulate_block(block_id, blocking,
                               ds_in, ds_labels,
-                              out_prefix, graph_block_prefix,
+                              fo, out_prefix,
+                              graph_path, block_prefix,
                               filters, sigmas, halo, ignore_label,
                               apply_in_2d, channel_agglomeration)
 
@@ -284,7 +291,8 @@ def block_edge_features(job_id, config_path):
     labels_key = config['labels_key']
     output_path = config['output_path']
     block_shape = config['block_shape']
-    graph_block_prefix = config['graph_block_prefix']
+    graph_path = config['graph_path']
+    block_prefix = config['block_prefix']
 
     # offsets for accumulation of affinity maps
     offsets = config.get('offsets', None)
@@ -299,13 +307,14 @@ def block_edge_features(job_id, config_path):
         _accumulate(input_path, input_key,
                     labels_path, labels_key,
                     output_path, block_list,
-                    graph_block_prefix, offsets)
+                    graph_path, block_prefix, offsets)
     else:
         assert offsets is None, "Filters and offsets are not supported"
         assert sigmas is not None, "Need sigma values"
         _accumulate_with_filters(input_path, input_key,
                                  labels_path, labels_key,
-                                 output_path, graph_block_prefix,
+                                 output_path,
+                                 graph_path, block_prefix,
                                  block_list, block_shape,
                                  filters, sigmas, halo,
                                  apply_in_2d, channel_agglomeration)
