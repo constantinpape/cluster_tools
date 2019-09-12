@@ -5,7 +5,7 @@ import unittest
 
 import numpy as np
 from skimage.morphology import label
-from sklearn.metrics import adjusted_rand_score
+from elf.evaluation import rand_index
 
 import luigi
 import z5py
@@ -37,13 +37,9 @@ class TestThresholdedComponents(BaseTest):
             expected = label(inp == threshold)
         self.assertEqual(res.shape, expected.shape)
 
-        # from cremi_tools.viewer.volumina import view
-        # print("view for mode:", mode)
-        # view([inp, res, expected], ['input', 'result', 'expected'])
-
         if check_for_equality:
-            score = adjusted_rand_score(expected.ravel(), res.ravel())
-            self.assertAlmostEqual(score, 1., places=4)
+            score = rand_index(res, expected)[0]
+            self.assertAlmostEqual(score, 0., places=4)
 
     def _test_mode(self, mode, threshold=.5):
         from cluster_tools.thresholded_components import ThresholdedComponentsWorkflow
@@ -69,8 +65,8 @@ class TestThresholdedComponents(BaseTest):
     def test_equal(self):
         self._test_mode('equal', threshold=0)
 
-    @unittest.skip
-    def _test_first_stage(self):
+    @unittest.skip("debugging test")
+    def test_first_stage(self):
         from cluster_tools.thresholded_components.block_components import BlockComponentsLocal
         from cluster_tools.utils.task_utils import DummyTask
         task = BlockComponentsLocal(tmp_folder=self.tmp_folder,
@@ -86,8 +82,8 @@ class TestThresholdedComponents(BaseTest):
         self.assertTrue(ret)
         self._check_result('greater', check_for_equality=False)
 
-    @unittest.skip
-    def _test_second_stage(self):
+    @unittest.skip("debugging test")
+    def test_second_stage(self):
         from cluster_tools.thresholded_components.block_components import BlockComponentsLocal
         from cluster_tools.thresholded_components.merge_offsets import MergeOffsetsLocal
         from cluster_tools.utils.task_utils import DummyTask
@@ -131,9 +127,6 @@ class TestThresholdedComponents(BaseTest):
                        for beg, end in zip(block.begin, block.end))
             segb = seg[bb]
             n_labels = len(np.unique(segb))
-
-            # print("Checking block:", block_id)
-            # print("n-labels:", n_labels)
 
             # number of labels from offsets
             if block_id < blocking.numberOfBlocks - 1:
