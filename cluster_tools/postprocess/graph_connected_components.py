@@ -115,7 +115,7 @@ def graph_connected_components(job_id, config_path):
         assignments = ds_ass[:]
         chunks = ds_ass.chunks
 
-    graph = ndist.Graph(os.path.join(problem_path, graph_key), n_threads)
+    graph = ndist.Graph(problem_path, graph_key, n_threads)
     if paintera_hack:
         paintera_ignore_id = 18446744073709551615
         fu.log("Paintera hack activated, ignoring graph node %i" % paintera_ignore_id)

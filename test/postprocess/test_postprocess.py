@@ -59,7 +59,7 @@ class TestPostprocess(BaseTest):
 
         # check the graph again
         g = self.compute_nifty_graph()
-        g1 = ndist.Graph(os.path.join(self.output_path, self.graph_key))
+        g1 = ndist.Graph(self.output_path, self.graph_key)
         self.assertEqual(g.numberOfNodes, g1.numberOfNodes)
         self.assertEqual(g.numberOfEdges, g1.numberOfEdges)
         self.assertTrue(np.allclose(g.uvIds(), g1.uvIds()))
@@ -110,11 +110,12 @@ class TestPostprocess(BaseTest):
 
         graph_path = os.path.join(self.tmp_folder, 'graph.n5')
         with z5py.File(graph_path) as f:
-            f.attrs['numberOfEdges'] = len(uv_ids)
-            f.create_dataset('edges', data=uv_ids, chunks=(int(1e5), 2),
+            g = f.create_group('graph')
+            g.attrs['numberOfEdges'] = len(uv_ids)
+            g.create_dataset('edges', data=uv_ids, chunks=(int(1e5), 2),
                              compression='raw')
 
-        g = ndist.Graph(graph_path)
+        g = ndist.Graph(graph_path, 'graph')
         self.assertEqual(g.numberOfNodes, uv_ids.max() + 1)
         self.assertEqual(g.numberOfEdges, len(uv_ids))
 
