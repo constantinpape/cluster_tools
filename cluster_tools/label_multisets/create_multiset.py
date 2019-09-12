@@ -111,7 +111,12 @@ def _create_multiset_block(blocking, block_id, ds_in, ds_out):
 
     labels = ds_in[bb]
 
-    # # TODO I don't know if paintera supports this
+    # we can't encode the paintra ignore label
+    paintera_ignore_label = 18446744073709551615
+    pignore_mask = labels == paintera_ignore_label
+    if pignore_mask.sum() > 0:
+        labels[pignore_mask] = 0
+
     if labels.sum() == 0:
         fu.log("block %i is empty" % block_id)
         fu.log_block_success(block_id)
