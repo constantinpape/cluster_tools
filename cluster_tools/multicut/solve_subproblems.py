@@ -125,16 +125,16 @@ class SolveSubproblemsLSF(SolveSubproblemsBase, LSFTask):
 #
 
 
-def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
+def _solve_block_problem(block_id, graph, uv_ids,
+                         problem_path, block_prefix,
                          costs, solver, ignore_label,
                          blocking, out, time_limit):
     fu.log("Start processing block %i" % block_id)
 
     # load the nodes in this sub-block and map them
     # to our current node-labeling
-    block_path = block_prefix + str(block_id)
-    assert os.path.exists(block_path), block_path
-    nodes = ndist.loadNodes(block_path)
+    block_key = block_prefix + str(block_id)
+    nodes = ndist.loadNodes(problem_path, block_key)
     # if we have an ignore label, remove zero from the nodes
     # (nodes are sorted, so it will always be at pos 0)
     if ignore_label and nodes[0] == 0:
@@ -244,8 +244,7 @@ def solve_subproblems(job_id, config_path):
     # load the graph
     graph_key = 's%i/graph' % scale
     fu.log("reading graph from path in problem: %s" % graph_key)
-    graph = ndist.Graph(os.path.join(problem_path, graph_key),
-                        numberOfThreads=n_threads)
+    graph = ndist.Graph(problem_path, graph_key, numberOfThreads=n_threads)
     uv_ids = graph.uvIds()
     # check if the problem has an ignore-label
     ignore_label = problem[graph_key].attrs['ignoreLabel']
@@ -259,13 +258,13 @@ def solve_subproblems(job_id, config_path):
 
     # TODO this should be a n5 varlen dataset as well and
     # then this is just another dataset in problem path
-    block_prefix = os.path.join(problem_path, 's%i' % scale,
-                                'sub_graphs', 'block_')
+    block_prefix = os.path.join('s%i' % scale, 'sub_graphs', 'block_')
     blocking = nt.blocking([0, 0, 0], shape, list(block_shape))
 
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(_solve_block_problem,
-                           block_id, graph, uv_ids, block_prefix,
+                           block_id, graph, uv_ids,
+                           problem_path, block_prefix,
                            costs, solver, ignore_label,
                            blocking, out, time_limit)
                  for block_id in block_list]
