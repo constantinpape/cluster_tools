@@ -238,8 +238,8 @@ def _serialize_new_problem(problem_path,
     sub_graph_identifier = 'sub_graphs' if scale == 0 else 'sub_graphs_lmc'
     g_out.require_group(sub_graph_identifier)
 
-    block_in_prefix = os.path.join(problem_path, 's%i' % scale, sub_graph_identifier, 'block_')
-    block_out_prefix = os.path.join(problem_path, 's%i' % next_scale, 'sub_graphs_lmc', 'block_')
+    block_in_prefix = os.path.join('s%i' % scale, sub_graph_identifier, 'block_')
+    block_out_prefix = os.path.join('s%i' % next_scale, 'sub_graphs_lmc', 'block_')
 
     factor = 2**scale
     block_shape = [factor * bs for bs in initial_block_shape]
@@ -253,13 +253,15 @@ def _serialize_new_problem(problem_path,
 
     # serialize the new sub-graphs
     block_ids = vu.blocks_in_volume(shape, new_block_shape, roi_begin, roi_end)
-    ndist.serializeMergedGraph(graphBlockPrefix=block_in_prefix,
+    ndist.serializeMergedGraph(graphPath=problem_path,
+                               graphBlockPrefix=block_in_prefix,
                                shape=shape,
                                blockShape=block_shape,
                                newBlockShape=new_block_shape,
                                newBlockIds=block_ids,
                                nodeLabeling=node_labeling,
                                edgeLabeling=edge_labeling,
+                               outPath=problem_path,
                                graphOutPrefix=block_out_prefix,
                                numberOfThreads=n_threads,
                                serializeEdges=False)

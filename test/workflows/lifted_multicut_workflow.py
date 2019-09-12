@@ -17,7 +17,7 @@ class TestLiftedMulticutWorkflow(BaseTest):
     input_key = 'volumes/boundaries'
     ws_key = 'volumes/segmentation/watershed'
 
-    def _check_result(self):
+    def check_result(self):
         with z5py.File(self.output_path) as f:
             node_labels = f['node_labels'][:]
             mc = f['volumes/lifted_multicut'][:]
@@ -31,7 +31,6 @@ class TestLiftedMulticutWorkflow(BaseTest):
 
     def test_workflow(self):
         task = LiftedMulticutSegmentationWorkflow
-        max_jobs = 8
         t = task(input_path=self.input_path, input_key=self.input_key,
                  ws_path=self.input_path, ws_key=self.ws_key,
                  problem_path=self.output_path, node_labels_key='node_labels',
@@ -40,11 +39,11 @@ class TestLiftedMulticutWorkflow(BaseTest):
                  lifted_labels_key='volumes/segmentation/groundtruth',
                  lifted_prefix='test', n_scales=1, skip_ws=True,
                  config_dir=self.config_folder, tmp_folder=self.tmp_folder,
-                 target=self.target, max_jobs=max_jobs)
+                 target=self.target, max_jobs=self.max_jobs)
 
         ret = luigi.build([t], local_scheduler=True)
         self.assertTrue(ret)
-        self._check_result()
+        self.check_result()
 
 
 if __name__ == '__main__':

@@ -140,7 +140,8 @@ def _find_lifted_edges(lifted_uv_ids, node_list):
     return inner_indices[inner_vs]
 
 
-def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
+def _solve_block_problem(block_id, graph, uv_ids,
+                         problem_path, block_prefix,
                          costs, lifted_uvs, lifted_costs,
                          lifted_solver, solver,
                          ignore_label, blocking, out, time_limit):
@@ -148,9 +149,8 @@ def _solve_block_problem(block_id, graph, uv_ids, block_prefix,
 
     # load the nodes in this sub-block and map them
     # to our current node-labeling
-    block_path = block_prefix + str(block_id)
-    assert os.path.exists(block_path), block_path
-    nodes = ndist.loadNodes(block_path)
+    block_key = block_prefix + str(block_id)
+    nodes = ndist.loadNodes(problem_path, block_key)
     # if we have an ignore label, remove zero from the nodes
     # (nodes are sorted, so it will always be at pos 0)
     if ignore_label and nodes[0] == 0:
@@ -287,8 +287,7 @@ def solve_lifted_subproblems(job_id, config_path):
     # hence the identifier is identical
     graph_key = 's%i/graph_lmc' % scale if scale > 0 else 's0/graph'
     fu.log("reading graph from path in problem: %s" % graph_key)
-    graph = ndist.Graph(os.path.join(problem_path, graph_key),
-                        numberOfThreads=n_threads)
+    graph = ndist.Graph(problem_path, graph_key, numberOfThreads=n_threads)
     uv_ids = graph.uvIds()
     # check if the problem has an ignore-label
     ignore_label = problem[graph_key].attrs['ignoreLabel']
@@ -320,14 +319,14 @@ def solve_lifted_subproblems(job_id, config_path):
     # However, for scale level 0 the sub-graphs come from the GraphWorkflow and
     # are hence identical
     sub_graph_identifier = 'sub_graphs' if scale == 0 else 'sub_graphs_lmc'
-    block_prefix = os.path.join(problem_path, 's%i' % scale,
-                                sub_graph_identifier, 'block_')
+    block_prefix = os.path.join('s%i' % scale, sub_graph_identifier, 'block_')
     blocking = nt.blocking([0, 0, 0], shape, list(block_shape))
 
     fu.log("start processsing %i blocks" % len(block_list))
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(_solve_block_problem,
-                           block_id, graph, uv_ids, block_prefix,
+                           block_id, graph, uv_ids,
+                           problem_path, block_prefix,
                            costs, lifted_uvs, lifted_costs,
                            lifted_solver, solver, ignore_label,
                            blocking, out, time_limit)
