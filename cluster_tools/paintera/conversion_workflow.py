@@ -87,7 +87,6 @@ class WritePainteraMetadata(luigi.Task):
 
             # add metadata for the raw data
             raw_group = f[self.raw_key]
-            raw_group.attrs['painteraData'] = {'type': 'raw'}
             raw_group.attrs['resolution'] = raw_resolution[::-1]
 
         self._write_log('write metadata successfull')
