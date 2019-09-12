@@ -16,7 +16,7 @@ except ValueError:
 
 try:
     from .failing_task import FailingTaskLocal
-except ValueError:
+except ImportError:
     from failing_task import FailingTaskLocal
 
 
@@ -29,7 +29,7 @@ class TestRetry(BaseTest):
         conf_path = os.path.join(self.config_folder, 'global.config')
         with open(conf_path) as f:
             global_config = json.load(f)
-        global_config['max_num_retries'] = 1
+        global_config['max_num_retries'] = 2
         with open(conf_path, 'w') as f:
             json.dump(global_config, f)
 
