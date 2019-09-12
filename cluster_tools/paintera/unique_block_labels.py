@@ -132,9 +132,9 @@ def _uniques(ds, ds_out, blocking, block_list, is_multiset):
         labels = ds.read_chunk(chunk_id)
         if labels is None:
             # TODO can we skip blocks with only 0 as label in paintera format ??
-            # fu.log_block_success(block_id)
-            # return
-            uniques = np.zeros(1, dtype='uint64')
+            fu.log_block_success(block_id)
+            return
+            # uniques = np.zeros(1, dtype='uint64')
         else:
             if is_multiset:
                 labels = deserialize_multiset(labels, block.shape).ids
