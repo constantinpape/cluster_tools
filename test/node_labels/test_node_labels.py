@@ -1,4 +1,3 @@
-import os
 import sys
 import unittest
 
@@ -111,7 +110,7 @@ class TestNodeLabels(BaseTest):
         ret = luigi.build([task], local_scheduler=True)
         self.assertTrue(ret)
 
-        tmp_path = os.path.join(self.output_path, 'label_overlaps_')
+        tmp_key = 'label_overlaps_'
         ws, inp = self.load_data()
 
         blocking = nt.blocking([0, 0, 0], ws.shape, self.block_shape)
@@ -122,7 +121,7 @@ class TestNodeLabels(BaseTest):
 
             wsb, inpb = ws[bb], inp[bb]
 
-            overlaps, _ = ndist.deserializeOverlapChunk(tmp_path, chunk_id)
+            overlaps, _ = ndist.deserializeOverlapChunk(self.output_path, tmp_key, chunk_id)
             overlaps_exp = self.compute_overlaps(wsb, inpb, False)
 
             ids = np.unique(wsb)
@@ -142,9 +141,7 @@ class TestNodeLabels(BaseTest):
         self.assertTrue(ret)
 
         # load the result
-        overlaps = ndist.deserializeOverlapChunk(os.path.join(self.output_path,
-                                                              self.output_key),
-                                                 (0,))[0]
+        overlaps = ndist.deserializeOverlapChunk(self.output_path, self.output_key, (0,))[0]
 
         # compute the expected overlaps
         ws, inp = self.load_data()
