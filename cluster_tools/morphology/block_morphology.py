@@ -131,7 +131,7 @@ def _morphology_for_block(block_id, blocking, ds_in,
     # - minimum coordinates of segments
     # - maximum coordinates of segments
     ndist.computeAndSerializeMorphology(seg, block.begin,
-                                        os.path.join(output_path, output_key),
+                                        output_path, output_key,
                                         chunk_id)
     fu.log_block_success(block_id)
 

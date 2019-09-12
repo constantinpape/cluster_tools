@@ -127,8 +127,8 @@ def merge_morphology(job_id, config_path):
         block = blocking.getBlock(block_id)
         label_begin = block.begin[0]
         label_end = block.end[0]
-        ndist.mergeAndSerializeMorphology(os.path.join(input_path, input_key),
-                                          os.path.join(output_path, output_key),
+        ndist.mergeAndSerializeMorphology(input_path, input_key,
+                                          output_path, output_key,
                                           labelBegin=label_begin, labelEnd=label_end)
     fu.log_job_success(job_id)
 
