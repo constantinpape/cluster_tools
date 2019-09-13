@@ -84,6 +84,11 @@ class TestLabelMultisets(BaseTest):
         # 3.) check pixel-wise agreement
         self.check_pixels(res, exp)
 
+    def check_empty(self, res, shape):
+        res = deserialize_multiset(res, shape)
+        self.assertEqual(res.n_entries, 1)
+        self.assertTrue(np.array_equal(res.ids, np.array([0], dtype='uint64')))
+
     def test_label_multisets(self):
         from cluster_tools.label_multisets import LabelMultisetWorkflow
         task = LabelMultisetWorkflow
@@ -145,9 +150,13 @@ class TestLabelMultisets(BaseTest):
                 out_exp = ds_exp.read_chunk(chunk_id)
                 print("Checking chunk:", chunk_id)
                 if out is None:
-                    self.assertTrue(out_exp is None)
-                    continue
-                self.check_chunk(out, out_exp, chunk_shape)
+                    # NOTE paintera-conversion currently is writing out empty chunks.
+                    # this might change in the future and then we can just check that `out_exp is None`
+                    # For now, we have to check that the chunk is empty
+                    # self.assertTrue(out_exp is None)
+                    self.check_empty(out_exp, chunk_shape)
+                else:
+                    self.check_chunk(out, out_exp, chunk_shape)
 
 
 if __name__ == '__main__':

@@ -164,7 +164,6 @@ def _downscale_multiset_block(blocking, block_id, ds_in, ds_out,
     blocks_prev = [blocking_prev.getBlock(bid) for bid in block_ids_prev]
 
     multisets = [ds_in.read_chunk(chunk_id) for chunk_id in chunk_ids_prev]
-    # TODO can paintera deal with this ?
     if all(mset is None for mset in multisets):
         fu.log_block_success(block_id)
         return
@@ -225,7 +224,10 @@ def downscale_multiset(job_id, config_path):
     blocking_prev = nt.blocking([0, 0, 0], prev_shape, block_shape)
 
     effective_scale_factor = config['effective_scale_factor']
-    effective_pixel_size = int(np.prod(effective_scale_factor))
+    # we need the effective pixel size of the previous scale level here,
+    # which we get by dividing the current effective pixel size by the product of the
+    # scale factor
+    effective_pixel_size = int(np.prod(effective_scale_factor) / np.prod(scale_factor))
 
     # submit blocks
     with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
