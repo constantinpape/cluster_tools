@@ -4,9 +4,9 @@ import unittest
 import numpy as np
 import luigi
 import z5py
-
-from elf.skeleton import skeletonize
 import elf.skeleton.io as skelio
+from tqdm import tqdm
+from elf.skeleton import skeletonize
 
 try:
     from ..base import BaseTest
@@ -21,7 +21,7 @@ class TestSkeletons(BaseTest):
     resolution = (1, 1, 1)
     size_thresh = 1000
 
-    def ids_and_seg(self, n_ids):
+    def seg_and_ids(self, n_ids):
         with z5py.File(self.input_path) as f:
             ds = f[self.seg_key]
             ds.n_threads = self.max_jobs
@@ -50,15 +50,18 @@ class TestSkeletons(BaseTest):
         self.assertTrue(ret)
 
         # check output for correctness
-        seg, ids = self.ids_and_seg(100)
+        seg, ids = self.seg_and_ids(100)
+
         ds = z5py.File(self.output_path)[self.out_key]
-        for seg_id in ids:
+        for seg_id in tqdm(ids):
             # read the result from file
             coords, edges = skelio.read_n5(ds, seg_id)
+            coords = coords[1:]
 
             # compute the expected result
             mask = seg == seg_id
             coords_exp, edges_exp = skeletonize(mask)
+            coords_exp = coords_exp[1:]
 
             self.assertEqual(coords.shape, coords_exp.shape)
             self.assertTrue(np.allclose(coords, coords_exp))

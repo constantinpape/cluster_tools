@@ -44,13 +44,12 @@ class SkeletonizeBase(luigi.Task):
 
     methods = get_method_names()
 
-    # TODO expose skeletonization parameter
+    # expose skeletonization parameter if we support more parameter
     @staticmethod
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'chunk_len': 1000,
-                       'method_kwargs': {}})
+        config.update({'chunk_len': 1000, 'method_kwargs': {}})
         return config
 
     def requires(self):
@@ -84,7 +83,8 @@ class SkeletonizeBase(luigi.Task):
         # update the config with input and output paths and keys
         config = self.get_task_config()
         config.update({'input_path': self.input_path, 'input_key': self.input_key,
-                       'morphology_path': self.morphology_path, 'morphology_key': self.morphology_key,
+                       'morphology_path': self.morphology_path,
+                       'morphology_key': self.morphology_key,
                        'output_path': self.output_path, 'output_key': self.output_key,
                        'resolution': self.resolution, 'size_threshold': self.size_threshold,
                        'method': self.method})
@@ -136,12 +136,21 @@ def _skeletonize_id_block(blocking, block_id, ds_in, ds_out,
     # we don't compute the skeleton for id 0, which is reserved for the ignore label
     id_begin = 1 if id_begin == 0 else id_begin
 
+    # we increase the bounding box with a small halo, otherwise there
+    # semms to be boundary inconsistencies
+    halo = (2, 2, 2)
+    shape = ds_in.shape
+
     # skeletonize ids in range and serialize skeletons
     for seg_id in range(id_begin, id_end):
         if size_threshold is not None:
             if sizes[seg_id] < size_threshold:
                 continue
-        bb = tuple(slice(mi, ma) for mi, ma in zip(bb_min[seg_id], bb_max[seg_id]))
+        bb = tuple(slice(max(int(mi - ha), 0),
+                         min(int(ma + ha), sh)) for mi, ma, sh, ha in zip(bb_min[seg_id],
+                                                                          bb_max[seg_id],
+                                                                          shape, halo))
+        fu.log("skeletonize id %i from bb %s" % (seg_id, str(bb)))
         obj = ds_in[bb] == seg_id
 
         # try to skeletonize the object, skip if any exception is thrown
@@ -177,7 +186,7 @@ def skeletonize(job_id, config_path):
     # 1    = pixel size
     # 2:5  = center of mass
     # 5:8  = min coordinate
-    # 8:11  = max coordinate
+    # 8:11 = max coordinate
     with vu.file_reader(morphology_path) as f:
         morpho = f[morphology_key][:]
         sizes = morpho[:, 1].astype('uint64')
