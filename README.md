@@ -41,17 +41,18 @@ creating a softlink in the `lib/python3.7/site-packages` folder of the conda env
 
 ## Citation
 
-If you use this software for results in a publication, please cite
+If you use this software in a publication, please cite
 ```
 Pape, Constantin, et al. "Solving large multicut problems for connectomics via domain decomposition." Proceedings of the IEEE International Conference on Computer Vision. 2017.
 ```
 
-For the lifted Multicut workflows, please cite
+For the lifted multicut workflows, please cite
 ```
 Pape, Constantin, et al. "Leveraging Domain Knowledge to improve EM image segmentation with Lifted Multicuts." arXiv preprint. 2019.
 ```
+You can find code for the experiments in `publications/lifted_domain_knowledge`.
 
-If you are using another algorithom not part of these two publications, please also cite the approproiate publication ([see the links here](https://github.com/constantinpape/cluster_tools#workflows)).
+If you are using another algorithom not part of these two publications, please also cite the appropriate publication ([see the links here](https://github.com/constantinpape/cluster_tools#workflows)).
 
 
 ## Getting Started
