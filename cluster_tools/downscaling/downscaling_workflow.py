@@ -310,7 +310,7 @@ class DownscalingWorkflow(WorkflowBase):
         halos = self.validate_halos(self.halos, len(self.scale_factors))
         self.validate_format()
 
-        out_path = self.input_path if self.output == '' else self.output_path
+        out_path = self.input_path if self.output_path == '' else self.output_path
         in_key = self.get_scale_key(self.scale_offset)
         # require the initial scale dataset
         dep = self.require_initial_scale(out_path, in_key, self.dependency)
