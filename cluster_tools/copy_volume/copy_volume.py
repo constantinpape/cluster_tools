@@ -104,7 +104,7 @@ class CopyVolumeBase(luigi.Task):
 
         # require output dataset
         with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, shape=out_shape, chunks=chunks,
+            f.require_dataset(self.output_key, shape=out_shape, chunks=tuple(chunks),
                               compression=compression, dtype=dtype)
 
         # update the config with input and output paths and keys
