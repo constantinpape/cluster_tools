@@ -96,7 +96,7 @@ class BaseClusterTask(luigi.Task):
     def init(self, shebang):
         """ Init tmp dir and python scripts.
 
-        Should be the first call in `run`.
+        Should be the first call in `run_impl`.
         """
         self._write_script_file(shebang)
 
@@ -346,6 +346,10 @@ class BaseClusterTask(luigi.Task):
         assert os.path.exists(self.src_file), self.src_file
         trgt_file = os.path.join(self.tmp_folder, self.task_name + '.py')
         shutil.copy(self.src_file, trgt_file)
+        # shebang can either be a valid shebang OR path to a python interpreter without shebang prefix
+        if not shebang.startswith('#!'):
+            assert os.path.exists(shebang), "%s is not a valid python interpreter" % shebang
+            shebang = "#! " + shebang
         self._replace_shebang(trgt_file, shebang)
         self._make_executable(trgt_file)
         self._write_log('copied python script from %s to %s' % (self.src_file, trgt_file))
