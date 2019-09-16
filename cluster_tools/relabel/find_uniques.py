@@ -12,6 +12,7 @@ import numpy as np
 
 import luigi
 import nifty.tools as nt
+from elf.label_multiset import deserialize_labels
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -39,7 +40,14 @@ class FindUniquesBase(luigi.Task):
         self.init(shebang)
 
         # get shape and make block config
-        shape = vu.get_shape(self.input_path, self.input_key)
+        with vu.file_reader(self.input_path, 'r') as f:
+            ds = f[self.input_key]
+            shape = ds.shape
+            chunks = ds.chunks
+            is_label_multiset = ds.attrs.get("isLabelMultiset", False)
+
+        if is_label_multiset:
+            assert tuple(block_shape) == tuple(chunks), "Chunks and blocks must agree for label multi-set"
 
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
@@ -52,7 +60,7 @@ class FindUniquesBase(luigi.Task):
         # we don't need any additional config besides the paths
         config = {"input_path": self.input_path, "input_key": self.input_key,
                   "block_shape": block_shape, "tmp_folder": self.tmp_folder,
-                  "return_counts": self.return_counts}
+                  "return_counts": self.return_counts, "is_label_multiset": is_label_multiset}
         self._write_log('scheduling %i blocks to be processed' % len(block_list))
 
         # prime and run the jobs
@@ -90,16 +98,27 @@ class FindUniquesLSF(FindUniquesBase, LSFTask):
 #
 
 
-def uniques_in_block(block_id, blocking, ds, return_counts):
+def uniques_in_block(block_id, blocking, ds, return_counts, is_label_multiset=False):
     fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
-    labels = ds[bb]
+    shape = tuple(b.stop - b.start for b in bb)
 
-    if labels.sum() == 0:
+    if is_label_multiset:
+        chunk_id = tuple(b.start // ch for b, ch in zip(bb, blocking.blockShape))
+        labels = ds.read_chunk(chunk_id)
+        empty_labels = labels is None
+        if not empty_labels:
+            labels = deserialize_labels(labels, shape)
+    else:
+        labels = ds[bb]
+        empty_labels = labels.sum() == 0
+
+    if empty_labels:
+        fu.log_block_success(block_id)
         if return_counts:
-            return np.array([0], dtype=labels.dtype), np.array([labels.size], dtype='int64')
-        return np.array([0], dtype=labels.dtype)
+            return np.array([0], dtype='uint64'), np.array([int(np.prod(shape))], dtype='int64')
+        return np.array([0], dtype='uint64')
 
     if return_counts:
         uniques, counts = np.unique(labels, return_counts=True)
@@ -124,17 +143,19 @@ def find_uniques(job_id, config_path):
     block_shape = config['block_shape']
     tmp_folder = config['tmp_folder']
     return_counts = config['return_counts']
+    is_label_multiset = config['is_label_multiset']
 
     # open the input file
     with vu.file_reader(input_path, 'r') as f:
         ds = f[input_key]
+
         shape = ds.shape
         blocking = nt.blocking(roiBegin=[0, 0, 0],
                                roiEnd=list(shape),
                                blockShape=list(block_shape))
 
         # find uniques for all blocks
-        uniques = [uniques_in_block(block_id, blocking, ds, return_counts)
+        uniques = [uniques_in_block(block_id, blocking, ds, return_counts, is_label_multiset)
                    for block_id in block_list]
 
     if return_counts:

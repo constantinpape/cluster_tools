@@ -301,7 +301,10 @@ def _read_labels(ds, bb):
 def _read_multiset(ds, bb, chunks):
     chunk_id = tuple(b.start // ch for b, ch in zip(bb, chunks))
     data = ds.read_chunk(chunk_id)
-    return deserialize_labels(data, tuple(b.stop - b.start for b in bb))
+    shape = tuple(b.stop - b.start for b in bb)
+    if data is None:
+        return np.zeros(shape, dtype=ds.dtype)
+    return deserialize_labels(data, shape)
 
 
 def write(job_id, config_path):
