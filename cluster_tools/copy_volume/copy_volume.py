@@ -7,6 +7,7 @@ import json
 import numpy as np
 import luigi
 import nifty.tools as nt
+from concurrent import futures
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -104,7 +105,8 @@ class CopyVolumeBase(luigi.Task):
 
         # require output dataset
         with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, shape=out_shape, chunks=tuple(chunks),
+            chunks = tuple(min(ch, sh) for ch, sh in zip(chunks, out_shape))
+            f.require_dataset(self.output_key, shape=out_shape, chunks=chunks,
                               compression=compression, dtype=dtype)
 
         # update the config with input and output paths and keys
@@ -175,9 +177,10 @@ def cast_type(data, dtype):
         return data.astype(dtype)
 
 
-def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin, reduce_function):
+def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin, reduce_function, n_threads):
     dtype = ds_out.dtype
-    for block_id in block_list:
+
+    def _copy_block(block_id):
         fu.log("start processing block %i" % block_id)
 
         block = blocking.getBlock(block_id)
@@ -187,9 +190,9 @@ def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin, reduce_function
 
         data = ds_in[bb]
         # don't write empty blocks
-        if sum(data).sum() == 0:
+        if data.sum() == 0:
             fu.log_block_success(block_id)
-            continue
+            return
 
         # if we have a roi begin, we need to substract it
         # from the output bounding box, because in this case
@@ -204,6 +207,13 @@ def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin, reduce_function
 
         ds_out[bb] = cast_type(data, dtype)
         fu.log_block_success(block_id)
+
+    if n_threads > 1:
+        with futures.ThreadPoolExecutor(n_threads) as tp:
+            tasks = [tp.submit(_copy_block, block_id) for block_id in block_list]
+            [t.result() for t in tasks]
+    else:
+        [_copy_block(block_id) for block_id in block_list]
 
 
 def copy_volume(job_id, config_path):
@@ -236,16 +246,14 @@ def copy_volume(job_id, config_path):
     # submit blocks
     with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
         ds_in = f_in[input_key]
-        ds_in.n_threads = n_threads
         ds_out = f_out[output_key]
-        ds_out.n_threads = n_threads
 
         shape = list(ds_in.shape)
         if len(shape) == 4:
             shape = shape[1:]
         blocking = nt.blocking([0, 0, 0], shape, block_shape)
         _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin,
-                     reduce_function)
+                     reduce_function, n_threads)
 
         # copy the attributes with job 0
         if job_id == 0:
