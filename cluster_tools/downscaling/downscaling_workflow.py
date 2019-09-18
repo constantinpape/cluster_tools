@@ -381,22 +381,11 @@ class PainteraToBdvWorkflow(WorkflowBase):
         return out_key
 
     def get_scales(self):
-
-        def _to_scale(path, scale_file):
-            scale_path = os.path.join(path, scale_file)
-            is_scale_level = os.path.isdir(scale_path) or os.path.islink(scale_path)
-            if not is_scale_level:
-                return None
-            try:
-                return int(scale_file[1:])
-            except ValueError:
-                return None
-
-        scale_files = os.listdir(os.path.join(self.input_path, self.input_key_prefix))
-        scales = [_to_scale(os.path.join(self.input_path, self.input_key_prefix), sc)
-                  for sc in scale_files]
-        scales = [sc for sc in scales if sc is not None]
-        return list(sorted(scales))
+        with file_reader(self.input_path, 'r') as f:
+            g = f[self.input_key_prefix]
+            scale_names = list(g.keys())
+        scale_levels = [int(name[1:]) for name in scale_names]
+        return list(sorted(scale_levels))
 
     def requires(self):
         task = getattr(copy_tasks, self._get_task_name('CopyVolume'))
@@ -423,7 +412,7 @@ class PainteraToBdvWorkflow(WorkflowBase):
             prev_scale = deepcopy(effective_scale)
 
             if self.skip_existing_levels:
-                with file_reader(self.output_path) as f:
+                with file_reader(self.output_path, 'r') as f:
                     if out_key in f:
                         print("have out_key", out_key)
                         continue
