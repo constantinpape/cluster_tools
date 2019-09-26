@@ -152,7 +152,6 @@ class InferenceSlurm(InferenceBase, SlurmTask):
         trgt_file = os.path.join(self.tmp_folder, self.task_name + '.py')
         config_tmpl = self._config_path('$1', job_prefix)
         job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
-        # TODO set the job-name so that we can parse the squeue output properly
         slurm_template = ("#!/bin/bash\n"
                           "#SBATCH -A %s\n"
                           "#SBATCH -N 1\n"
