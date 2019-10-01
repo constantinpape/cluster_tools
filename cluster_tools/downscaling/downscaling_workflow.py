@@ -39,6 +39,7 @@ class WriteDownscalingMetadata(luigi.Task):
     metadata_dict = luigi.DictParameter(default={})
     output_key_prefix = luigi.Parameter(default='')
     scale_offset = luigi.IntParameter(default=0)
+    prefix = luigi.Parameter(default='')
 
     def requires(self):
         return self.dependency
@@ -208,7 +209,7 @@ class WriteDownscalingMetadata(luigi.Task):
 
     def output(self):
         return luigi.LocalTarget(os.path.join(self.tmp_folder,
-                                              'write_downscaling_metadata.log'))
+                                              'write_downscaling_metadata_%s.log' % self.prefix))
 
 
 class DownscalingWorkflow(WorkflowBase):
@@ -348,7 +349,7 @@ class DownscalingWorkflow(WorkflowBase):
                                        metadata_dict=self.metadata_dict,
                                        scale_factors=self.scale_factors,
                                        scale_offset=self.scale_offset,
-                                       dependency=dep)
+                                       dependency=dep, prefix='downscaling')
         return dep
 
     @staticmethod
@@ -411,7 +412,7 @@ class PainteraToBdvWorkflow(WorkflowBase):
                 scale_factors.append([eff / prev for eff, prev in zip(effective_scale, prev_scale)])
             prev_scale = deepcopy(effective_scale)
 
-            if self.skip_existing_levels:
+            if self.skip_existing_levels and os.path.exists(self.output_path):
                 with file_reader(self.output_path, 'r') as f:
                     if out_key in f:
                         print("have out_key", out_key)
@@ -453,7 +454,7 @@ class PainteraToBdvWorkflow(WorkflowBase):
                                        metadata_format='bdv',
                                        metadata_dict=metadata_dict,
                                        scale_factors=scale_factors,
-                                       dependency=dep)
+                                       dependency=dep, prefix='paintera-to-bdv')
         return dep
 
     @staticmethod
