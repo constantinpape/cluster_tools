@@ -30,6 +30,8 @@ class LinearBase(luigi.Task):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     transformation = luigi.Parameter()
+    mask_path = luigi.Parameter(default='')
+    mask_key = luigi.Parameter(default='')
     dependency = luigi.TaskParameter(default=DummyTask())
 
     @staticmethod
@@ -73,6 +75,7 @@ class LinearBase(luigi.Task):
         # as well as block shape
         task_config.update({'input_path': self.input_path, 'input_key': self.input_key,
                             'output_path': self.output_path, 'output_key': self.output_key,
+                            'mask_path': self.mask_path, 'mask_key': self.mask_key,
                             'block_shape': block_shape, 'transformation': self.transformation})
 
         if self.n_retries == 0:
@@ -137,32 +140,43 @@ def _load_transformation(trafo_file, shape):
     return trafo
 
 
-def _transform_data(data, a, b):
-    data = a * data + b
+def _transform_data(data, a, b, mask=None):
+    if mask is None:
+        data = a * data + b
+    else:
+        data[mask] = a * data[mask] + b
     return data
 
 
-def _transform_block(ds_in, ds_out, transformation, blocking, block_id):
+def _transform_block(ds_in, ds_out, transformation, blocking, block_id, mask=None):
     fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
 
     bb = vu.block_to_bb(block)
+    if mask is not None:
+        bb_mask = mask[bb].astype('bool')
+        if bb_mask.sum() == 0:
+            fu.log_block_success(block_id)
+            return
+    else:
+        bb_mask = None
+
     data = ds_in[bb]
     if len(transformation) == 2:
-        data = _transform_data(data, transformation['a'], transformation['b'])
+        data = _transform_data(data, transformation['a'], transformation['b'], bb_mask)
     else:
         z_offset = block.begin[0]
         for z in range(data.shape[0]):
             trafo = transformation[z + z_offset]
-            data[z] = _transform_data(data[z], trafo['a'], trafo['b'])
+            data[z] = _transform_data(data[z], trafo['a'], trafo['b'], bb_mask[z])
 
     ds_out[bb] = data
     fu.log_block_success(block_id)
 
 
-def _transform_linear(ds_in, ds_out, transformation, blocking, block_list):
+def _transform_linear(ds_in, ds_out, transformation, blocking, block_list, mask=None):
     for block_id in block_list:
-        _transform_block(ds_in, ds_out, transformation, blocking, block_id)
+        _transform_block(ds_in, ds_out, transformation, blocking, block_id, mask)
 
 
 def linear(job_id, config_path):
@@ -183,6 +197,15 @@ def linear(job_id, config_path):
     output_key = config['output_key']
     trafo_file = config['transformation']
 
+    mask_path = config['mask_path']
+    mask_key = config['mask_key']
+
+    if mask_path != '':
+        assert mask_key != ''
+        with vu.file_reader(input_path, 'r') as f:
+            in_shape = f[input_key].shape
+        mask = vu.load_mask(mask_path, mask_key, in_shape)
+
     same_file = input_path == output_path
     in_place = same_file and (input_key == output_key)
 
@@ -196,7 +219,7 @@ def linear(job_id, config_path):
             trafo = _load_transformation(trafo_file, shape)
 
             blocking = nt.blocking([0, 0, 0], shape, block_shape)
-            _transform_linear(ds_in, ds_out, trafo, blocking, block_list)
+            _transform_linear(ds_in, ds_out, trafo, blocking, block_list, mask)
 
     else:
         with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
@@ -207,7 +230,7 @@ def linear(job_id, config_path):
             trafo = _load_transformation(trafo_file, shape)
 
             blocking = nt.blocking([0, 0, 0], shape, block_shape)
-            _transform_linear(ds_in, ds_out, trafo, blocking, block_list)
+            _transform_linear(ds_in, ds_out, trafo, blocking, block_list, mask)
 
     # log success
     fu.log_job_success(job_id)

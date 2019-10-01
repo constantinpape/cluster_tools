@@ -13,6 +13,8 @@ class LinearTransformationWorkflow(WorkflowBase):
     transformation = luigi.Parameter()
     output_path = luigi.Parameter(default='')
     output_key = luigi.Parameter(default='')
+    mask_path = luigi.Parameter(default='')
+    mask_key = luigi.Parameter(default='')
 
     def requires(self):
 
@@ -25,6 +27,7 @@ class LinearTransformationWorkflow(WorkflowBase):
         dep = linear_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                           config_dir=self.config_dir, dependency=self.dependency,
                           input_path=self.input_path, input_key=self.input_key,
+                          mask_path=self.mask_path, mask_key=self.mask_key,
                           output_path=out_path, output_key=out_key,
                           transformation=self.transformation)
         return dep
