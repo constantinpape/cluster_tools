@@ -104,6 +104,7 @@ def merge_uniques(job_id, config_path):
 
     fu.log("compute uniques")
     uniques = np.unique(uniques)
+    fu.log("found %i unique values" % len(uniques))
 
     fu.log("saving results to %s/%s" % (output_path, output_key))
     with vu.file_reader(output_path) as f:
