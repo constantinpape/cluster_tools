@@ -66,10 +66,14 @@ class PytorchPredicter(object):
     def apply_model(self, input_data):
         with self.lock, torch.no_grad():
             torch_data = torch.from_numpy(input_data[None, None]).cuda(self.gpu)
-            predicted_on_gpu = self.model(torch_data)
-            if isinstance(predicted_on_gpu, tuple):
-                predicted_on_gpu = predicted_on_gpu[0]
-            out = predicted_on_gpu.cpu().numpy().squeeze()
+            out = self.model(torch_data)
+            # we send the data
+            if torch.is_tensor(out):
+                out = out.cpu().numpy().squeeze()
+            elif isinstance(out, (list, tuple)):
+                out = [o.cpu().numpy().squeeze() for o in out]
+            else:
+                raise TypeError("Expect model output to be tensor or list of tensors, got %s" % type(out))
         return out
 
     def apply_model_with_augmentations(self, input_data):

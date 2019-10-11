@@ -15,6 +15,7 @@ import cluster_tools.utils.function_utils as fu
 from cluster_tools.utils.task_utils import DummyTask
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 from cluster_tools.inference.frameworks import get_predictor, get_preprocessor
+from cluster_tools.inference.inference import get_prep_model, _to_uint8
 
 
 #
@@ -22,16 +23,21 @@ from cluster_tools.inference.frameworks import get_predictor, get_preprocessor
 #
 
 
-class InferenceBase(luigi.Task):
-    """ Inference base class
+class MultiscaleInferenceBase(luigi.Task):
+    """ MultiscaleInference base class
     """
 
-    task_name = 'inference'
+    task_name = 'multiscale_inference'
     src_file = os.path.abspath(__file__)
+    allow_retry = False
 
     # input volume, output volume and inference parameter
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
+    input_scales = luigi.ListParameter()
+    scale_halos = luigi.ListParameter()
+    scale_factors = luigi.ListParameter()
+
     output_path = luigi.Parameter()
     output_key = luigi.DictParameter()
     checkpoint_path = luigi.Parameter()
@@ -51,20 +57,15 @@ class InferenceBase(luigi.Task):
         config = LocalTask.default_task_config()
         config.update({'dtype': 'uint8', 'compression': 'gzip', 'chunks': None,
                        'gpu_type': '2080Ti', 'device_mapping': None,
-                       'use_best': True, 'tda_config': {}, 'prep_model': None})
+                       'use_best': True, 'prep_model': None})
         return config
 
-    def clean_up_for_retry(self, block_list):
-        super().clean_up_for_retry(block_list)
-        # TODO remove any output of failed blocks because it might be corrupted
-
     def run_impl(self):
-        # TODO support more frameworks
-        # assert self.framework in ('pytorch', 'tensorflow', 'caffe', 'inferno')
         assert self.framework in ('pytorch', 'inferno')
 
-        # get the global config and init configs
-        shebang, block_shape, roi_begin, roi_end, block_list_path = self.global_config_values(with_block_list_path=True)
+        # TODO support ROI
+        # shebang, block_shape, roi_begin, roi_end = self.global_config_values()
+        shebang, block_shape = self.global_config_values()
         self.init(shebang)
 
         # load the task config
@@ -74,6 +75,18 @@ class InferenceBase(luigi.Task):
         chunks = config.pop('chunks', None)
         assert dtype in ('uint8', 'float32')
 
+        # check th input datasets
+        with vu.file_reader(self.input_path, 'r') as f:
+            g = f[self.input_key]
+            for ii, scale in enumerate(self.input_scales):
+                assert scale in g
+                if ii == 0:
+                    ds = g[scale]
+                    shape = ds.shape
+        n_scales = len(self.input_scales)
+        assert len(self.scale_halos) == n_scales - 1
+        assert len(self.scale_factors) == n_scales - 1
+
         # get shapes and chunks
         shape = vu.get_shape(self.input_path, self.input_key)
         chunks = tuple(chunks) if chunks is not None else tuple(bs // 2 for bs in block_shape)
@@ -81,14 +94,15 @@ class InferenceBase(luigi.Task):
         assert all(bs % ch == 0 for ch, bs in zip(chunks, block_shape)),\
             "%s, %s" % (str(chunks), block_shape)
 
+        # TODO support output at multiple scales
         # check if we have single dataset or multi dataset output
         out_key_dict = self.output_key
         output_keys = list(out_key_dict.keys())
-        channel_mapping = list(out_key_dict.values())
+        output_params = list(out_key_dict.values())
 
         # make output volumes
         with vu.file_reader(self.output_path) as f:
-            for out_key, out_channels in zip(output_keys, channel_mapping):
+            for out_key, out_channels in zip(output_keys, output_params):
                 assert len(out_channels) == 2
                 n_channels = out_channels[1] - out_channels[0]
                 assert n_channels > 0
@@ -104,17 +118,19 @@ class InferenceBase(luigi.Task):
 
         # update the config
         config.update({'input_path': self.input_path, 'input_key': self.input_key,
+                       'input_scales': self.input_scales, 'scale_halos': self.scale_halos,
+                       'scale_factors': self.scale_factors,
                        'output_path': self.output_path, 'checkpoint_path': self.checkpoint_path,
                        'block_shape': block_shape, 'halo': self.halo,
-                       'output_keys': output_keys, 'channel_mapping': channel_mapping,
+                       'output_keys': output_keys, 'channel_mapping': output_params,
                        'framework': self.framework})
         if self.mask_path != '':
             assert self.mask_key != ''
             config.update({'mask_path': self.mask_path, 'mask_key': self.mask_key})
 
         if self.n_retries == 0:
-            block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end,
-                                             block_list_path=block_list_path)
+            # TODO support roi
+            block_list = vu.blocks_in_volume(shape, block_shape)
         else:
             block_list = self.block_list
             self.clean_up_for_retry(block_list)
@@ -129,13 +145,13 @@ class InferenceBase(luigi.Task):
         self.check_jobs(n_jobs)
 
 
-class InferenceLocal(InferenceBase, LocalTask):
+class MultiscaleInferenceLocal(MultiscaleInferenceBase, LocalTask):
     """ Inference on local machine
     """
     pass
 
 
-class InferenceSlurm(InferenceBase, SlurmTask):
+class MultiscaleInferenceSlurm(MultiscaleInferenceBase, SlurmTask):
     """ Inference on slurm cluster
     """
     def _write_slurm_file(self, job_prefix=None):
@@ -169,27 +185,10 @@ class InferenceSlurm(InferenceBase, SlurmTask):
             f.write(slurm_template)
 
 
-class InferenceLSF(InferenceBase, LSFTask):
+class MultiscaleInferenceLSF(MultiscaleInferenceBase, LSFTask):
     """ Inference on lsf cluster
     """
     pass
-
-
-#
-# Prep models
-#
-
-def extract_unet(model):
-    return model.unet
-
-
-PREP_FUNCTIONS = {'extract_unet': extract_unet}
-
-
-def get_prep_model(key):
-    assert key in PREP_FUNCTIONS, "prep_model %s is not supported, use one of %s"\
-        % (key, str(list(PREP_FUNCTIONS.values())))
-    return PREP_FUNCTIONS[key]
 
 
 #
@@ -197,11 +196,15 @@ def get_prep_model(key):
 #
 
 
-def _load_input(ds, offset, block_shape, halo, padding_mode='reflect'):
-
+def _load_input(ds, offset, block_shape, halo, scale_factor, scale_halo, padding_mode='reflect'):
     shape = ds.shape
-    starts = [off - ha for off, ha in zip(offset, halo)]
-    stops = [off + bs + ha for off, bs, ha in zip(offset, block_shape, halo)]
+    this_offset = [off // sf for off, sf in zip(offset, scale_factor)]
+    this_block_shape = [bs // sf for bs, sf in zip(block_shape, scale_factor)]
+    this_halo = [ha // sf for ha, sf in zip(halo, scale_factor)]
+
+    starts = [off - ha - sh for off, ha, sh in zip(this_offset, this_halo, scale_halo)]
+    stops = [off + bs + ha + sh for off, bs, ha, sh in zip(this_offset, this_block_shape,
+                                                           this_halo, scale_halo)]
 
     # we pad the input volume if necessary
     pad_left = None
@@ -230,16 +233,14 @@ def _load_input(ds, offset, block_shape, halo, padding_mode='reflect'):
     return data
 
 
-def _to_uint8(data, float_range=(0., 1.), safe_scale=True):
-    if safe_scale:
-        mult = np.floor(255./(float_range[1]-float_range[0]))
-    else:
-        mult = np.ceil(255./(float_range[1]-float_range[0]))
-    add = 255 - mult*float_range[1]
-    return np.clip((data*mult+add).round(), 0, 255).astype('uint8')
+def _load_inputs(datasets, offset, block_shape, halo, scale_factors, scale_halos):
+    data = [_load_input(ds, offset, block_shape, halo, sf, sh)
+            for ds, sf, sh in zip(datasets, scale_factors, scale_halos)]
+    return data
 
 
 def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
+                   scale_factors, scale_halos,
                    preprocess, predict, channel_mapping, n_threads):
 
     block_shape = blocking.blockShape
@@ -248,12 +249,8 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
     assert all(dtp == dtype for dtp in dtypes)
 
     @dask.delayed
-    def log1(block_id):
-        fu.log("start processing block %i" % block_id)
-        return block_id
-
-    @dask.delayed
     def load_input(block_id):
+        fu.log("start processing block %i" % block_id)
         block = blocking.getBlock(block_id)
 
         # if we have a mask, check if this block is in mask
@@ -263,7 +260,8 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
             if np.sum(bb_mask) == 0:
                 return block_id, None
 
-        return block_id, _load_input(ds_in, block.begin, block_shape, halo)
+        return block_id, _load_inputs(ds_in, block.begin, block_shape, halo,
+                                      scale_factors, scale_halos)
 
     @dask.delayed
     def preprocess_impl(inputs):
@@ -332,7 +330,7 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
     # iterate over the blocks in block list, get the input data and predict
     results = []
     for block_id in block_list:
-        res = tz.pipe(block_id, log1, load_input,
+        res = tz.pipe(block_id, load_input,
                       preprocess_impl, predict_impl,
                       write_output, log2)
         results.append(res)
@@ -341,7 +339,7 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
     fu.log('Finished prediction for %i blocks' % sum(success))
 
 
-def inference(job_id, config_path):
+def multiscale_inference(job_id, config_path):
 
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
@@ -351,6 +349,15 @@ def inference(job_id, config_path):
         config = json.load(f)
     input_path = config['input_path']
     input_key = config['input_key']
+
+    input_scales = config['input_scales']
+    scale_factors = config['scale_factors']
+    scale_halos = config['scale_halos']
+
+    scale_factors = [[1, 1, 1]] + scale_factors
+    scale_halos = [[0, 0, 0]] + scale_halos
+    assert len(scale_factors) == len(scale_halos) == 3
+
     output_path = config['output_path']
     checkpoint_path = config['checkpoint_path']
     block_shape = config['block_shape']
@@ -372,37 +379,33 @@ def inference(job_id, config_path):
         fu.log("setting cuda visible devices to %i" % device_id)
     gpu = 0
 
-    tda_config = config.get('tda_config', {})
-    if tda_config:
-        fu.log("Using test-time-data-augmentation with config:")
-        fu.log(str(tda_config))
-
     fu.log("Loading model from %s" % checkpoint_path)
-
     prep_model = config.get('prep_model', None)
     if prep_model is not None:
         prep_model = get_prep_model(prep_model)
 
     predict = get_predictor(framework)(checkpoint_path, halo, gpu=gpu, prep_model=prep_model,
-                                       use_best=use_best, **tda_config)
+                                       use_best=use_best)
     fu.log("Have model")
     preprocess = get_preprocessor(framework)
 
-    shape = vu.get_shape(input_path, input_key)
-    blocking = nt.blocking(roiBegin=[0, 0, 0],
-                           roiEnd=list(shape),
-                           blockShape=list(block_shape))
-
     with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
 
-        ds_in = f_in[input_key]
+        g_in = f_in[input_key]
+        ds_in = [g_in[in_scale] for in_scale in input_scales]
         ds_out = [f_out[key] for key in output_keys]
+
+        shape = ds_in[0].shape
+        blocking = nt.blocking(roiBegin=[0, 0, 0],
+                               roiEnd=list(shape),
+                               blockShape=list(block_shape))
 
         if 'mask_path' in config:
             mask = vu.load_mask(config['mask_path'], config['mask_key'], shape)
         else:
             mask = None
         _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
+                       scale_factors, scale_halos,
                        preprocess, predict, channel_mapping, n_threads)
     fu.log_job_success(job_id)
 
@@ -411,4 +414,4 @@ if __name__ == '__main__':
     path = sys.argv[1]
     assert os.path.exists(path), path
     job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
-    inference(job_id, path)
+    multiscale_inference(job_id, path)
