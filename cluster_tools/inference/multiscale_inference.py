@@ -57,7 +57,7 @@ class MultiscaleInferenceBase(luigi.Task):
         config = LocalTask.default_task_config()
         config.update({'dtype': 'uint8', 'compression': 'gzip', 'chunks': None,
                        'gpu_type': '2080Ti', 'device_mapping': None,
-                       'use_best': True, 'prep_model': None})
+                       'use_best': True, 'prep_model': None, 'channel_accumulation': None})
         return config
 
     def run_impl(self):
@@ -65,7 +65,7 @@ class MultiscaleInferenceBase(luigi.Task):
 
         # TODO support ROI
         # shebang, block_shape, roi_begin, roi_end = self.global_config_values()
-        shebang, block_shape = self.global_config_values()
+        shebang, block_shape = self.global_config_values()[:2]
         self.init(shebang)
 
         # load the task config
@@ -81,14 +81,12 @@ class MultiscaleInferenceBase(luigi.Task):
             for ii, scale in enumerate(self.input_scales):
                 assert scale in g
                 if ii == 0:
-                    ds = g[scale]
-                    shape = ds.shape
+                    shape = g[scale].shape
         n_scales = len(self.input_scales)
         assert len(self.scale_halos) == n_scales - 1
         assert len(self.scale_factors) == n_scales - 1
 
         # get shapes and chunks
-        shape = vu.get_shape(self.input_path, self.input_key)
         chunks = tuple(chunks) if chunks is not None else tuple(bs // 2 for bs in block_shape)
         # make sure block shape can be divided by chunks
         assert all(bs % ch == 0 for ch, bs in zip(chunks, block_shape)),\
@@ -100,13 +98,15 @@ class MultiscaleInferenceBase(luigi.Task):
         output_keys = list(out_key_dict.keys())
         output_params = list(out_key_dict.values())
 
+        channel_accumulation = config.get('channel_accumulation', None)
+
         # make output volumes
         with vu.file_reader(self.output_path) as f:
             for out_key, out_channels in zip(output_keys, output_params):
                 assert len(out_channels) == 2
                 n_channels = out_channels[1] - out_channels[0]
                 assert n_channels > 0
-                if n_channels > 1:
+                if n_channels > 1 and channel_accumulation is None:
                     out_shape = (n_channels,) + shape
                     out_chunks = (1,) + chunks
                 else:
@@ -241,7 +241,8 @@ def _load_inputs(datasets, offset, block_shape, halo, scale_factors, scale_halos
 
 def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
                    scale_factors, scale_halos,
-                   preprocess, predict, channel_mapping, n_threads):
+                   preprocess, predict, channel_mapping,
+                   channel_accumulation, n_threads):
 
     block_shape = blocking.blockShape
     dtypes = [dso.dtype for dso in ds_out]
@@ -299,16 +300,13 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
                 block_bb = (slice(None),) + block_bb
             output = output[block_bb]
 
-        # cast to uint8 if necessary
-        if dtype == 'uint8':
-            output = _to_uint8(output)
-
         # write the output to our output dataset(s)
         for dso, chann_mapping in zip(ds_out, channel_mapping):
             chan_start, chan_stop = chann_mapping
 
             if dso.ndim == 3:
-                assert chan_stop - chan_start == 1
+                if channel_accumulation is None:
+                    assert chan_stop - chan_start == 1
                 out_bb = bb
             else:
                 assert output.ndim == 4
@@ -316,9 +314,19 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
                 out_bb = (slice(None),) + bb
 
             if output.ndim == 4:
-                outp = output[chan_start:chan_stop].squeeze()
+                channel_output = output[chan_start:chan_stop].squeeze()
+            else:
+                channel_output = output
 
-            dso[out_bb] = outp
+            # apply channel accumulation if specified
+            if channel_accumulation is not None and channel_output.ndim == 4:
+                channel_output = channel_accumulation(channel_output, axis=0)
+
+            # cast to uint8 if necessary
+            if dtype == 'uint8':
+                channel_output = _to_uint8(channel_output)
+
+            dso[out_bb] = channel_output
 
         return block_id
 
@@ -366,8 +374,12 @@ def multiscale_inference(job_id, config_path):
     framework = config['framework']
     n_threads = config['threads_per_job']
     use_best = config.get('use_best', True)
+    channel_accumulation = config.get('channel_accumulation', None)
+    if channel_accumulation is not None:
+        fu.log("Accumulating channels with %s" % channel_accumulation)
+        channel_accumulation = getattr(np, channel_accumulation)
 
-    fu.log("run iference with framework %s, with %i threads" % (framework, n_threads))
+    fu.log("run inference with framework %s, with %i threads" % (framework, n_threads))
 
     output_keys = config['output_keys']
     channel_mapping = config['channel_mapping']
@@ -406,7 +418,8 @@ def multiscale_inference(job_id, config_path):
             mask = None
         _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
                        scale_factors, scale_halos,
-                       preprocess, predict, channel_mapping, n_threads)
+                       preprocess, predict, channel_mapping,
+                       channel_accumulation, n_threads)
     fu.log_job_success(job_id)
 
 

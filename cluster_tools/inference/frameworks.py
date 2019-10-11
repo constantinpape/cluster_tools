@@ -65,7 +65,10 @@ class PytorchPredicter(object):
 
     def apply_model(self, input_data):
         with self.lock, torch.no_grad():
-            torch_data = torch.from_numpy(input_data[None, None]).cuda(self.gpu)
+            if isinstance(input_data, np.ndarray):
+                torch_data = torch.from_numpy(input_data[None, None]).cuda(self.gpu)
+            else:
+                torch_data = [torch.from_numpy(d[None, None]).cuda(self.gpu) for d in input_data]
             out = self.model(torch_data)
             # we send the data
             if torch.is_tensor(out):
@@ -80,9 +83,17 @@ class PytorchPredicter(object):
         out = self.augmenter(input_data, self.apply_model, self.offsets)
         return out
 
+    def check_data(self, data):
+        if isinstance(data, np.ndarray):
+            assert input_data.ndim == 3
+        elif isinstance(data, (list, tuple)):
+            assert all(isinstance(d, np.ndarray) for d in data)
+            assert all(d.ndim == 3 for d in data)
+        else:
+            raise ValueError("Need array or list of arrays")
+
     def __call__(self, input_data):
-        assert isinstance(input_data, np.ndarray)
-        assert input_data.ndim == 3
+        self.check_data(input_data)
         if self.augmenter is None:
             out = self.apply_model(input_data)
         else:
@@ -162,7 +173,11 @@ def preprocess_torch(data, mean=None, std=None,
                      use_zero_mean_unit_variance=True):
     normalizer = partial(normalize, mean=mean, std=std)\
         if use_zero_mean_unit_variance else normalize01
-    return normalizer(cast(data))
+    if torch.is_tensor(data):
+        data = normalizer(cast(data))
+    elif isinstance(data, (list, tuple)):
+        data = [normalizer(cast(d)) for d in data]
+    return data
 
 
 # TODO

@@ -51,7 +51,8 @@ class InferenceBase(luigi.Task):
         config = LocalTask.default_task_config()
         config.update({'dtype': 'uint8', 'compression': 'gzip', 'chunks': None,
                        'gpu_type': '2080Ti', 'device_mapping': None,
-                       'use_best': True, 'tda_config': {}, 'prep_model': None})
+                       'use_best': True, 'tda_config': {}, 'prep_model': None,
+                       'channel_accumulation': None})
         return config
 
     def clean_up_for_retry(self, block_list):
@@ -86,13 +87,15 @@ class InferenceBase(luigi.Task):
         output_keys = list(out_key_dict.keys())
         channel_mapping = list(out_key_dict.values())
 
+        channel_accumulation = config.get('channel_accumulation', None)
+
         # make output volumes
         with vu.file_reader(self.output_path) as f:
             for out_key, out_channels in zip(output_keys, channel_mapping):
                 assert len(out_channels) == 2
                 n_channels = out_channels[1] - out_channels[0]
                 assert n_channels > 0
-                if n_channels > 1:
+                if n_channels > 1 and channel_accumulation is None:
                     out_shape = (n_channels,) + shape
                     out_chunks = (1,) + chunks
                 else:
@@ -240,7 +243,8 @@ def _to_uint8(data, float_range=(0., 1.), safe_scale=True):
 
 
 def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
-                   preprocess, predict, channel_mapping, n_threads):
+                   preprocess, predict, channel_mapping, channel_accumulation,
+                   n_threads):
 
     block_shape = blocking.blockShape
     dtypes = [dso.dtype for dso in ds_out]
@@ -281,6 +285,7 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
         data = predict(data)
         return block_id, data
 
+    # TODO de-spagehttify
     @dask.delayed
     def write_output(inputs):
         block_id, output = inputs
@@ -301,16 +306,13 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
                 block_bb = (slice(None),) + block_bb
             output = output[block_bb]
 
-        # cast to uint8 if necessary
-        if dtype == 'uint8':
-            output = _to_uint8(output)
-
         # write the output to our output dataset(s)
         for dso, chann_mapping in zip(ds_out, channel_mapping):
             chan_start, chan_stop = chann_mapping
 
             if dso.ndim == 3:
-                assert chan_stop - chan_start == 1
+                if channel_accumulation is None:
+                    assert chan_stop - chan_start == 1
                 out_bb = bb
             else:
                 assert output.ndim == 4
@@ -318,9 +320,19 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
                 out_bb = (slice(None),) + bb
 
             if output.ndim == 4:
-                outp = output[chan_start:chan_stop].squeeze()
+                channel_output = output[chan_start:chan_stop].squeeze()
+            else:
+                channel_output = output
 
-            dso[out_bb] = outp
+            # apply channel accumulation if specified
+            if channel_accumulation is not None and channel_output.ndim == 4:
+                channel_output = channel_accumulation(channel_output, axis=0)
+
+            # cast to uint8 if necessary
+            if dtype == 'uint8':
+                channel_output = _to_uint8(channel_output)
+
+            dso[out_bb] = channel_output
 
         return block_id
 
@@ -359,8 +371,12 @@ def inference(job_id, config_path):
     framework = config['framework']
     n_threads = config['threads_per_job']
     use_best = config.get('use_best', True)
+    channel_accumulation = config.get('channel_accumulation', None)
+    if channel_accumulation is not None:
+        fu.log("Accumulating channels with %s" % channel_accumulation)
+        channel_accumulation = getattr(np, channel_accumulation)
 
-    fu.log("run iference with framework %s, with %i threads" % (framework, n_threads))
+    fu.log("run inference with framework %s, with %i threads" % (framework, n_threads))
 
     output_keys = config['output_keys']
     channel_mapping = config['channel_mapping']
@@ -403,7 +419,8 @@ def inference(job_id, config_path):
         else:
             mask = None
         _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
-                       preprocess, predict, channel_mapping, n_threads)
+                       preprocess, predict, channel_mapping,
+                       channel_accumulation, n_threads)
     fu.log_job_success(job_id)
 
 
