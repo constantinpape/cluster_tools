@@ -85,7 +85,7 @@ class PytorchPredicter(object):
 
     def check_data(self, data):
         if isinstance(data, np.ndarray):
-            assert input_data.ndim == 3
+            assert data.ndim == 3
         elif isinstance(data, (list, tuple)):
             assert all(isinstance(d, np.ndarray) for d in data)
             assert all(d.ndim == 3 for d in data)
@@ -173,10 +173,12 @@ def preprocess_torch(data, mean=None, std=None,
                      use_zero_mean_unit_variance=True):
     normalizer = partial(normalize, mean=mean, std=std)\
         if use_zero_mean_unit_variance else normalize01
-    if torch.is_tensor(data):
+    if isinstance(data, np.ndarray):
         data = normalizer(cast(data))
     elif isinstance(data, (list, tuple)):
         data = [normalizer(cast(d)) for d in data]
+    else:
+        raise ValueError("Invalid type %s" % type(data))
     return data
 
 
