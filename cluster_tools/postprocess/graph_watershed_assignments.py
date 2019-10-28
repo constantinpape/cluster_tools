@@ -167,15 +167,16 @@ def graph_watershed_assignments(job_id, config_path):
     assignments[discard_mask] = 0
 
     n_discard = int(discard_mask.sum())
-    fu.log("Discarding %i fragments" % n_discard)
+    fu.log("Discarding %i / %i fragments" %  (n_discard, assignments.size))
     fu.log("Start grah watershed")
     assignments = nifty.graph.edgeWeightedWatershedsSegmentation(graph, assignments, features)
     fu.log("Finished graph watershed")
     assignments[assignments == seed_offset] = 0
 
     if relabel:
-        vigra.analysis.relabelConsecutive(assignments, out=assignments,
-                                          start_label=1, keep_zeros=True)
+        max_id = vigra.analysis.relabelConsecutive(assignments, out=assignments,
+                                                   start_label=1, keep_zeros=True)
+        fu.log("Max-id after relabeling: %i (before was %i)" % (max_id, seed_offset - 1))
 
     with vu.file_reader(output_path) as f:
         ds = f.require_dataset(output_key, shape=assignments.shape, chunks=chunks,
