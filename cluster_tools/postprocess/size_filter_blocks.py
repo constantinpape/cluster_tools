@@ -26,7 +26,8 @@ class SizeFilterBlocksBase(luigi.Task):
 
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
-    size_threshold = luigi.IntParameter()
+    size_threshold = luigi.IntParameter(default=None)
+    target_number = luigi.IntParameter(default=None)
     # task that is required before running this task
     dependency = luigi.TaskParameter()
 
@@ -37,14 +38,18 @@ class SizeFilterBlocksBase(luigi.Task):
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 
+        assert (self.size_threshold is None) != (self.target_number is None)
         # get shape and make block config
         shape = vu.get_shape(self.input_path, self.input_key)
 
         block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
         n_jobs = min(len(block_list), self.max_jobs)
 
-        config = {'tmp_folder': self.tmp_folder, 'n_jobs': n_jobs,
-                  'size_threshold': self.size_threshold}
+        config = {'tmp_folder': self.tmp_folder, 'n_jobs': n_jobs}
+        if self.size_threshold is not None:
+            config['size_threshold'] = self.size_threshold
+        else:
+            config['target_number'] = self.target_number
 
         # we only have a single job to find the labeling
         self.prepare_jobs(1, None, config)
@@ -88,7 +93,6 @@ def size_filter_blocks(job_id, config_path):
         config = json.load(f)
     n_jobs = config['n_jobs']
     tmp_folder = config['tmp_folder']
-    size_threshold = config['size_threshold']
 
     unique_values = [np.load(os.path.join(tmp_folder, 'find_uniques_job_%i.npy' % job_id))
                      for job_id in range(n_jobs)]
@@ -102,8 +106,15 @@ def size_filter_blocks(job_id, config_path):
     counts = counts[counts != 0]
     assert len(counts) == len(uniques)
 
-    fu.log("applying size filter %i" % size_threshold)
-    discard_ids = uniques[counts < size_threshold]
+    if 'size_threshold' in config:
+        size_threshold = config['size_threshold']
+        fu.log("applying size filter %i" % size_threshold)
+        discard_ids = uniques[counts < size_threshold]
+    else:
+        target_number = config['target_number']
+        fu.log("filtering until we only have %i segments" % target_number)
+        size_sorted = np.argsort(counts)[::-1]
+        discard_ids = uniques[size_sorted[target_number:]]
     fu.log("discarding %i / %i ids" % (len(discard_ids), len(uniques)))
 
     save_path = os.path.join(tmp_folder, 'discard_ids.npy')
