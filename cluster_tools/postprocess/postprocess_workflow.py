@@ -352,7 +352,8 @@ class SizeFilterAndGraphWatershedWorkflow(WorkflowBase):
     assignment_key = luigi.Parameter()
 
     # the size filter threshold
-    size_threshold = luigi.IntParameter()
+    size_threshold = luigi.IntParameter(default=None)
+    target_number = luigi.IntParameter(default=None)
     relabel = luigi.BoolParameter(default=False)
     from_costs = luigi.BoolParameter(default=False)
 
@@ -379,10 +380,12 @@ class SizeFilterAndGraphWatershedWorkflow(WorkflowBase):
                       input_path=self.path,
                       input_key=self.segmentation_key,
                       size_threshold=self.size_threshold,
+                      target_number=self.target_number,
                       dependency=dep)
         return dep
 
     def requires(self):
+        assert (self.size_threshold is None) != (self.target_number is None)
         dep = self.dependency
 
         # find the sizes for all segments
