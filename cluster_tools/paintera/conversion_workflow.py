@@ -109,6 +109,7 @@ class ConversionWorkflow(WorkflowBase):
     offset = luigi.ListParameter(default=[0, 0, 0])
     resolution = luigi.ListParameter(default=[1, 1, 1])
     restrict_sets = luigi.ListParameter(default=[])
+    restrict_scales = luigi.IntParameter(default=None)
 
     ##############################################################
     # Step 1 Implementations: align scales and make label datasets
@@ -181,6 +182,8 @@ class ConversionWorkflow(WorkflowBase):
 
         # restrict to the scale factors we need for down-sampling the labels
         scale_factors = scale_factors[(self.label_scale + 1):]
+        if self.restrict_scales is not None:
+            scale_factors = scale_factors[:self.restrict_scales]
 
         # create downsampled labels in label-multiset format
         # or by default downsampling

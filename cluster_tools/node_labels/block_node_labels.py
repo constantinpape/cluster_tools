@@ -77,7 +77,7 @@ class BlockNodeLabelsBase(luigi.Task):
             is_label_multiset = attrs.get('isLabelMultiset', False)
 
             if is_label_multiset:
-                assert all(ch == dch for ch, dch in zip(chunks, ds.chunks))
+                assert all(ch == dch for ch, dch in zip(chunks, ds.chunks)), "%s, %s" % (str(chunks), str(ds.chunks))
 
         # create output dataset
         with vu.file_reader(self.output_path) as f:

@@ -120,7 +120,7 @@ def graph_watershed_assignments(job_id, config_path):
 
     # load the uv-ids, features and assignments
     fu.log("Read features and edges from %s" % problem_path)
-    with vu.file_reader(problem_path) as f:
+    with vu.file_reader(problem_path, 'r') as f:
         ds = f['%s/edges' % graph_key]
         ds.n_threads = n_threads
         uv_ids = ds[:]
@@ -141,7 +141,7 @@ def graph_watershed_assignments(job_id, config_path):
         features = 1. - features
 
     fu.log("Read assignments from %s" % assignment_path)
-    with vu.file_reader(assignment_path) as f:
+    with vu.file_reader(assignment_path, 'r') as f:
         ds = f[assignment_key]
         ds.n_threads = n_threads
         chunks = ds.chunks
