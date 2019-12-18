@@ -52,7 +52,7 @@ class InferenceBase(luigi.Task):
         config.update({'dtype': 'uint8', 'compression': 'gzip', 'chunks': None,
                        'gpu_type': '2080Ti', 'device_mapping': None,
                        'use_best': True, 'tda_config': {}, 'prep_model': None,
-                       'channel_accumulation': None})
+                       'channel_accumulation': None, 'mixed_precision': False})
         return config
 
     def clean_up_for_retry(self, block_list):
@@ -65,7 +65,9 @@ class InferenceBase(luigi.Task):
         assert self.framework in ('pytorch', 'inferno')
 
         # get the global config and init configs
-        shebang, block_shape, roi_begin, roi_end, block_list_path = self.global_config_values(with_block_list_path=True)
+        (shebang, block_shape,
+         roi_begin, roi_end,
+         block_list_path) = self.global_config_values(with_block_list_path=True)
         self.init(shebang)
 
         # load the task config
@@ -299,6 +301,8 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
         bb = vu.block_to_bb(blocking.getBlock(block_id))
 
         # check if we need to crop the output
+        # NOTE this is not cropping the halo, which is done beforehand in the
+        # predictor already, but to crop overhanging chunks at the end of th dataset
         actual_shape = [b.stop - b.start for b in bb]
         if actual_shape != block_shape:
             block_bb = tuple(slice(0, ash) for ash in actual_shape)
@@ -371,6 +375,7 @@ def inference(job_id, config_path):
     framework = config['framework']
     n_threads = config['threads_per_job']
     use_best = config.get('use_best', True)
+    mixed_precision = config.get('mixed_precision', False)
     channel_accumulation = config.get('channel_accumulation', None)
     if channel_accumulation is not None:
         fu.log("Accumulating channels with %s" % channel_accumulation)
@@ -400,7 +405,8 @@ def inference(job_id, config_path):
         prep_model = get_prep_model(prep_model)
 
     predict = get_predictor(framework)(checkpoint_path, halo, gpu=gpu, prep_model=prep_model,
-                                       use_best=use_best, **tda_config)
+                                       use_best=use_best, mixed_precision=mixed_precision,
+                                       **tda_config)
     fu.log("Have model")
     preprocess = get_preprocessor(framework)
 

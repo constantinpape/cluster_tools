@@ -35,13 +35,13 @@ class MultiscaleInferenceBase(luigi.Task):
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
     input_scales = luigi.ListParameter()
-    scale_halos = luigi.ListParameter()
     scale_factors = luigi.ListParameter()
 
     output_path = luigi.Parameter()
     output_key = luigi.DictParameter()
     checkpoint_path = luigi.Parameter()
-    halo = luigi.ListParameter()
+    halos = luigi.ListParameter()
+    multiscale_output = luigi.BoolParameter(default=False)
     mask_path = luigi.Parameter(default='')
     mask_key = luigi.Parameter(default='')
     framework = luigi.Parameter(default='pytorch')
@@ -76,15 +76,16 @@ class MultiscaleInferenceBase(luigi.Task):
         assert dtype in ('uint8', 'float32')
 
         # check th input datasets
+        shapes = []
         with vu.file_reader(self.input_path, 'r') as f:
             g = f[self.input_key]
             for ii, scale in enumerate(self.input_scales):
                 assert scale in g
-                if ii == 0:
-                    shape = g[scale].shape
+                shapes.append(g[scale].shape)
+        shape = shapes[0]
         n_scales = len(self.input_scales)
-        assert len(self.scale_halos) == n_scales - 1
         assert len(self.scale_factors) == n_scales - 1
+        assert len(self.halos) == n_scales
 
         # get shapes and chunks
         chunks = tuple(chunks) if chunks is not None else tuple(bs // 2 for bs in block_shape)
@@ -92,7 +93,6 @@ class MultiscaleInferenceBase(luigi.Task):
         assert all(bs % ch == 0 for ch, bs in zip(chunks, block_shape)),\
             "%s, %s" % (str(chunks), block_shape)
 
-        # TODO support output at multiple scales
         # check if we have single dataset or multi dataset output
         out_key_dict = self.output_key
         output_keys = list(out_key_dict.keys())
@@ -100,30 +100,44 @@ class MultiscaleInferenceBase(luigi.Task):
 
         channel_accumulation = config.get('channel_accumulation', None)
 
+        # TODO support different channel mapping for different scales
         # make output volumes
         with vu.file_reader(self.output_path) as f:
             for out_key, out_channels in zip(output_keys, output_params):
                 assert len(out_channels) == 2
                 n_channels = out_channels[1] - out_channels[0]
                 assert n_channels > 0
-                if n_channels > 1 and channel_accumulation is None:
-                    out_shape = (n_channels,) + shape
-                    out_chunks = (1,) + chunks
-                else:
-                    out_shape = shape
-                    out_chunks = chunks
 
-                f.require_dataset(out_key, shape=out_shape,
-                                  chunks=out_chunks, dtype=dtype, compression=compression)
+                if self.multiscale_output:
+                    for scale, this_shape in zip(self.input_scales, shapes):
+                        if n_channels > 1 and channel_accumulation is None:
+                            out_shape = (n_channels,) + this_shape
+                            out_chunks = (1,) + chunks
+                        else:
+                            out_shape = this_shape
+                            out_chunks = chunks
+
+                        this_key = os.path.join(out_key, scale)
+                        f.require_dataset(this_key, shape=out_shape,
+                                          chunks=out_chunks, dtype=dtype, compression=compression)
+                else:
+                    if n_channels > 1 and channel_accumulation is None:
+                        out_shape = (n_channels,) + shape
+                        out_chunks = (1,) + chunks
+                    else:
+                        out_shape = shape
+                        out_chunks = chunks
+
+                    f.require_dataset(out_key, shape=out_shape,
+                                      chunks=out_chunks, dtype=dtype, compression=compression)
 
         # update the config
         config.update({'input_path': self.input_path, 'input_key': self.input_key,
-                       'input_scales': self.input_scales, 'scale_halos': self.scale_halos,
-                       'scale_factors': self.scale_factors,
+                       'input_scales': self.input_scales, 'scale_factors': self.scale_factors,
                        'output_path': self.output_path, 'checkpoint_path': self.checkpoint_path,
-                       'block_shape': block_shape, 'halo': self.halo,
+                       'block_shape': block_shape, 'halos': self.halos,
                        'output_keys': output_keys, 'channel_mapping': output_params,
-                       'framework': self.framework})
+                       'framework': self.framework, 'multiscale_output': self.multiscale_output})
         if self.mask_path != '':
             assert self.mask_key != ''
             config.update({'mask_path': self.mask_path, 'mask_key': self.mask_key})
@@ -196,15 +210,28 @@ class MultiscaleInferenceLSF(MultiscaleInferenceBase, LSFTask):
 #
 
 
-def _load_input(ds, offset, block_shape, halo, scale_factor, scale_halo, padding_mode='reflect'):
-    shape = ds.shape
-    this_offset = [off // sf for off, sf in zip(offset, scale_factor)]
-    this_block_shape = [bs // sf for bs, sf in zip(block_shape, scale_factor)]
-    this_halo = [ha // sf for ha, sf in zip(halo, scale_factor)]
+def _center_align_offset(offset, shape, reference_shape, scale_factor):
+    # we are center aligned, so we need to find the distance to the center
+    # in the reference and downsampled coordinate system
+    # center distance in reference coordinate system:
+    center_distance = [ref_sh // 2 - off for ref_sh, off in zip(reference_shape, offset)]
+    # center distance in downsampled coordinate system
+    center_distance = [dist // sf for dist, sf in zip(center_distance, scale_factor)]
+    # offset in the downsampled coordinate system
+    return [sh // 2 - dist for sh, dist in zip(shape, center_distance)]
 
-    starts = [off - ha - sh for off, ha, sh in zip(this_offset, this_halo, scale_halo)]
-    stops = [off + bs + ha + sh for off, bs, ha, sh in zip(this_offset, this_block_shape,
-                                                           this_halo, scale_halo)]
+
+def _load_input(ds, offset, block_shape, halo, scale_factor,
+                reference_shape, padding_mode='reflect'):
+    shape = ds.shape
+    this_offset = _center_align_offset(offset, shape, reference_shape, scale_factor)
+
+    this_block_shape = [bs // sf for bs, sf in zip(block_shape, scale_factor)]
+
+    starts = [off - ha for off, ha in zip(this_offset, halo)]
+    stops = [off + bs + ha for off, bs, ha in zip(this_offset,
+                                                  this_block_shape,
+                                                  halo)]
 
     # we pad the input volume if necessary
     pad_left = None
@@ -233,19 +260,20 @@ def _load_input(ds, offset, block_shape, halo, scale_factor, scale_halo, padding
     return data
 
 
-def _load_inputs(datasets, offset, block_shape, halo, scale_factors, scale_halos):
-    data = [_load_input(ds, offset, block_shape, halo, sf, sh)
-            for ds, sf, sh in zip(datasets, scale_factors, scale_halos)]
+def _load_inputs(datasets, offset, block_shape, halos, scale_factors):
+    ref_shape = datasets[0].shape
+    data = [_load_input(ds, offset, block_shape, halo, sf, ref_shape)
+            for ds, sf, halo in zip(datasets, scale_factors, halos)]
     return data
 
 
-def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
-                   scale_factors, scale_halos,
-                   preprocess, predict, channel_mapping,
-                   channel_accumulation, n_threads):
+def _run_inference(blocking, block_list, halos, ds_in, ds_out, mask,
+                   scale_factors, preprocess, predict, channel_mapping,
+                   channel_accumulation, n_threads,
+                   multiscale_output):
 
     block_shape = blocking.blockShape
-    dtypes = [dso.dtype for dso in ds_out]
+    dtypes = [dss.dtype for dso in ds_out for dss in dso]
     dtype = dtypes[0]
     assert all(dtp == dtype for dtp in dtypes)
 
@@ -261,8 +289,8 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
             if np.sum(bb_mask) == 0:
                 return block_id, None
 
-        return block_id, _load_inputs(ds_in, block.begin, block_shape, halo,
-                                      scale_factors, scale_halos)
+        return block_id, _load_inputs(ds_in, block.begin,
+                                      block_shape, halos, scale_factors)
 
     @dask.delayed
     def preprocess_impl(inputs):
@@ -293,6 +321,8 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
         bb = vu.block_to_bb(blocking.getBlock(block_id))
 
         # check if we need to crop the output
+        # NOTE this is not cropping the halo, which is done beforehand in the
+        # predictor already, but to crop overhanging chunks at the end of th dataset
         actual_shape = [b.stop - b.start for b in bb]
         if actual_shape != block_shape:
             block_bb = tuple(slice(0, ash) for ash in actual_shape)
@@ -331,16 +361,93 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
         return block_id
 
     @dask.delayed
+    def write_multiscale_output(inputs):
+        block_id, outputs = inputs
+
+        if outputs is None:
+            return block_id
+        assert isinstance(outputs, list)
+        assert len(outputs) == len(scale_factors)
+
+        # this is the output bounding box at the full reference shape
+        bb = vu.block_to_bb(blocking.getBlock(block_id))
+        reference_shape = tuple(re - rb for rb, re in zip(blocking.roiBegin, blocking.roiEnd))
+
+        # TODO support different channel mappings for different scales
+        # write out all the scales
+        for output, scale_factor, datasets in zip(outputs, scale_factors, ds_out):
+
+            out_shape = output.shape
+            if len(out_shape) == 3:
+                assert len(datasets) == 1
+
+            if np.prod(scale_factor) > 1:
+                this_shape = datasets[0].shape
+                if len(this_shape) == 4:
+                    this_shape = this_shape[1:]
+                this_start = _center_align_offset([b.start for b in bb], this_shape,
+                                                  reference_shape, scale_factor)
+                this_stop = _center_align_offset([b.stop for b in bb], this_shape,
+                                                 reference_shape, scale_factor)
+                this_bb = tuple(slice(sta, sto) for sta, sto in zip(this_start, this_stop))
+                this_block_shape = [bs // sf for bs, sf in zip(block_shape, scale_factor)]
+            else:
+                this_bb = bb
+                this_block_shape = block_shape
+
+            # check if we need to crop the output
+            # NOTE this is not cropping the halo, which is done beforehand in the
+            # predictor already, but to crop overhanging chunks at the end of th dataset
+            actual_shape = [b.stop - b.start for b in this_bb]
+            if actual_shape != this_block_shape:
+                block_bb = tuple(slice(0, ash) for ash in actual_shape)
+                if output.ndim == 4:
+                    block_bb = (slice(None),) + block_bb
+                output = output[block_bb]
+
+            # TODO support different channel for different scales
+            # write the output to our output dataset(s)
+            for dso, chann_mapping in zip(datasets, channel_mapping):
+                chan_start, chan_stop = chann_mapping
+
+                if dso.ndim == 3:
+                    if channel_accumulation is None:
+                        assert chan_stop - chan_start == 1
+                    out_bb = this_bb
+                else:
+                    assert output.ndim == 4
+                    assert chan_stop - chan_start == dso.shape[0]
+                    out_bb = (slice(None),) + this_bb
+
+                if output.ndim == 4:
+                    channel_output = output[chan_start:chan_stop].squeeze()
+                else:
+                    channel_output = output
+
+                # apply channel accumulation if specified
+                if channel_accumulation is not None and channel_output.ndim == 4:
+                    channel_output = channel_accumulation(channel_output, axis=0)
+
+                # cast to uint8 if necessary
+                if dtype == 'uint8':
+                    channel_output = _to_uint8(channel_output)
+
+                dso[out_bb] = channel_output
+
+        return block_id
+
+    @dask.delayed
     def log2(block_id):
         fu.log_block_success(block_id)
         return 1
 
     # iterate over the blocks in block list, get the input data and predict
+    writer = write_multiscale_output if multiscale_output else write_output
     results = []
     for block_id in block_list:
         res = tz.pipe(block_id, load_input,
                       preprocess_impl, predict_impl,
-                      write_output, log2)
+                      writer, log2)
         results.append(res)
 
     success = dask.compute(*results, scheduler='threads', num_workers=n_threads)
@@ -360,20 +467,18 @@ def multiscale_inference(job_id, config_path):
 
     input_scales = config['input_scales']
     scale_factors = config['scale_factors']
-    scale_halos = config['scale_halos']
-
+    # add a trivial scale factor for the zeroth scale
     scale_factors = [[1, 1, 1]] + scale_factors
-    scale_halos = [[0, 0, 0]] + scale_halos
-    assert len(scale_factors) == len(scale_halos) == 3
 
     output_path = config['output_path']
     checkpoint_path = config['checkpoint_path']
     block_shape = config['block_shape']
     block_list = config['block_list']
-    halo = config['halo']
+    halos = config['halos']
     framework = config['framework']
     n_threads = config['threads_per_job']
     use_best = config.get('use_best', True)
+    multiscale_output = config.get('multiscale_output', False)
     channel_accumulation = config.get('channel_accumulation', None)
     if channel_accumulation is not None:
         fu.log("Accumulating channels with %s" % channel_accumulation)
@@ -396,7 +501,7 @@ def multiscale_inference(job_id, config_path):
     if prep_model is not None:
         prep_model = get_prep_model(prep_model)
 
-    predict = get_predictor(framework)(checkpoint_path, halo, gpu=gpu, prep_model=prep_model,
+    predict = get_predictor(framework)(checkpoint_path, halos, gpu=gpu, prep_model=prep_model,
                                        use_best=use_best)
     fu.log("Have model")
     preprocess = get_preprocessor(framework)
@@ -405,7 +510,11 @@ def multiscale_inference(job_id, config_path):
 
         g_in = f_in[input_key]
         ds_in = [g_in[in_scale] for in_scale in input_scales]
-        ds_out = [f_out[key] for key in output_keys]
+        if multiscale_output:
+            ds_out = [[f_out[os.path.join(key, scale)] for key in output_keys]
+                      for scale in input_scales]
+        else:
+            ds_out = [f_out[key] for key in output_keys]
 
         shape = ds_in[0].shape
         blocking = nt.blocking(roiBegin=[0, 0, 0],
@@ -416,10 +525,11 @@ def multiscale_inference(job_id, config_path):
             mask = vu.load_mask(config['mask_path'], config['mask_key'], shape)
         else:
             mask = None
-        _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
-                       scale_factors, scale_halos,
-                       preprocess, predict, channel_mapping,
-                       channel_accumulation, n_threads)
+        _run_inference(blocking, block_list, halos, ds_in, ds_out, mask,
+                       scale_factors, preprocess,
+                       predict, channel_mapping,
+                       channel_accumulation, n_threads,
+                       multiscale_output)
     fu.log_job_success(job_id)
 
 

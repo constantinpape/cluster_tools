@@ -24,27 +24,37 @@ try:
 except ImportError:
     TestTimeAugmenter = None
 
+try:
+    from apex import amp
+except ImportError:
+    amp = None
+
 
 #
 # Prediction classes
 #
 
-class PytorchPredicter(object):
+# TODO enable to load from state dict and model
+class PytorchPredicter:
 
     @staticmethod
     def build_augmenter(augmentation_mode, augmentation_dim):
         return TestTimeAugmenter.default_tda(augmentation_dim, augmentation_mode)
 
-    def __init__(self, model_path, halo, gpu=0, use_best=True, prep_model=None,
-                 **augmentation_kwargs):
-        # load the model and prep it if specified
-        assert os.path.exists(model_path), model_path
-        self.model = torch.load(model_path)
+    def set_up(self, halo, gpu, use_best, prep_model,
+               mixed_precision, **augmentation_kwargs):
         self.model.eval()
         self.gpu = gpu
         self.model.cuda(self.gpu)
         if prep_model is not None:
             self.model = prep_model(self.model)
+
+        self.mixed_precision = mixed_precision
+        if self.mixed_precision:
+            assert amp is not None, "Need apex to use mixed precision inference"
+            opt_level = 'O1'  # TODO allow to set opt level
+            self.model = amp.initialize(self.model, opt_level=opt_level)
+
         #
         self.halo = halo
         self.lock = threading.Lock()
@@ -56,9 +66,17 @@ class PytorchPredicter(object):
         else:
             self.augmenter = None
 
-    def crop(self, out):
+    def __init__(self, model_path, halo, gpu=0, use_best=True, prep_model=None,
+                 mixed_precision=False, **augmentation_kwargs):
+        # load the model and prep it if specified
+        assert os.path.exists(model_path), model_path
+        self.model = torch.load(model_path)
+        self.set_up(halo, gpu, use_best, prep_model, mixed_precision,
+                    **augmentation_kwargs)
+
+    def crop(self, out, halo):
         shape = out.shape if out.ndim == 3 else out.shape[1:]
-        bb = tuple(slice(ha, sh - ha) for ha, sh in zip(self.halo, shape))
+        bb = tuple(slice(ha, sh - ha) for ha, sh in zip(halo, shape))
         if out.ndim == 4:
             bb = (slice(None),) + bb
         return out[bb]
@@ -98,35 +116,32 @@ class PytorchPredicter(object):
             out = self.apply_model(input_data)
         else:
             out = self.apply_model_with_augmentations(input_data)
-        out = self.crop(out)
+        if isinstance(out, list):
+            assert len(self.halo) == len(out) and all(isinstance(halo, list) for halo in self.halo)
+            out = [self.crop(oo, halo) for oo, halo in zip(out, self.halo)]
+        else:
+            out = self.crop(out, self.halo)
         return out
 
 
 class InfernoPredicter(PytorchPredicter):
-    def __init__(self, model_path, halo, gpu=0, use_best=True, prep_model=None, **augmentation_kwargs):
+    def __init__(self, model_path, halo, gpu=0, use_best=True, prep_model=None,
+                 mixed_precision=False, **augmentation_kwargs):
         # load the model and prep it if specified
         assert os.path.exists(model_path), model_path
-        trainer = Trainer().load(from_directory=model_path, best=use_best)
-        self.model = trainer.model.cuda(gpu)
-        self.model.eval()
-        if prep_model is not None:
-            self.model = prep_model(self.model)
-        self.gpu = gpu
-        self.halo = halo
-        self.lock = threading.Lock()
 
-        # build the test-time-augmenter if we have augmentation kwargs
-        if augmentation_kwargs:
-            assert TestTimeAugmenter is not None, "Need neurofire for test-time-augmentation"
-            self.offsets = augmentation_kwargs.pop('offsets', None)
-            print(augmentation_kwargs)
-            self.augmenter = self.build_augmenter(**augmentation_kwargs)
-        else:
-            self.augmenter = None
+        # this is left over from some hack to import modules that were not
+        # available during import. Not a nice solution, but it works, so I am
+        # leaving this here for reference
+        # TimeTrainingIters = None
+
+        self.model = Trainer().load(from_directory=model_path, best=use_best).model
+        self.set_up(halo, gpu, use_best, prep_model, mixed_precision,
+                    **augmentation_kwargs)
 
 
 # TODO
-class TensorflowPredicter(object):
+class TensorflowPredicter:
     pass
 
 
