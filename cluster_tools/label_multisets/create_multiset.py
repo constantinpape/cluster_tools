@@ -13,7 +13,7 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 # this is a task called by multiple processes,
 # so we need to restrict the number of threads used by numpy
-from cluster_tools.utils.numpy_utils import set_numpy_threads
+from elf.util import set_numpy_threads
 set_numpy_threads(1)
 from elf.label_multiset import create_multiset_from_labels, serialize_multiset
 
