@@ -202,10 +202,10 @@ def preprocess_tf():
     pass
 
 
-def get_preprocessor(framework):
+def get_preprocessor(framework, **kwargs):
     if framework in ('inferno', 'pytorch'):
-        return preprocess_torch
+        return partial(preprocess_torch, **kwargs)
     elif framework == 'tensorflow':
-        return preprocess_tf
+        return partial(preprocess_tf, **kwargs)
     else:
         raise KeyError("Framework %s not supported" % framework)

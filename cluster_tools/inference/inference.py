@@ -52,7 +52,8 @@ class InferenceBase(luigi.Task):
         config.update({'dtype': 'uint8', 'compression': 'gzip', 'chunks': None,
                        'gpu_type': '2080Ti', 'device_mapping': None,
                        'use_best': True, 'tda_config': {}, 'prep_model': None,
-                       'channel_accumulation': None, 'mixed_precision': False})
+                       'channel_accumulation': None, 'mixed_precision': False,
+                       'preprocess_kwargs': {}})
         return config
 
     def clean_up_for_retry(self, block_list):
@@ -408,7 +409,8 @@ def inference(job_id, config_path):
                                        use_best=use_best, mixed_precision=mixed_precision,
                                        **tda_config)
     fu.log("Have model")
-    preprocess = get_preprocessor(framework)
+    preprocess_kwargs = config.get('preprocess_kwargs', {})
+    preprocess = get_preprocessor(framework, **preprocess_kwargs)
 
     shape = vu.get_shape(input_path, input_key)
     blocking = nt.blocking(roiBegin=[0, 0, 0],
