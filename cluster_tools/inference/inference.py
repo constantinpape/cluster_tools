@@ -15,6 +15,7 @@ import cluster_tools.utils.function_utils as fu
 from cluster_tools.utils.task_utils import DummyTask
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 from cluster_tools.inference.frameworks import get_predictor, get_preprocessor
+from cluster_tools.inference.prep_model import get_prep_model
 
 
 #
@@ -179,23 +180,6 @@ class InferenceLSF(InferenceBase, LSFTask):
     """ Inference on lsf cluster
     """
     pass
-
-
-#
-# Prep models
-#
-
-def extract_unet(model):
-    return model.unet
-
-
-PREP_FUNCTIONS = {'extract_unet': extract_unet}
-
-
-def get_prep_model(key):
-    assert key in PREP_FUNCTIONS, "prep_model %s is not supported, use one of %s"\
-        % (key, str(list(PREP_FUNCTIONS.values())))
-    return PREP_FUNCTIONS[key]
 
 
 #
