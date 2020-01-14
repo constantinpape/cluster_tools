@@ -16,6 +16,7 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 class MergeRegionFeaturesBase(luigi.Task):
     """ Merge edge feature base class
     """
+    n_features = 2
 
     task_name = 'merge_region_features'
     src_file = os.path.abspath(__file__)
@@ -42,8 +43,8 @@ class MergeRegionFeaturesBase(luigi.Task):
 
         # require the output dataset
         with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, dtype='float32', shape=(self.number_of_labels,),
-                              chunks=(chunk_size,), compression='gzip')
+            f.require_dataset(self.output_key, dtype='float32', shape=(self.number_of_labels, self.n_features),
+                              chunks=(chunk_size, 1), compression='gzip')
 
         # temporary output dataset
         tmp_path = os.path.join(self.tmp_folder, 'region_features_tmp.n5')
@@ -127,7 +128,8 @@ def _extract_and_merge_region_features(blocking, ds_in, ds, node_begin, node_end
         out_counts[overlapping_ids] += overlapping_counts
 
     out_features[np.isnan(out_features)] = 0.
-    ds[node_begin:node_end] = out_features
+    ds[node_begin:node_end, 0] = out_features
+    ds[node_begin:node_end, 1] = out_counts
 
 
 def merge_region_features(job_id, config_path):
