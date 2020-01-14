@@ -19,7 +19,6 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 # Block-wise mutex watershed tasks
 #
 
-# TODO add size-filter
 class MwsBlocksBase(luigi.Task):
     """ MwsBlocks base class
     """
@@ -154,18 +153,15 @@ def _mws_block(block_id, blocking,
     if affs.sum() == 0:
         fu.log_block_success(block_id)
         return
-    affs = vu.normalize(affs)
 
+    affs = vu.normalize(affs)
     seg = mutex_watershed(affs, offsets, strides=strides, mask=bb_mask,
                           randomize_strides=randomize_strides,
                           noise_level=noise_level)
     seg = seg[local_bb]
 
-    # FIXME once vigra supports uint64 or we implement our own ...
-    # seg = vigra.analysis.labelVolumeWithBackground(seg)
-
     # offset with lowest block coordinate
-    offset_id = block_id * np.prod(blocking.blockShape)
+    offset_id = max(block_id * np.prod(blocking.blockShape), 1)
     vigra.analysis.relabelConsecutive(seg, start_label=offset_id, keep_zeros=True, out=seg)
     ds_out[out_bb] = seg
 

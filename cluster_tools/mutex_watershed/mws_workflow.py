@@ -1,6 +1,8 @@
+import os
 import luigi
 
 from ..cluster_tasks import WorkflowBase
+from ..workflows import MulticutStitchingWorkflow
 from ..relabel import RelabelWorkflow
 from .. import write as write_tasks
 
@@ -10,7 +12,8 @@ from .import mws_blocks as mws_tasks
 
 
 class MwsWorkflow(WorkflowBase):
-    """ Simple MWS Workflow without any stitching.
+    """ Blockwise mutex-watershed workflow with
+    optional stitching via multicut.
 
     Arguments:
         input_path [str]
@@ -21,6 +24,7 @@ class MwsWorkflow(WorkflowBase):
         halo [list[int]]
         mask_path [str]
         mask_key [str]
+        stitch_via_mc [bool]
     """
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
@@ -30,8 +34,22 @@ class MwsWorkflow(WorkflowBase):
     halo = luigi.ListParameter(default=None)
     mask_path = luigi.Parameter(default='')
     mask_key = luigi.Parameter(default='')
+    stitch_via_mc = luigi.BoolParameter(default=False)
 
     relabel_key = 'assignments/mws_relabel'
+
+    def multicut_stitching(self, dep):
+        task = MulticutStitchingWorkflow
+        problem_path = os.path.join(self.tmp_folder, 'data.n5')
+        ass_key = 'node_labels/stitch-mc'
+        dep = task(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
+                   max_jobs=self.max_jobs, target=self.target,
+                   input_path=self.input_path, input_key=self.input_key,
+                   labels_path=self.output_path, labels_key=self.output_key,
+                   assignment_path=problem_path, assignment_key=ass_key,
+                   problem_path=problem_path, output_path=self.output_path,
+                   output_key=self.output_key, dependency=dep)
+        return dep
 
     def requires(self):
         mws_task = getattr(mws_tasks, self._get_task_name('MwsBlocks'))
@@ -45,16 +63,20 @@ class MwsWorkflow(WorkflowBase):
                               max_jobs=self.max_jobs, target=self.target, dependency=dep,
                               input_path=self.output_path, input_key=self.output_key,
                               assignment_path=self.output_path, assignment_key=self.relabel_key)
+        if self.stitch_via_mc:
+            dep = self.multicut_stitching(dep)
         return dep
 
     @staticmethod
     def get_config():
         configs = super(MwsWorkflow, MwsWorkflow).get_config()
         configs.update({'mws_blocks': mws_tasks.MwsBlocksLocal.default_task_config(),
-                        **RelabelWorkflow.get_config()})
+                        **RelabelWorkflow.get_config(),
+                        **MulticutStitchingWorkflow.get_config()})
         return configs
 
 
+# TODO implementation is not fully working yet
 class TwoPassMwsWorkflow(WorkflowBase):
     """ Mutex watershed workflow with stitching via two-pass
     processing in checkerboard pattern.
