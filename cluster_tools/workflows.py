@@ -18,6 +18,7 @@ from . import write as write_tasks
 
 #
 from .agglomerative_clustering import agglomerative_clustering as agglomerate_tasks
+from .stitching import stitching_multicut as stitch_mc_tasks
 from .stitching import StitchingAssignmentsWorkflow
 
 
@@ -381,4 +382,68 @@ class SimpleStitchingWorkflow(MulticutSegmentationWorkflow):
         configs = super(SimpleStitchingWorkflow,
                         SimpleStitchingWorkflow).get_config()
         configs.update(StitchingAssignmentsWorkflow.get_config())
+        return configs
+
+
+class MulticutStitchingWorkflow(WorkflowBase):
+    input_path = luigi.Parameter()
+    input_key = luigi.Parameter()
+    labels_path = luigi.Parameter()
+    labels_key = luigi.Parameter()
+    assignment_path = luigi.Parameter()
+    assignment_key = luigi.Parameter()
+    problem_path = luigi.Parameter()
+    output_path = luigi.Parameter(default=None)
+    output_key = luigi.Parameter(default=None)
+
+    def requires(self):
+        # 1.) compute the multicut problem
+        dep = ProblemWorkflow(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                              target=self.target, config_dir=self.config_dir,
+                              input_path=self.input_path, input_key=self.input_key,
+                              ws_path=self.labels_path, ws_key=self.labels_key,
+                              problem_path=self.problem_path, compute_costs=False,
+                              dependency=self.dependency)
+
+        # 2.) compute the stitch edges
+        edge_key = 'stitch_edges'
+        graph_key = 's0/graph'
+        feat_key = 'features'
+        dep = StitchingAssignmentsWorkflow(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                                           target=self.target, config_dir=self.config_dir,
+                                           problem_path=self.problem_path,
+                                           labels_path=self.labels_path, labels_key=self.labels_key,
+                                           assignments_path=self.assignment_path, assignments_key=edge_key,
+                                           features_key=feat_key, graph_key=graph_key, serialize_edges=True,
+                                           dependency=dep)
+
+        # 3.) solve the stitching mc problem
+        stitch_mc_task = getattr(stitch_mc_tasks,
+                                 self._get_task_name('StitchingMulticut'))
+        dep = stitch_mc_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs, config_dir=self.config_dir,
+                             problem_path=self.problem_path, graph_key=graph_key,
+                             features_key=feat_key, edge_key=edge_key,
+                             output_path=self.assignment_path, output_key=self.assignment_key,
+                             dependency=dep)
+
+        # 4.) write the output segmentation
+        if self.output_path is not None:
+            write_task = getattr(write_tasks, self._get_task_name('Write'))
+            dep = write_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                             config_dir=self.config_dir,
+                             input_path=self.labels_path, input_key=self.labels_key,
+                             output_path=self.output_path, output_key=self.output_key,
+                             assignment_path=self.assignment_path,
+                             assignment_key=self.assignment_key,
+                             dependency=dep, identifier='stitch-mc')
+        return dep
+
+    @staticmethod
+    def get_config():
+        configs = super(MulticutStitchingWorkflow,
+                        MulticutStitchingWorkflow).get_config()
+        configs.update({'write': write_tasks.WriteLocal.default_task_config(),
+                        'stitching_multicut': stitch_mc_tasks.StitchingMulticutLocal.default_task_config(),
+                        **ProblemWorkflow.get_config(),
+                        **StitchingAssignmentsWorkflow.get_config()})
         return configs

@@ -12,7 +12,7 @@ class StitchingAssignmentsWorkflow(WorkflowBase):
     assignments_path = luigi.Parameter()
     assignments_key = luigi.Parameter()
     features_key = luigi.Parameter()
-    graph_key = luigi.Parameter()
+    graph_key = luigi.Parameter('s0/graph')
     edge_size_threshold = luigi.IntParameter(default=0)
     serialize_edges = luigi.BoolParameter(default=False)
 
