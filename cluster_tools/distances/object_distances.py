@@ -3,6 +3,7 @@
 import os
 import sys
 import json
+import pickle
 
 # this is a task called by multiple processes,
 # so we need to restrict the number of threads used by numpy
@@ -36,9 +37,7 @@ class ObjectDistancesBase(luigi.Task):
     morphology_path = luigi.Parameter()
     morphology_key = luigi.Parameter()
     max_distance = luigi.FloatParameter()
-    resolution = luigi.ListParamete()
-    mask_path = luigi.Parameter(default='')
-    mask_key = luigi.Parameter(default='')
+    resolution = luigi.ListParameter()
 
     @staticmethod
     def default_task_config():
@@ -59,9 +58,6 @@ class ObjectDistancesBase(luigi.Task):
                        'morphology_path': self.morphology_path, 'morphology_key': self.morphology_key,
                        'max_distance': self.max_distance, 'resolution': self.resolution,
                        'tmp_folder': self.tmp_folder})
-        if self.mask_path != '':
-            assert self.mask_key != ''
-            config.update({'mask_path': self.mask_path, 'mask_key': self.mask_key})
 
         with vu.file_reader(self.input_path, 'r') as f:
             n_labels = f[self.input_key].attrs['maxId'] + 1
@@ -113,7 +109,7 @@ class ObjectDistancesLSF(ObjectDistancesBase, LSFTask):
 def _labels_and_distances(ds, bb, resolution, label_id):
     labels = ds[bb].astype('uint32')
     object_mask = (labels == label_id).astype('uint32')
-    distances = vigra.filters.distanceTransform(object_mask, pixelPitch=resolution)
+    distances = vigra.filters.distanceTransform(object_mask, pixel_pitch=resolution)
     return labels, distances
 
 
@@ -138,7 +134,7 @@ def _enlarge_bb(bb, face_distances, resolution, shape, max_distance):
     face_id = 0
     for dim, b in enumerate(bb):
         start, stop = b.start, b.stop
-        res = resolution[dim:]
+        res = resolution[dim]
 
         fdist = face_distances[face_id]
         if fdist < max_distance:
@@ -152,45 +148,46 @@ def _enlarge_bb(bb, face_distances, resolution, shape, max_distance):
             stop = min(stop, shape[dim])
         face_id += 1
 
-        enlarged.append(slice(start, stop))
+        enlarged.append(slice(int(start), int(stop)))
     return tuple(enlarged)
 
 
-def _object_distances(label_id, ds, mask, bb_start, bb_stop,
+def _object_distances(label_id, ds, bb_start, bb_stop,
                       max_distance, resolution):
     bb = tuple(slice(sta, sto) for sta, sto in zip(bb_start[label_id], bb_stop[label_id]))
     labels, distances = _labels_and_distances(ds, bb, resolution, label_id)
 
-    # enlarge the bounding box if we don't have max distances to all side
+    # compute all face distances and the
     face_distances = _compute_face_distances(distances)
     min_bd_distance = min(face_distances)
 
-    # FIXME This will result in an infinite loop if something is too close to the boundary
-    while min_bd_distance < max_distance:
+    # enlarge the bounding box if we don't have max distances to all side
+    if min_bd_distance < max_distance:
         bb = _enlarge_bb(bb, face_distances, resolution, ds.shape, max_distance)
         labels, distances = _labels_and_distances(ds, bb, resolution, label_id)
         face_distances = _compute_face_distances(distances)
-        min_bd_distance = min(face_distances)
 
     object_ids = np.unique(labels)
     if 0 in object_ids:
         object_ids = object_ids[1:]
     object_distances = vigra.analysis.extractRegionFeatures(distances, labels,
-                                                            features=['min'])['min']
+                                                            features=['Minimum'])['Minimum']
     dist_dict = {(label_id, obj_id): object_distances[obj_id]
                  for obj_id in object_ids if label_id < obj_id}
     dist_dict = {k: v for k, v in dist_dict.items() if v < max_distance}
     return dist_dict
 
 
-def _distances_id_chunks(blocking, block_id, ds_in, mask,
+def _distances_id_chunks(blocking, block_id, ds_in,
                          bb_start, bb_stop, max_distance, resolution):
     block = blocking.getBlock(block_id)
-    id_start, id_stop = block.begin, block.end
+    id_start, id_stop = block.begin[0], block.end[0]
+    # skip 0, which is the ignore label
+    id_start = max(id_start, 1)
 
     block_distances = {}
     for label_id in range(id_start, id_stop):
-        dists = _object_distances(label_id, ds_in, mask,
+        dists = _object_distances(label_id, ds_in,
                                   bb_start, bb_stop,
                                   max_distance, resolution)
         block_distances.update(dists)
@@ -220,34 +217,26 @@ def object_distances(job_id, config_path):
 
     with vu.file_reader(morphology_path, 'r') as f:
         morpho = f[morphology_key][:]
-        bb_start = morpho[5:8].astype('uint64')
-        bb_stop = morpho[8:11].astype('uint64') + 1
+        bb_start = morpho[:, 5:8].astype('uint64')
+        bb_stop = morpho[:, 8:11].astype('uint64') + 1
 
     with vu.file_reader(input_path, 'r') as f:
 
         ds_in = f[input_key]
-        shape = ds_in.shape
         n_labels = ds_in.attrs['maxId'] + 1
 
         # get the blocking
         blocking = nt.blocking([0], [n_labels], [id_chunks])
 
-        if 'mask_path' in config:
-            mask_path = config['mask_path']
-            mask_key = config['mask_key']
-            mask = vu.load_mask(mask_path, mask_key, shape)
-        else:
-            mask = None
-
         res_dict = {}
         for block_id in block_list:
-            block_dict = _distances_id_chunks(blocking, block_id, ds_in, mask,
+            block_dict = _distances_id_chunks(blocking, block_id, ds_in,
                                               bb_start, bb_stop, max_distance, resolution)
             res_dict.update(block_dict)
 
-        out_path = os.path.join(tmp_folder, 'object_distances_%i.json' % job_id)
-        with open(out_path, 'w') as f:
-            json.dump(res_dict, f)
+        out_path = os.path.join(tmp_folder, 'object_distances_%i.pkl' % job_id)
+        with open(out_path, 'wb') as f:
+            pickle.dump(res_dict, f)
 
     # log success
     fu.log_job_success(job_id)
