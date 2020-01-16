@@ -64,6 +64,13 @@ class InitialSubGraphsBase(luigi.Task):
         with vu.file_reader(self.graph_path) as f:
             f.attrs['shape'] = shape
 
+            # make sub-graph dataset for nodes and edges
+            g = f.require_group('s0/sub_graphs')
+            g.require_dataset('nodes', shape=shape, chunks=block_shape,
+                              compression='gzip', dtype='uint64')
+            g.require_dataset('edges', shape=shape, chunks=block_shape,
+                              compression='gzip', dtype='uint64')
+
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
         else:
@@ -110,10 +117,10 @@ def _graph_block(block_id, blocking, input_path, input_key, graph_path,
     # we only need the halo into one direction,
     # hence we use the outer-block only for the end coordinate
 
-    block_key = 's0/sub_graphs/block_%i' % block_id
+    subgraph_key = 's0/sub_graphs'
     ndist.computeMergeableRegionGraph(input_path, input_key,
                                       block.begin, block.end,
-                                      graph_path, block_key,
+                                      graph_path, subgraph_key,
                                       ignore_label,
                                       increaseRoi=True)
     # log block success
