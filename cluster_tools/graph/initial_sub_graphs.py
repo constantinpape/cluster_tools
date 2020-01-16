@@ -59,10 +59,11 @@ class InitialSubGraphsBase(luigi.Task):
         config.update({'input_path': self.input_path, 'input_key': self.input_key,
                        'graph_path': self.graph_path, 'block_shape': block_shape})
 
-        # make graph file and write shape as attribute
+        # make graph file and write shape and ignore-label as attribute
         shape = vu.get_shape(self.input_path, self.input_key)
         with vu.file_reader(self.graph_path) as f:
             f.attrs['shape'] = shape
+            f.attrs['ignore_label'] = config['ignore_label']
 
             # make sub-graph dataset for nodes and edges
             g = f.require_group('s0/sub_graphs')
@@ -122,7 +123,8 @@ def _graph_block(block_id, blocking, input_path, input_key, graph_path,
                                       block.begin, block.end,
                                       graph_path, subgraph_key,
                                       ignore_label,
-                                      increaseRoi=True)
+                                      increaseRoi=True,
+                                      serializeToVarlen=True)
     # log block success
     fu.log_block_success(block_id)
 

@@ -44,6 +44,15 @@ class MapEdgeIdsBase(luigi.Task):
         with vu.file_reader(self.graph_path) as f:
             shape = f.attrs['shape']
 
+            # require the edge id dataset
+            subgraph_key = 's%i/sub_graphs' % self.scale
+            g = f[subgraph_key]
+            chunks = g['edges'].chunks
+
+            g.require_dataset('edge_ids', shape=shape, chunks=chunks,
+                              dtype='uint64', compression='gzip')
+
+
         factor = 2**self.scale
         block_shape = tuple(sh * factor for sh in block_shape)
         block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
@@ -104,9 +113,9 @@ def map_edge_ids(job_id, config_path):
     block_list = config['block_list']
     n_threads = config['threads_per_job']
 
-    block_prefix = 's%i/sub_graphs/block_' % scale
+    subgraph_key = 's%i/sub_graphs' % scale
     ndist.mapEdgeIds(graph_path, input_key,
-                     blockPrefix=block_prefix,
+                     subgraphKey=subgraph_key,
                      blockIds=block_list,
                      numberOfThreads=n_threads)
     fu.log_job_success(job_id)
