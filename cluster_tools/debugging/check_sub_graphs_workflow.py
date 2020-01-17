@@ -14,12 +14,13 @@ class CheckSubGraphsWorkflow(WorkflowBase):
     """
     ws_path = luigi.Parameter()
     ws_key = luigi.Parameter()
-    graph_block_prefix = luigi.Parameter()
+    graph_path = luigi.Parameter()
+    subgraph_key = luigi.Parameter()
 
     def requires(self):
         check_task = getattr(check_tasks, self._get_task_name('CheckSubGraphs'))
         dep = check_task(ws_path=self.ws_path, ws_key=self.ws_key,
-                         graph_block_prefix=self.graph_block_prefix,
+                         graph_path=self.graph_path, subgraph_key=self.subgraph_key,
                          dependency=self.dependency,
                          tmp_folder=self.tmp_folder,
                          max_jobs=self.max_jobs,
@@ -47,7 +48,5 @@ class CheckSubGraphsWorkflow(WorkflowBase):
     @staticmethod
     def get_config():
         configs = super(CheckSubGraphsWorkflow, CheckSubGraphsWorkflow).get_config()
-        configs.update({'unique_block_labels': unique_tasks.UniqueBlockLabelsLocal.default_task_config(),
-                        'label_block_mapping': mapping_tasks.LabelBlockMappingLocal.default_task_config(),
-                        'check_components': component_tasks.CheckComponentsLocal.default_task_config()})
+        configs.update({'check_sub_graphs': check_tasks.CheckSubGraphsLocal.default_task_config()})
         return configs

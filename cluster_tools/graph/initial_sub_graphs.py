@@ -62,11 +62,12 @@ class InitialSubGraphsBase(luigi.Task):
         # make graph file and write shape and ignore-label as attribute
         shape = vu.get_shape(self.input_path, self.input_key)
         with vu.file_reader(self.graph_path) as f:
-            f.attrs['shape'] = shape
-            f.attrs['ignore_label'] = config['ignore_label']
 
             # make sub-graph dataset for nodes and edges
             g = f.require_group('s0/sub_graphs')
+            g.attrs['shape'] = shape
+            g.attrs['ignore_label'] = config['ignore_label']
+
             g.require_dataset('nodes', shape=shape, chunks=block_shape,
                               compression='gzip', dtype='uint64')
             g.require_dataset('edges', shape=shape, chunks=block_shape,

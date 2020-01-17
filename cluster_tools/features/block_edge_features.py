@@ -56,8 +56,7 @@ class BlockEdgeFeaturesBase(luigi.Task):
         subgraph_key = 's0/sub_graphs'
         output_key = 's0/sub_features'
         with vu.file_reader(self.graph_path, 'r') as f:
-            shape = tuple(f.attrs['shape'])
-            assert subgraph_key in f
+            shape = tuple(f[subgraph_key].attrs['shape'])
 
         # require the output dataset
         with vu.file_reader(self.output_path) as f:
@@ -254,16 +253,16 @@ def _accumulate_with_filters(input_path, input_key,
             vu.file_reader(graph_path, 'r') as fg,\
             vu.file_reader(output_path) as fo:
 
-        shape = fg.attrs['shape']
-        ignore_label = fg.attrs['ignoreLabel']
-        blocking = nt.blocking([0, 0, 0], shape, block_shape)
+        g = fg[subgraph_key]
+        shape = g.attrs['shape']
+        ignore_label = g.attrs['ignore_label']
+        ds_edges = g['edges']
 
         ds_in = f[input_key]
         ds_labels = fl[labels_key]
-        edge_key = os.path.join(subgraph_key, 'edges')
-        ds_edges = fg[edge_key]
         ds_out = fo[output_key]
 
+        blocking = nt.blocking([0, 0, 0], shape, block_shape)
         for block_id in block_list:
             n_feats = _accumulate_block(block_id, blocking,
                                         ds_in, ds_labels, ds_edges, ds_out,

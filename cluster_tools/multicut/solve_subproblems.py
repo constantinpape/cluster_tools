@@ -58,7 +58,7 @@ class SolveSubproblemsBase(luigi.Task):
         self.init(shebang)
 
         with vu.file_reader(self.problem_path, 'r') as f:
-            shape = tuple(f.attrs['shape'])
+            shape = tuple(f['s0/graph'].attrs['shape'])
 
         factor = 2**self.scale
         block_shape = tuple(bs * factor for bs in block_shape)
@@ -125,16 +125,19 @@ class SolveSubproblemsLSF(SolveSubproblemsBase, LSFTask):
 #
 
 
-def _solve_block_problem(block_id, graph, uv_ids,
-                         problem_path, block_prefix,
+def _solve_block_problem(block_id, graph, uv_ids, ds_nodes,
                          costs, solver, ignore_label,
                          blocking, out, time_limit):
     fu.log("Start processing block %i" % block_id)
 
     # load the nodes in this sub-block and map them
     # to our current node-labeling
-    block_key = block_prefix + str(block_id)
-    nodes = ndist.loadNodes(problem_path, block_key)
+    chunk_id = blocking.blockGridPosition(block_id)
+    nodes = ds_nodes.read_chunk(chunk_id)
+    if nodes is None:
+        fu.log_block_success(block_id)
+        return
+
     # if we have an ignore label, remove zero from the nodes
     # (nodes are sorted, so it will always be at pos 0)
     if ignore_label and nodes[0] == 0:
@@ -232,7 +235,7 @@ def solve_subproblems(job_id, config_path):
 
     fu.log("reading problem from %s" % problem_path)
     problem = z5py.N5File(problem_path)
-    shape = problem.attrs['shape']
+    shape = problem['s0/graph'].attrs['shape']
 
     # load the costs
     costs_key = 's%i/costs' % scale
@@ -247,7 +250,7 @@ def solve_subproblems(job_id, config_path):
     graph = ndist.Graph(problem_path, graph_key, numberOfThreads=n_threads)
     uv_ids = graph.uvIds()
     # check if the problem has an ignore-label
-    ignore_label = problem[graph_key].attrs['ignoreLabel']
+    ignore_label = problem[graph_key].attrs['ignore_label']
     fu.log("ignore label is %s" % ('true' if ignore_label else 'false'))
 
     fu.log("using solver %s" % agglomerator_key)
@@ -256,15 +259,14 @@ def solve_subproblems(job_id, config_path):
     # the output group
     out = problem['s%i/sub_results' % scale]
 
-    # TODO this should be a n5 varlen dataset as well and
-    # then this is just another dataset in problem path
-    block_prefix = os.path.join('s%i' % scale, 'sub_graphs', 'block_')
+    node_ds_key = 's%i/sub_graphs/nodes' % scale
+    ds_nodes = problem[node_ds_key]
+
     blocking = nt.blocking([0, 0, 0], shape, list(block_shape))
 
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(_solve_block_problem,
-                           block_id, graph, uv_ids,
-                           problem_path, block_prefix,
+                           block_id, graph, uv_ids, ds_nodes,
                            costs, solver, ignore_label,
                            blocking, out, time_limit)
                  for block_id in block_list]

@@ -42,8 +42,9 @@ class MergeEdgeFeaturesBase(luigi.Task):
 
         # get the number of graph edges and the volume shape
         with vu.file_reader(self.graph_path, 'r') as f:
-            shape = tuple(f.attrs['shape'])
-            n_edges = f[self.graph_key].attrs['numberOfEdges']
+            g = f[self.graph_key]
+            shape = tuple(g.attrs['shape'])
+            n_edges = g.attrs['numberOfEdges']
 
         # if we don't have a roi, we only serialize the number of blocks
         # otherwise we serialize the blocks in roi

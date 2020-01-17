@@ -42,16 +42,15 @@ class MapEdgeIdsBase(luigi.Task):
         config = self.get_task_config()
 
         with vu.file_reader(self.graph_path) as f:
-            shape = f.attrs['shape']
 
             # require the edge id dataset
             subgraph_key = 's%i/sub_graphs' % self.scale
             g = f[subgraph_key]
+            shape = tuple(g.attrs['shape'])
             chunks = g['edges'].chunks
 
             g.require_dataset('edge_ids', shape=shape, chunks=chunks,
                               dtype='uint64', compression='gzip')
-
 
         factor = 2**self.scale
         block_shape = tuple(sh * factor for sh in block_shape)

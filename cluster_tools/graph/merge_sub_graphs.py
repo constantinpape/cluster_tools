@@ -27,7 +27,7 @@ class MergeSubGraphsBase(luigi.Task):
     # input volumes and graph
     graph_path = luigi.Parameter()
     scale = luigi.IntParameter()
-    output_key = luigi.Parameter(default='')
+    output_key = luigi.Parameter()
     merge_complete_graph = luigi.BoolParameter(default=False)
     # dependency
     dependency = luigi.TaskParameter()
@@ -57,9 +57,15 @@ class MergeSubGraphsBase(luigi.Task):
         # load the watershed config
         config = self.get_task_config()
 
-        # get the shape
-        with vu.file_reader(self.graph_path, 'r') as f:
-            shape = f.attrs['shape']
+        # get the shape and write shape and ignore label to our output file
+        with vu.file_reader(self.graph_path) as f:
+            g = f['s0/sub_graphs']
+            shape = tuple(g.attrs['shape'])
+            ignore_label = g.attrs['ignore_label']
+
+            g = f.require_group(self.output_key)
+            g.attrs['ignore_label'] = ignore_label
+            g.attrs['shape'] = shape
 
         # update the config with input and graph paths and keys
         # as well as block shape
@@ -93,7 +99,6 @@ class MergeSubGraphsBase(luigi.Task):
     def output(self):
         return luigi.LocalTarget(os.path.join(self.tmp_folder,
                                               self.task_name + '_s%i.log' % self.scale))
-
 
 
 class MergeSubGraphsLocal(MergeSubGraphsBase, LocalTask):
@@ -132,11 +137,10 @@ def _merge_graph(graph_path, output_key, scale,
         f[output_key].attrs['shape'] = shape
 
 
-def _merge_subblocks(block_id, blocking, previous_blocking, graph_path, scale):
+def _merge_subblocks(block_id, blocking, previous_blocking, graph_path, output_key, scale):
     fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
     input_key = 's%i/sub_graphs' % (scale - 1,)
-    output_key = 's%i/sub_graphs' % scale
     block_list = previous_blocking.getBlockIdsInBoundingBox(roiBegin=block.begin,
                                                             roiEnd=block.end,
                                                             blockHalo=[0, 0, 0])
@@ -159,11 +163,12 @@ def merge_sub_graphs(job_id, config_path):
     scale = config['scale']
     initial_block_shape = config['block_shape']
     graph_path = config['graph_path']
+    output_key = config['output_key']
     merge_complete_graph = config['merge_complete_graph']
     block_list = config['block_list']
 
     with vu.file_reader(graph_path, 'r') as f:
-        shape = f.attrs['shape']
+        shape = f[output_key].attrs['shape']
     factor = 2**scale
     block_shape = [factor * bs for bs in initial_block_shape]
     blocking = nt.blocking(roiBegin=[0, 0, 0],
@@ -172,8 +177,6 @@ def merge_sub_graphs(job_id, config_path):
 
     if merge_complete_graph:
         fu.log("merge complete graph at scale %i" % scale)
-        output_key = config['output_key']
-        assert output_key != ''
         n_threads = config['threads_per_job']
         _merge_graph(graph_path, output_key, scale,
                      block_list, blocking, shape, n_threads)

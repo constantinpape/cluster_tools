@@ -60,15 +60,15 @@ class ProblemWorkflow(WorkflowBase):
                             n_scales=1)
         # sanity check the subgraph
         if self.sanity_checks:
-            graph_block_prefix = os.path.join(self.problem_path,
-                                              's0', 'sub_graphs', 'block_')
+            subgraph_key = 's0/sub_graphs'
             dep = CheckSubGraphsWorkflow(tmp_folder=self.tmp_folder,
                                          max_jobs=self.max_jobs,
                                          config_dir=self.config_dir,
                                          target=self.target,
                                          ws_path=self.ws_path,
                                          ws_key=self.ws_key,
-                                         graph_block_prefix=graph_block_prefix,
+                                         graph_path=self.problem_path,
+                                         subgraph_key=subgraph_key,
                                          dependency=dep)
         dep = EdgeFeaturesWorkflow(tmp_folder=self.tmp_folder,
                                    max_jobs=self.max_jobs,
