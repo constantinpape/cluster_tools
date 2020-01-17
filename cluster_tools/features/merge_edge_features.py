@@ -32,19 +32,6 @@ class MergeEdgeFeaturesBase(luigi.Task):
     def requires(self):
         return self.dependency
 
-    def _read_num_features(self, block_ids):
-        n_feats = None
-        with vu.file_reader(self.output_path) as f:
-            for block_id in block_ids:
-                block_key = os.path.join('blocks', 'block_%i' % block_id)
-                block_path = os.path.join(self.output_path, block_key)
-                if not os.path.exists(block_path):
-                    continue
-                n_feats = f[block_key].shape[1]
-                break
-        assert n_feats is not None, "No valid feature block found"
-        return n_feats
-
     def run_impl(self):
         # get the global config and init configs
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
@@ -54,8 +41,8 @@ class MergeEdgeFeaturesBase(luigi.Task):
         config = self.get_task_config()
 
         # get the number of graph edges and the volume shape
-        with vu.file_reader(self.graph_path) as f:
-            shape = f.attrs['shape']
+        with vu.file_reader(self.graph_path, 'r') as f:
+            shape = tuple(f.attrs['shape'])
             n_edges = f[self.graph_key].attrs['numberOfEdges']
 
         # if we don't have a roi, we only serialize the number of blocks
@@ -65,22 +52,20 @@ class MergeEdgeFeaturesBase(luigi.Task):
         else:
             block_ids = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
 
-        # chunk size = 64**3
-        chunk_size = min(262144, n_edges)
-
-        # get the number of features from sub-feature block
-        n_features = self._read_num_features(range(block_ids) if isinstance(block_ids, int)
-                                             else block_ids)
+        subfeat_key = 's0/sub_features'
+        subgraph_key = 's0/sub_graphs'
+        with vu.file_reader(self.output_path, 'r') as f:
+            n_features = f[subfeat_key].attrs['n_features']
 
         # require the output dataset
+        chunk_size = min(262144, n_edges)  # chunk size = 64**3
         with vu.file_reader(self.output_path) as f:
             f.require_dataset(self.output_key, dtype='float64', shape=(n_edges, n_features),
                               chunks=(chunk_size, 1), compression='gzip')
 
         # update the task config
-        config.update({'graph_path': self.graph_path,
-                       'block_prefix': os.path.join('s0', 'sub_graphs', 'block_'),
-                       'in_path': self.output_path, 'in_prefix': 'blocks/block_',
+        config.update({'graph_path': self.graph_path, 'subgraph_key': subgraph_key,
+                       'in_path': self.output_path, 'subfeat_key': subfeat_key,
                        'output_path': self.output_path, 'output_key': self.output_key,
                        'edge_chunk_size': chunk_size, 'block_ids': block_ids,
                        'n_edges': n_edges})
@@ -129,10 +114,11 @@ def merge_edge_features(job_id, config_path):
     with open(config_path, 'r') as f:
         config = json.load(f)
     graph_path = config['graph_path']
-    block_prefix = config['block_prefix']
+    subgraph_key = config['subgraph_key']
+
     in_path = config['in_path']
-    in_prefix = config['in_prefix']
     output_path = config['output_path']
+    subfeat_key = config['subfeat_key']
     output_key = config['output_key']
     n_threads = config['threads_per_job']
     edge_block_list = config['block_list']
@@ -151,8 +137,8 @@ def merge_edge_features(job_id, config_path):
     # the block list might either be the number of blocks or a list of blocks
     block_ids = list(range(block_ids)) if isinstance(block_ids, int) else block_ids
 
-    ndist.mergeFeatureBlocks(graph_path, block_prefix,
-                             in_path, in_prefix,
+    ndist.mergeFeatureBlocks(graph_path, subgraph_key,
+                             in_path, subfeat_key,
                              output_path, output_key,
                              blockIds=block_ids,
                              edgeIdBegin=edge_begin,
