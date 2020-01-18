@@ -6,7 +6,6 @@ import json
 
 import numpy as np
 import luigi
-import z5py
 import nifty.tools as nt
 import nifty.distributed as ndist
 
@@ -54,23 +53,25 @@ class BlockEdgeFeaturesBase(luigi.Task):
         # load the task config
         config = self.get_task_config()
 
-        # require output group
-        with vu.file_reader(self.output_path) as f:
-            f.require_group('blocks')
+        subgraph_key = 's0/sub_graphs'
+        output_key = 's0/sub_features'
+        with vu.file_reader(self.graph_path, 'r') as f:
+            shape = tuple(f[subgraph_key].attrs['shape'])
 
-        # TODO make the scale at which we extract features accessible
+        # require the output dataset
+        with vu.file_reader(self.output_path) as f:
+            f.require_dataset(output_key, shape=shape, dtype='float64',
+                              compression='gzip', chunks=tuple(block_shape))
+
         # update the config with input and output paths and keys
         # as well as block shape
         config.update({'input_path': self.input_path, 'input_key': self.input_key,
                        'labels_path': self.labels_path, 'labels_key': self.labels_key,
                        'output_path': self.output_path, 'block_shape': block_shape,
-                       'graph_path': self.graph_path, 'block_prefix': os.path.join('s0', 'sub_graphs', 'block_')})
+                       'graph_path': self.graph_path, 'subgraph_key': subgraph_key,
+                       'output_key': output_key})
 
         if self.n_retries == 0:
-            # get shape and make block config
-            shape = vu.get_shape(self.input_path, self.input_key)
-            if len(shape) == 4:
-                shape = shape[1:]
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
         else:
             block_list = self.block_list
@@ -111,38 +112,40 @@ class BlockEdgeFeaturesLSF(BlockEdgeFeaturesBase, LSFTask):
 
 def _accumulate(input_path, input_key,
                 labels_path, labels_key,
-                output_path, block_list,
-                graph_path, block_prefix,
-                offsets):
+                graph_path, subgraph_key,
+                output_path, output_key,
+                block_list, offsets):
 
     fu.log("accumulate features without applying filters")
     with vu.file_reader(input_path, 'r') as f:
         dtype = f[input_key].dtype
         input_dim = f[input_key].ndim
 
-    out_prefix = os.path.join('blocks', 'block_')
     if offsets is None:
         assert input_dim == 3, str(input_dim)
         fu.log('accumulate boundary map for type %s' % str(dtype))
         boundary_function = ndist.extractBlockFeaturesFromBoundaryMaps_uint8 if dtype == 'uint8' else \
             ndist.extractBlockFeaturesFromBoundaryMaps_float32
-        boundary_function(graph_path, block_prefix,
+        boundary_function(graph_path, subgraph_key,
                           input_path, input_key,
                           labels_path, labels_key,
                           block_list,
-                          output_path, out_prefix,
+                          output_path, output_key,
                           increaseRoi=True)
     else:
         assert input_dim == 4, str(input_dim)
         fu.log('accumulate affinity map for type %s' % str(dtype))
         affinity_function = ndist.extractBlockFeaturesFromAffinityMaps_uint8 if dtype == 'uint8' else \
             ndist.extractBlockFeaturesFromAffinityMaps_float32
-        affinity_function(graph_path, block_prefix,
+        affinity_function(graph_path, subgraph_key,
                           input_path, input_key,
                           labels_path, labels_key,
                           block_list,
-                          output_path, out_prefix,
+                          output_path, output_key,
                           offsets)
+    # number of featres is 10 for both boundaries and affinities
+    n_feats = 10
+    return n_feats
 
 
 def _accumulate_filter(input_, graph, labels, bb_local,
@@ -167,19 +170,21 @@ def _accumulate_filter(input_, graph, labels, bb_local,
 
 
 def _accumulate_block(block_id, blocking,
-                      ds_in, ds_labels,
-                      f_out, out_prefix,
-                      graph_path, block_prefix,
+                      ds_in, ds_labels, ds_edges, ds_out,
                       filters, sigmas, halo, ignore_label,
                       apply_in_2d, channel_agglomeration):
 
     fu.log("start processing block %i" % block_id)
-    # load graph and check if this block has edges
-    graph = ndist.Graph(graph_path, block_prefix + str(block_id))
-    if graph.numberOfEdges == 0:
+    chunk_pos = blocking.blockGridPosition(block_id)
+
+    # load edges and construct the graph if this block has edges
+    edges = ds_edges.read_chunk(chunk_pos)
+    if edges is None:
         fu.log("block %i has no edges" % block_id)
         fu.log_block_success(block_id)
         return
+    edges = edges.reshape((edges.size, 2))
+    graph = ndist.Graph(edges)
 
     shape = ds_labels.shape
     # get the bounding
@@ -228,51 +233,43 @@ def _accumulate_block(block_id, blocking,
 
     # save the features
     fu.log("saving feature result of shape %s" % str(edge_features.shape))
-    f_out.create_dataset(out_prefix + str(block_id),
-                         data=edge_features, chunks=edge_features.shape)
-
+    ds_out.write_chunk(chunk_pos, edge_features.flatten(), True)
     fu.log_block_success(block_id)
+    return edge_features.shape[1]
 
 
 def _accumulate_with_filters(input_path, input_key,
                              labels_path, labels_key,
-                             output_path, graph_path, block_prefix,
+                             graph_path, subgraph_key,
+                             output_path, output_key,
                              block_list, block_shape,
                              filters, sigmas, halo,
                              apply_in_2d, channel_agglomeration):
 
     fu.log("accumulate features with applying filters:")
-    # TODO log filter and sigma values
-    with vu.file_reader(input_path, 'r') as f:
-        ds = f[input_key]
-        input_dim = ds.ndim
-        shape = ds.shape
-        if input_dim == 4:
-            shape = shape[1:]
-
-    out_prefix = os.path.join(output_path, 'blocks', 'block_')
-    blocking = nt.blocking([0, 0, 0], list(shape),
-                           list(block_shape))
-
-    # determine if we have an ignore label
-    with z5py.File(graph_path, 'r') as f:
-        g = f[block_prefix + str(block_list[0])]
-        ignore_label = g.attrs['ignoreLabel']
 
     with vu.file_reader(input_path, 'r') as f,\
             vu.file_reader(labels_path, 'r') as fl,\
+            vu.file_reader(graph_path, 'r') as fg,\
             vu.file_reader(output_path) as fo:
+
+        g = fg[subgraph_key]
+        shape = g.attrs['shape']
+        ignore_label = g.attrs['ignore_label']
+        ds_edges = g['edges']
 
         ds_in = f[input_key]
         ds_labels = fl[labels_key]
+        ds_out = fo[output_key]
 
+        blocking = nt.blocking([0, 0, 0], shape, block_shape)
         for block_id in block_list:
-            _accumulate_block(block_id, blocking,
-                              ds_in, ds_labels,
-                              fo, out_prefix,
-                              graph_path, block_prefix,
-                              filters, sigmas, halo, ignore_label,
-                              apply_in_2d, channel_agglomeration)
+            n_feats = _accumulate_block(block_id, blocking,
+                                        ds_in, ds_labels, ds_edges, ds_out,
+                                        filters, sigmas, halo, ignore_label,
+                                        apply_in_2d, channel_agglomeration)
+
+    return n_feats
 
 
 def block_edge_features(job_id, config_path):
@@ -292,7 +289,8 @@ def block_edge_features(job_id, config_path):
     output_path = config['output_path']
     block_shape = config['block_shape']
     graph_path = config['graph_path']
-    block_prefix = config['block_prefix']
+    subgraph_key = config['subgraph_key']
+    output_key = config['output_key']
 
     # offsets for accumulation of affinity maps
     offsets = config.get('offsets', None)
@@ -304,20 +302,27 @@ def block_edge_features(job_id, config_path):
     assert channel_agglomeration in ('mean', 'max', 'min', None)
 
     if filters is None:
-        _accumulate(input_path, input_key,
-                    labels_path, labels_key,
-                    output_path, block_list,
-                    graph_path, block_prefix, offsets)
+        n_feats = _accumulate(input_path, input_key,
+                              labels_path, labels_key,
+                              graph_path, subgraph_key,
+                              output_path, output_key,
+                              block_list, offsets)
     else:
         assert offsets is None, "Filters and offsets are not supported"
         assert sigmas is not None, "Need sigma values"
-        _accumulate_with_filters(input_path, input_key,
-                                 labels_path, labels_key,
-                                 output_path,
-                                 graph_path, block_prefix,
-                                 block_list, block_shape,
-                                 filters, sigmas, halo,
-                                 apply_in_2d, channel_agglomeration)
+        n_feats = _accumulate_with_filters(input_path, input_key,
+                                           labels_path, labels_key,
+                                           graph_path, subgraph_key,
+                                           output_path, output_key,
+                                           block_list, block_shape,
+                                           filters, sigmas, halo,
+                                           apply_in_2d, channel_agglomeration)
+
+    # we need to serialize the number of features for job 0
+    if job_id == 0:
+        with vu.file_reader(output_path) as f:
+            ds = f[output_key]
+            ds.attrs['n_features'] = n_feats
 
     fu.log_job_success(job_id)
 

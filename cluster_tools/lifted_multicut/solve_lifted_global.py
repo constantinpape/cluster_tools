@@ -124,7 +124,7 @@ def solve_lifted_global(job_id, config_path):
     with vu.file_reader(problem_path) as f:
         group = f['s%i' % scale]
         graph_group = group['graph'] if scale == 0 else group['graph_lmc']
-        ignore_label = graph_group.attrs['ignoreLabel']
+        ignore_label = graph_group.attrs['ignore_label']
 
         ds = graph_group['edges']
         ds.n_threads = n_threads

@@ -18,6 +18,9 @@ except ValueError:
     from base import BaseTest
 
 
+# FIXME both tests fail:
+# - boundary features: the min values do not agree
+# - affinity features: the edge size values do not agree
 class TestEdgeFeatures(BaseTest):
     output_key = 'features'
     offsets = [[-1, 0, 0], [0, -1, 0], [0, 0, -1]]
@@ -41,7 +44,7 @@ class TestEdgeFeatures(BaseTest):
         inp = normalize(ds_inp[:]) if ds_inp.ndim == 3 else normalize(ds_inp[:3])
         rag = nrag.gridRag(seg, numberOfLabels=int(seg.max()) + 1)
 
-        # ccompute nifty lens
+        # compute nifty lens
         if inp.ndim == 3:
             len_nifty = nrag.accumulateEdgeMeanAndLength(rag, inp)[:, 1]
         else:
@@ -55,6 +58,7 @@ class TestEdgeFeatures(BaseTest):
         self.assertEqual(len(features_nifty), len(features))
         self.assertEqual(features_nifty.shape[1], features.shape[1] - 1)
 
+        # debugging: check closeness of the min values
         # close = np.isclose(features_nifty[:, 2], features[:, 2])
         # print(close.sum(), '/', len(close))
         # not_close = ~close
@@ -90,7 +94,7 @@ class TestEdgeFeatures(BaseTest):
                                 max_jobs=self.max_jobs)],
                           local_scheduler=True)
         self.assertTrue(ret)
-        feat_func = partial(nrag.accumulateEdgeStandartFeatures, min=0., max=1.)
+        feat_func = partial(nrag.accumulateEdgeStandartFeatures, minVal=0., maxVal=1.)
         self.check_results(self.boundary_key, feat_func)
 
     # current issue: the len values don't agree.

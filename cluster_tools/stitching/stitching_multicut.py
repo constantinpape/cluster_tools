@@ -100,6 +100,7 @@ def stitching_multicut(job_id, config_path):
     agglomerator_key = config.get('agglomerator', 'kernighan-lin')
 
     # load edges and features
+    fu.log("Loading features and edges")
     with vu.file_reader(problem_path, 'r') as f:
         ds = f[features_key]
         ds.n_threads = n_threads
@@ -115,12 +116,14 @@ def stitching_multicut(job_id, config_path):
         uv_ids = ds[:]
 
     # load graph
+    fu.log("Building graph")
     n_nodes = int(uv_ids.max()) + 1
     graph = nifty.graph.undirectedGraph(n_nodes)
     graph.insertEdges(uv_ids)
     n_edges = graph.numberOfEdges
 
     # compute costs
+    fu.log("Computing costs")
     feats, sizes = feats[:, 0], feats[:, -1]
     costs = np.zeros(n_edges, dtype='float32')
     costs[stitch_edges] = transform_probabilities_to_costs(feats[stitch_edges],
@@ -132,8 +135,12 @@ def stitching_multicut(job_id, config_path):
 
     # solve multicut
     solver = get_multicut_solver(agglomerator_key)
+    fu.log("Start multicut with solver %s" % agglomerator_key)
+    if time_limit is not None:
+        fu.log("With time limit %i s" % time_limit)
     node_labels = solver(graph, costs,
                          n_threads=n_threads, time_limit=time_limit)
+    fu.log("Multicut done")
 
     # write result
     with vu.file_reader(output_path) as f:

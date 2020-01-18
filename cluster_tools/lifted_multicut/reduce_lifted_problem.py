@@ -78,7 +78,7 @@ class ReduceLiftedProblemBase(luigi.Task):
                            'roi_end': roi_end})
 
         with vu.file_reader(self.problem_path, 'r') as f:
-            shape = f.attrs['shape']
+            shape = f['s0/graph'].attrs['shape']
 
         factor = 2**self.scale
         block_shape = tuple(bs * factor for bs in block_shape)
@@ -238,8 +238,8 @@ def _serialize_new_problem(problem_path,
     sub_graph_identifier = 'sub_graphs' if scale == 0 else 'sub_graphs_lmc'
     g_out.require_group(sub_graph_identifier)
 
-    block_in_prefix = os.path.join('s%i' % scale, sub_graph_identifier, 'block_')
-    block_out_prefix = os.path.join('s%i' % next_scale, 'sub_graphs_lmc', 'block_')
+    subgraph_in_key = 's%i/%s' % (scale, sub_graph_identifier)
+    subgraph_out_key = 's%i/sub_graphs_lmc' % next_scale
 
     factor = 2**scale
     block_shape = [factor * bs for bs in initial_block_shape]
@@ -254,7 +254,7 @@ def _serialize_new_problem(problem_path,
     # serialize the new sub-graphs
     block_ids = vu.blocks_in_volume(shape, new_block_shape, roi_begin, roi_end)
     ndist.serializeMergedGraph(graphPath=problem_path,
-                               graphBlockPrefix=block_in_prefix,
+                               graphBlockPrefix=subgraph_in_key,
                                shape=shape,
                                blockShape=block_shape,
                                newBlockShape=new_block_shape,
@@ -262,7 +262,7 @@ def _serialize_new_problem(problem_path,
                                nodeLabeling=node_labeling,
                                edgeLabeling=edge_labeling,
                                outPath=problem_path,
-                               graphOutPrefix=block_out_prefix,
+                               graphOutPrefix=subgraph_out_key,
                                numberOfThreads=n_threads,
                                serializeEdges=False)
 
@@ -270,13 +270,14 @@ def _serialize_new_problem(problem_path,
 
     graph_key = 's%i/graph_lmc' % scale if scale > 0 else 's0/graph'
     with vu.file_reader(problem_path, 'r') as f:
-        ignore_label = f[graph_key].attrs['ignoreLabel']
+        ignore_label = f[graph_key].attrs['ignore_label']
 
     n_new_edges = len(new_uv_ids)
     graph_out = g_out.require_group('graph_lmc')
-    graph_out.attrs['ignoreLabel'] = ignore_label
+    graph_out.attrs['ignore_label'] = ignore_label
     graph_out.attrs['numberOfNodes'] = n_new_nodes
     graph_out.attrs['numberOfEdges'] = n_new_edges
+    graph_out.attrs['shape'] = shape
 
     def _serialize(out_group, name, data, dtype='uint64'):
         ser_chunks = (min(data.shape[0], 262144), 2) if data.ndim == 2 else\
@@ -330,7 +331,7 @@ def reduce_lifted_problem(job_id, config_path):
     # hence the identifier is identical
     graph_key = 's%i/graph_lmc' % scale if scale > 0 else 's0/graph'
     with vu.file_reader(problem_path, 'r') as f:
-        shape = f.attrs['shape']
+        shape = f[graph_key].attrs['shape']
 
         # load graph nodes and edges
         group = f[graph_key]

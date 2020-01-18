@@ -33,6 +33,10 @@ class TestGraph(BaseTest):
         blocking = nt.blocking([0, 0, 0], list(shape),
                                self.block_shape)
 
+        ds_nodes = f_out["s0/sub_graphs/nodes"]
+        ds_edges = f_out["s0/sub_graphs/edges"]
+        ds_edge_ids = f_out["s0/sub_graphs/edge_ids"]
+
         halo = [1, 1, 1]
         for block_id in range(blocking.numberOfBlocks):
             # get the block with the appropriate halo
@@ -43,22 +47,23 @@ class TestGraph(BaseTest):
                                                             inner_block.end))
             bb2 = tuple(slice(beg, end) for beg, end in zip(outer_block.begin,
                                                             inner_block.end))
-            # check that the rois are correct
-            block_key = os.path.join('s0', 'sub_graphs', 'block_%i' % block_id)
-            roi_begin = f_out[block_key].attrs['roiBegin']
-            roi_end = f_out[block_key].attrs['roiEnd']
-            self.assertEqual(inner_block.begin, roi_begin)
-            self.assertEqual(inner_block.end, roi_end)
-
-            # load the graph
-            graph = ndist.Graph(self.output_path, block_key)
-            nodes_deser = ndist.loadNodes(self.output_path, block_key)
+            # load the nodes
+            chunk_id = blocking.blockGridPosition(block_id)
+            nodes_deser = ds_nodes.read_chunk(chunk_id)
 
             # load the segmentation and check that the nodes
             # are correct
             seg1 = ds_ws[bb1]
             nodes_ws = np.unique(seg1)
             self.assertTrue(np.array_equal(nodes_ws, nodes_deser))
+
+            # load the edges and construct the graph
+            edges = ds_edges.read_chunk(chunk_id)
+            if edges is None:
+                self.assertEqual(len(nodes_ws), 1)
+                continue
+            edges = edges.reshape((edges.size // 2, 2))
+            graph = ndist.Graph(edges)
 
             # compute the rag and check that the graph is correct
             seg2 = ds_ws[bb2]
@@ -78,10 +83,9 @@ class TestGraph(BaseTest):
 
             if graph.numberOfEdges == 0:
                 continue
+
             # check the edge ids
-            edge_id_key = os.path.join(block_key, 'edgeIds')
-            self.assertIn(edge_id_key, f_out)
-            edge_ids = f_out[edge_id_key][:]
+            edge_ids = ds_edge_ids.read_chunk(chunk_id)
             self.assertEqual(len(edge_ids), graph.numberOfEdges)
             expected_ids = full_graph.findEdges(uv_ids)
             self.assertTrue(np.array_equal(edge_ids, expected_ids))

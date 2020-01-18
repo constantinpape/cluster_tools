@@ -107,8 +107,8 @@ def simple_stitch_edges(job_id, config_path):
     out_path = config['out_path']
     out_key = 'job_results/job_%i' % job_id
 
-    block_prefix = 's0/sub_graphs/block_'
-    res = ndist.findBlockBoundaryEdges(graph_path, block_prefix, labels_path, labels_key,
+    subgraph_key = 's0/sub_graphs'
+    res = ndist.findBlockBoundaryEdges(graph_path, subgraph_key, labels_path, labels_key,
                                        n_edges, block_shape, block_list)
     fu.log('Found %i / %i block boundary edges' % (res.sum(), len(res)))
 

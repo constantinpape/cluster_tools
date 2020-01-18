@@ -34,10 +34,12 @@ class GraphWorkflow(WorkflowBase):
         merge_task = getattr(merge_tasks,
                              self._get_task_name('MergeSubGraphs'))
         for scale in range(1, self.n_scales):
+            scale_out_key = 's%i/sub_graphs' % scale
             dep = merge_task(tmp_folder=self.tmp_folder,
                              max_jobs=self.max_jobs,
                              config_dir=self.config_dir,
                              graph_path=self.graph_path,
+                             output_key=scale_out_key,
                              scale=scale,
                              merge_complete_graph=False,
                              dependency=dep)

@@ -3,13 +3,10 @@
 import os
 import sys
 import json
-from concurrent import futures
-from collections import ChainMap
 
 import luigi
 import numpy as np
 import nifty.tools as nt
-import nifty.distributed as ndist
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -26,7 +23,8 @@ class CheckSubGraphsBase(luigi.Task):
 
     ws_path = luigi.Parameter()
     ws_key = luigi.Parameter()
-    graph_block_prefix = luigi.Parameter()
+    graph_path = luigi.Parameter()
+    subgraph_key = luigi.Parameter()
     dependency = luigi.TaskParameter()
 
     def requires(self):
@@ -40,8 +38,8 @@ class CheckSubGraphsBase(luigi.Task):
         # we don't need any additional config besides the paths
         config = self.get_task_config()
         config.update({"ws_path": self.ws_path, "ws_key": self.ws_key,
-                       "graph_block_prefix": self.graph_block_prefix, "block_shape": block_shape,
-                       "tmp_folder": self.tmp_folder})
+                       "graph_path": self.graph_path, "subgraph_key": self.subgraph_key,
+                       "block_shape": block_shape, "tmp_folder": self.tmp_folder})
         shape = vu.get_shape(self.ws_path, self.ws_key)
         block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
         n_jobs = min(len(block_list), self.max_jobs)
@@ -80,14 +78,21 @@ class CheckSubGraphsLSF(CheckSubGraphsBase, LSFTask):
 # Implementation
 #
 
-def check_block(block_id, blocking, ds, graph_block_prefix):
+def check_block(block_id, blocking, ds, ds_nodes):
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
+
     seg = ds[bb]
     nodes_seg = np.unique(seg)
 
-    graph_path = graph_block_prefix + str(block_id)
-    nodes = ndist.loadNodes(graph_path)
+    chunks = ds_nodes.chunks
+    chunk_id = (b.start // ch for b, ch in zip(bb, chunks))
+
+    nodes = ds_nodes.read_chunk(chunk_id)
+    if nodes is None:
+        un_nodes = np.unique(nodes_seg)
+        if len(un_nodes) != 1 or un_nodes[0] != 0:
+            return block_id
 
     same_len = len(nodes_seg) == len(nodes)
     if not same_len:
@@ -109,17 +114,22 @@ def check_sub_graphs(job_id, config_path):
         config = json.load(f)
     ws_path = config['ws_path']
     ws_key = config['ws_key']
-    graph_block_prefix = config['graph_block_prefix']
+    graph_path = config['graph_path']
+    subgraph_key = config['subgraph_key']
     block_shape = config['block_shape']
     block_list = config['block_list']
     tmp_folder = config['tmp_folder']
 
-    with vu.file_reader(ws_path, 'r') as f:
+    with vu.file_reader(ws_path, 'r') as f,\
+            vu.file_reader(graph_path, 'r') as fg:
+
         ds = f[ws_key]
+        node_key = '%s/nodes' % subgraph_key
+        ds_nodes = fg[node_key]
+
         shape = list(ds.shape)
         blocking = nt.blocking([0, 0, 0], shape, block_shape)
-        violating_blocks = [check_block(block_id, blocking,
-                                      ds, graph_block_prefix)
+        violating_blocks = [check_block(block_id, blocking, ds, ds_nodes)
                             for block_id in block_list]
         violating_blocks = [vb for vb in violating_blocks if vb is not None]
     save_path = os.path.join(tmp_folder, 'failed_blocks_job_%i.json' % job_id)
