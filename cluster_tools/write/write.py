@@ -167,6 +167,8 @@ def _apply_node_labels(seg, node_labels, allow_empty_assignments):
     # - dict -> extract the local dict and apply
     apply_array = False if isinstance(node_labels, dict) else (True if node_labels.ndim == 1 else False)
     if apply_array:
+        assert seg.max() < len(node_labels), "Max id %i exceeds number of node labels %i" % (seg.max(),
+                                                                                             len(node_labels))
         seg = nt.take(node_labels, seg)
     else:
         # this copys the dict and hence is extremely RAM hungry
@@ -328,7 +330,7 @@ def write(job_id, config_path):
 
     block_shape = config['block_shape']
     block_list = config['block_list']
-    n_threads = config.get('threads_per_core', 1)
+    n_threads = config.get('threads_per_job', 1)
     allow_empty_assignments = config.get('allow_empty_assignments', False)
 
     # read node assignments
