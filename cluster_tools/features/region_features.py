@@ -12,7 +12,6 @@ import luigi
 import z5py
 import nifty.tools as nt
 import vigra
-from skimage.segmentation import relabel_sequential
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -123,6 +122,15 @@ class RegionFeaturesLSF(RegionFeaturesBase, LSFTask):
 #
 
 
+# we need to implement relabel sequential ourselves,
+# because vigra.analysis.relabelConsecutive messes with the order
+# and skimage.segmentation.relabel_sequential is too memory hungry
+def relabel_sequential(data, unique_values):
+    start_val = 0 if unique_values[0] == 0 else 1
+    relabeling = {val: ii for ii, val in enumerate(unique_values, start_val)}
+    return nt.takeDict(relabeling, data)
+
+
 def _block_features(block_id, blocking,
                     ds_in, ds_labels, ds_out,
                     ignore_label, channel,
@@ -157,7 +165,7 @@ def _block_features(block_id, blocking,
         exp_len = len(ids) + 1
 
     # relabel consecutive in order to save memory
-    labels = relabel_sequential(labels)[0]
+    labels = relabel_sequential(labels, ids)
 
     feats = vigra.analysis.extractRegionFeatures(input_, labels.astype('uint32'), features=feature_names,
                                                  ignoreLabel=ignore_label)
