@@ -7,6 +7,7 @@ import luigi
 
 import numpy as np
 import nifty
+import vigra
 import cluster_tools.utils.function_utils as fu
 import cluster_tools.utils.volume_utils as vu
 from elf.segmentation.multicut import get_multicut_solver, transform_probabilities_to_costs
@@ -111,13 +112,18 @@ def stitching_multicut(job_id, config_path):
         stitch_edges = ds[:].astype('bool')
 
         g = f[graph_key]
+        n_nodes = g.attrs['numberOfNodes']
         ds = g['edges']
         ds.n_threads = n_threads
         uv_ids = ds[:]
 
+    assert uv_ids.max() < n_nodes
+    assert len(stitch_edges) == len(uv_ids), "%i, %i" % (len(stitch_edges),
+                                                         len(uv_ids))
+    assert len(feats) == len(uv_ids), "%i, %i" % (len(feats), len(uv_ids))
+
     # load graph
     fu.log("Building graph")
-    n_nodes = int(uv_ids.max()) + 1
     graph = nifty.graph.undirectedGraph(n_nodes)
     graph.insertEdges(uv_ids)
     n_edges = graph.numberOfEdges
@@ -140,6 +146,8 @@ def stitching_multicut(job_id, config_path):
         fu.log("With time limit %i s" % time_limit)
     node_labels = solver(graph, costs,
                          n_threads=n_threads, time_limit=time_limit)
+    vigra.analysis.relabelConsecutive(node_labels, out=node_labels, keep_zeros=True,
+                                      start_label=1)
     fu.log("Multicut done")
 
     # write result
