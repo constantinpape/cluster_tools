@@ -4,8 +4,6 @@ import os
 import sys
 import json
 
-# this is a task called by multiple processes,
-# so we need to restrict the number of threads used by numpy
 from elf.util import set_numpy_threads
 set_numpy_threads(1)
 import numpy as np
@@ -14,14 +12,13 @@ import luigi
 import z5py
 import nifty.tools as nt
 import vigra
+from skimage.segmentation import relabel_sequential
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
 
-# TODO for now we only support 'mean', but we should support trivially mergeable features:
-# - min, max, ???
 class RegionFeaturesBase(luigi.Task):
     """ Block edge feature base class
     """
@@ -128,7 +125,8 @@ class RegionFeaturesLSF(RegionFeaturesBase, LSFTask):
 
 def _block_features(block_id, blocking,
                     ds_in, ds_labels, ds_out,
-                    ignore_label, channel):
+                    ignore_label, channel,
+                    feature_names):
     fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
@@ -149,25 +147,30 @@ def _block_features(block_id, blocking,
     bb_in = bb if channel is None else (channel,) + bb
     input_ = ds_in[bb_in]
     input_ = vu.normalize(input_, min_val, max_val)
-    # TODO support more features
-    # TODO we might want to check for overflows and in general allow vigra to
-    # work with uint64s ...
-    labels = labels.astype('uint32')
-    feats = vigra.analysis.extractRegionFeatures(input_, labels, features=['mean', 'count'],
-                                                 ignoreLabel=ignore_label)
 
-    counts = feats['count']
-    feats = feats['mean']
+    ids = np.unique(labels)
+    if ids[0] == 0:
+        feat_slice = np.s_[:]
+        exp_len = len(ids)
+    else:
+        feat_slice = np.s_[1:]
+        exp_len = len(ids) + 1
+
+    # relabel consecutive in order to save memory
+    labels = relabel_sequential(labels)[0]
+
+    feats = vigra.analysis.extractRegionFeatures(input_, labels.astype('uint32'), features=feature_names,
+                                                 ignoreLabel=ignore_label)
+    assert len(feats['count']) == exp_len, "%i, %i" % (len(feats['count']), exp_len)
 
     # make serialization
-    ids = np.unique(labels)
-    data = np.zeros(3 * len(ids), dtype='float32')
+    n_cols = len(feature_names) + 1
+    data = np.zeros(n_cols * len(ids), dtype='float32')
     # write the ids
-    data[::3] = ids.astype('float32')
-    # write the counts
-    data[1::3] = counts[ids]
-    # write the features
-    data[2::3] = feats[ids]
+    data[::n_cols] = ids.astype('float32')
+    # write all the features
+    for feat_id, feat_name in enumerate(feature_names, 1):
+        data[feat_id::n_cols] = feats[feat_name][feat_slice]
 
     chunks = blocking.blockShape
     chunk_id = tuple(b.start // ch for b, ch in zip(bb, chunks))
@@ -195,8 +198,12 @@ def region_features(job_id, config_path):
     channel = config['channel']
     ignore_label = config['ignore_label']
 
-    with vu.file_reader(input_path) as f_in,\
-            vu.file_reader(labels_path) as f_l,\
+    # TODO there are some issues with min and max I don't understand
+    # feature_names = ['count', 'mean', 'minimum', 'maximum']
+    feature_names = ['count', 'mean']
+
+    with vu.file_reader(input_path, 'r') as f_in,\
+            vu.file_reader(labels_path, 'r') as f_l,\
             vu.file_reader(output_path) as f_out:
 
         ds_in = f_in[input_key]
@@ -209,7 +216,12 @@ def region_features(job_id, config_path):
         for block_id in block_list:
             _block_features(block_id, blocking,
                             ds_in, ds_labels, ds_out,
-                            ignore_label, channel)
+                            ignore_label, channel,
+                            feature_names)
+
+        # write the feature names in job 0
+        if job_id == 0:
+            ds_out.attrs['feature_names'] = feature_names
 
     fu.log_job_success(job_id)
 

@@ -21,18 +21,16 @@ class TestRegionFeatures(BaseTest):
     seg_key = 'volumes/segmentation/watershed'
     output_key = 'features'
 
-    def check_features(self, data, labels, res, ids=None, feat_name='mean'):
-        expected = vigra.analysis.extractRegionFeatures(data, labels, features=[feat_name],
-                                                        ignoreLabel=0)
-        expected = expected[feat_name]
+    def check_features(self, res, expected, feat_name, ids=None):
+        expected_feats = expected[feat_name]
 
         if ids is not None:
-            expected = expected[ids]
+            expected_feats = expected_feats[ids]
 
-        self.assertEqual(res.shape, expected.shape)
-        self.assertTrue(np.allclose(res, expected))
+        self.assertEqual(res.shape, expected_feats.shape)
+        self.assertTrue(np.allclose(res, expected_feats))
 
-    def check_result(self):
+    def check_result(self, feature_names):
         # load the result
         with z5py.File(self.output_path) as f:
             res = f[self.output_key][:]
@@ -45,9 +43,18 @@ class TestRegionFeatures(BaseTest):
             seg = f[self.seg_key]
             seg.max_jobs = self.max_jobs
             seg = seg[:].astype('uint32')
-        self.check_features(inp, seg, res)
+
+        expected = vigra.analysis.extractRegionFeatures(inp, seg, features=feature_names,
+                                                        ignoreLabel=0)
+        for feat_id, feat_name in enumerate(feature_names):
+            self.check_features(res[:, feat_id], expected, feat_name)
 
     def check_subresults(self):
+        f_feat = z5py.File(os.path.join(self.tmp_folder, 'region_features_tmp.n5'))
+        ds_feat = f_feat['block_feats']
+        feature_names = ds_feat.attrs['feature_names']
+        n_cols = len(feature_names) + 1
+
         with z5py.File(self.input_path) as f:
             data = f[self.input_key]
             data.n_threads = self.max_jobs
@@ -57,9 +64,6 @@ class TestRegionFeatures(BaseTest):
             segmentation.max_jobs = self.max_jobs
             segmentation = segmentation[:].astype('uint32')
         blocking = nt.blocking([0, 0, 0], data.shape, self.block_shape)
-
-        f_feat = z5py.File(os.path.join(self.tmp_folder, 'region_features_tmp.n5'))
-        ds_feat = f_feat['block_feats']
 
         n_blocks = blocking.numberOfBlocks
         for block_id in range(n_blocks):
@@ -76,19 +80,19 @@ class TestRegionFeatures(BaseTest):
                 continue
 
             # check that ids are correct
-            ids = res[::3].astype('uint32')
+            ids = res[::n_cols].astype('uint32')
             expected_ids = np.unique(seg)
             self.assertEqual(ids.shape, expected_ids.shape)
-            self.assertTrue(np.allclose(ids, expected_ids))
+            self.assertTrue(np.array_equal(ids, expected_ids))
 
-            # check that mean is correct
-            mean = res[2::3]
-            self.check_features(inp, seg, mean, ids)
+            # check that the features are correct
+            expected = vigra.analysis.extractRegionFeatures(inp, seg, features=feature_names,
+                                                            ignoreLabel=0)
+            for feat_id, feat_name in enumerate(feature_names, 1):
+                feat_res = res[feat_id::n_cols]
+                self.check_features(feat_res, expected, feat_name, ids)
 
-            # check that counts are correct
-            counts = res[1::3]
-            self.check_features(inp, seg, counts, ids,
-                                feat_name='count')
+        return feature_names
 
     def test_region_features(self):
         from cluster_tools.features import RegionFeaturesWorkflow
@@ -104,8 +108,8 @@ class TestRegionFeatures(BaseTest):
                                                   max_jobs=self.max_jobs)],
                           local_scheduler=True)
         self.assertTrue(ret)
-        self.check_subresults()
-        self.check_result()
+        feature_names = self.check_subresults()
+        self.check_result(feature_names)
 
 
 if __name__ == '__main__':

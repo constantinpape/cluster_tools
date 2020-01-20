@@ -16,7 +16,6 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 class MergeRegionFeaturesBase(luigi.Task):
     """ Merge edge feature base class
     """
-    n_features = 2
 
     task_name = 'merge_region_features'
     src_file = os.path.abspath(__file__)
@@ -41,14 +40,18 @@ class MergeRegionFeaturesBase(luigi.Task):
         config = self.get_task_config()
         chunk_size = min(10000, self.number_of_labels)
 
-        # require the output dataset
-        with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, dtype='float32', shape=(self.number_of_labels, self.n_features),
-                              chunks=(chunk_size, 1), compression='gzip')
-
         # temporary output dataset
         tmp_path = os.path.join(self.tmp_folder, 'region_features_tmp.n5')
         tmp_key = 'block_feats'
+        with vu.file_reader(tmp_path, 'r') as f:
+            ds_tmp = f[tmp_key]
+            n_features = len(ds_tmp.attrs['feature_names'])
+
+        # require the output dataset
+        with vu.file_reader(self.output_path) as f:
+            f.require_dataset(self.output_key, dtype='float32', shape=(self.number_of_labels, n_features),
+                              chunks=(chunk_size, 1), compression='gzip')
+
         # update the task config
         config.update({'output_path': self.output_path, 'output_key': self.output_key,
                        'tmp_path': tmp_path, 'tmp_key': tmp_key,
@@ -88,10 +91,26 @@ class MergeRegionFeaturesLSF(MergeRegionFeaturesBase, LSFTask):
 # Implementation
 #
 
-def _extract_and_merge_region_features(blocking, ds_in, ds, node_begin, node_end):
+def merge_feats(feat_name, this_feats, prev_feats,
+                this_counts, prev_counts, tot_counts):
+    assert len(this_feats) == len(prev_feats) == len(this_counts)
+    if feat_name == 'count':
+        return tot_counts
+    elif feat_name == 'mean':
+        return (this_counts * this_feats + prev_counts * prev_feats) / tot_counts
+    elif feat_name == 'minimum':
+        return np.minimum(this_feats, prev_feats)
+    elif feat_name == 'maximum':
+        return np.maximum(this_feats, prev_feats)
+    else:
+        raise ValueError("Invalid feature name %s" % feat_name)
+
+
+def _extract_and_merge_region_features(blocking, ds_in, ds, node_begin, node_end, feature_names):
     fu.log("processing node range %i to %i" % (node_begin, node_end))
-    out_features = np.zeros(node_end - node_begin, dtype='float32')
-    out_counts = np.zeros(node_end - node_begin, dtype='float32')
+    n_nodes_chunk = node_end - node_begin
+    n_features = len(feature_names)
+    features = np.zeros((n_nodes_chunk, n_features), dtype='float32')
 
     chunks = ds_in.chunks
     for block_id in range(blocking.numberOfBlocks):
@@ -103,33 +122,40 @@ def _extract_and_merge_region_features(blocking, ds_in, ds, node_begin, node_end
         if data is None:
             continue
 
-        # TODO support more features
-        # extract ids and features
-        ids = data[::3].astype('uint64')
-        counts = data[1::3]
-        mean = data[2::3]
+        # extract the ids from the serialization
+        n_cols = len(feature_names) + 1
+        ids = data[::n_cols].astype('uint64')
 
         # check if any ids overlap with our id range
         overlap_mask = np.logical_and(ids >= node_begin,
                                       ids < node_end)
-        if np.sum(overlap_mask) == 0:
+        if overlap_mask.sum() == 0:
             continue
 
+        # extract the region features from the serialization
+        feats = {}
+        for feat_id, feat_name in enumerate(feature_names, 1):
+            feats[feat_name] = data[feat_id::n_cols]
+
+        # normalize the ids to the chunk
         overlapping_ids = ids[overlap_mask]
         overlapping_ids -= node_begin
-        overlapping_counts = counts[overlap_mask]
-        overlapping_mean = mean[overlap_mask]
 
-        # calculate cumulative moving average
-        prev_counts = out_counts[overlapping_ids]
-        tot_counts = (prev_counts + overlapping_counts)
-        out_feats = (overlapping_counts * overlapping_mean + prev_counts * out_features[overlapping_ids]) / tot_counts
-        out_features[overlapping_ids] = out_feats
-        out_counts[overlapping_ids] += overlapping_counts
+        # compute the count features
+        this_counts = feats['count'][overlap_mask]
+        prev_counts = features[overlapping_ids, 0]
+        assert len(this_counts) == len(prev_counts)
+        tot_counts = prev_counts + this_counts
 
-    out_features[np.isnan(out_features)] = 0.
-    ds[node_begin:node_end, 0] = out_features
-    ds[node_begin:node_end, 1] = out_counts
+        # update all features
+        for feat_id, feat_name in enumerate(feature_names):
+            features[overlapping_ids, feat_id] = merge_feats(feat_name,
+                                                             feats[feat_name][overlap_mask],
+                                                             features[overlapping_ids, feat_id],
+                                                             this_counts, prev_counts, tot_counts)
+
+    features[np.isnan(features)] = 0.
+    ds[node_begin:node_end, :] = features
 
 
 def merge_region_features(job_id, config_path):
@@ -150,6 +176,9 @@ def merge_region_features(job_id, config_path):
             vu.file_reader(tmp_path) as f_in:
 
         ds_in = f_in[tmp_key]
+        feature_names = ds_in.attrs['feature_names']
+        assert feature_names[0] == 'count'
+
         ds = f[output_key]
         n_nodes = ds.shape[0]
 
@@ -161,7 +190,8 @@ def merge_region_features(job_id, config_path):
         chunks = list(ds_in.chunks)
         blocking = nt.blocking([0, 0, 0], shape, chunks)
 
-        _extract_and_merge_region_features(blocking, ds_in, ds, node_begin, node_end)
+        _extract_and_merge_region_features(blocking, ds_in, ds,
+                                           node_begin, node_end, feature_names)
 
     fu.log_job_success(job_id)
 
