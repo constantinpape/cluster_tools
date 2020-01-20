@@ -305,7 +305,8 @@ def _ws_block(blocking, block_id, ds_in, ds_out, mask, config):
 
     # get offset to make new seeds unique between blocks
     # (we need to relabel later to make processing efficient !)
-    offset = block_id * np.prod(blocking.blockShape)
+    offset = block_id * int(np.prod(blocking.blockShape))
+    assert offset < np.iinfo('uint64').max, "Id overflow"
 
     # apply distance transform
     dt = _apply_dt(input_, config)

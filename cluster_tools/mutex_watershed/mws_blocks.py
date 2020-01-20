@@ -161,7 +161,8 @@ def _mws_block(block_id, blocking,
     seg = seg[local_bb]
 
     # offset with lowest block coordinate
-    offset_id = max(block_id * np.prod(blocking.blockShape), 1)
+    offset_id = max(block_id * int(np.prod(blocking.blockShape)), 1)
+    assert offset_id < np.iinfo('uint64').max, "Id overflow"
     vigra.analysis.relabelConsecutive(seg, start_label=offset_id, keep_zeros=True, out=seg)
     ds_out[out_bb] = seg
 

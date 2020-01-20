@@ -43,7 +43,7 @@ class SimpleStitchAssignmentsBase(luigi.Task):
         self.init(shebang)
 
         with vu.file_reader(self.problem_path, 'r') as f:
-            shape = f.attrs['shape']
+            shape = f[self.graph_key].attrs['shape']
         block_list = vu.blocks_in_volume(shape, block_shape,
                                          roi_begin, roi_end)
         n_jobs = min(len(block_list), self.max_jobs)
