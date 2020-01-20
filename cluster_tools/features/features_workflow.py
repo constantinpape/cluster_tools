@@ -64,8 +64,6 @@ class EdgeFeaturesWorkflow(WorkflowBase):
         return configs
 
 
-# TODO support more than mean value
-# TODO support multi-channel inputs
 class RegionFeaturesWorkflow(WorkflowBase):
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
@@ -73,6 +71,9 @@ class RegionFeaturesWorkflow(WorkflowBase):
     labels_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
+    # it may be advisable to use less jobs for merging the features
+    # because this is very I/O bound
+    max_jobs_merge = luigi.IntParameter(default=None)
     channel = luigi.IntParameter(default=None)
 
     def read_number_of_labels(self):
@@ -95,8 +96,9 @@ class RegionFeaturesWorkflow(WorkflowBase):
         merge_task = getattr(merge_reg_tasks,
                              self._get_task_name('MergeRegionFeatures'))
         n_labels = self.read_number_of_labels()
+        max_jobs_merge = self.max_jobs if self.max_jobs_merge is None else self.max_jobs_merge
         dep = merge_task(tmp_folder=self.tmp_folder,
-                         max_jobs=self.max_jobs,
+                         max_jobs=max_jobs_merge,
                          config_dir=self.config_dir,
                          output_path=self.output_path,
                          output_key=self.output_key,
