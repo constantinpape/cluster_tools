@@ -47,7 +47,8 @@ class PairwiseDistanceWorkflow(WorkflowBase):
         dep = distance_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                             config_dir=self.config_dir,
                             input_path=self.input_path, input_key=self.input_key,
-                            morphology_path=self.morphology_path, morphology_key=self.morphology_key,
+                            morphology_path=self.morphology_path,
+                            morphology_key=self.morphology_key,
                             max_distance=self.max_distance, resolution=self.resolution)
         dep = MergePairwiseDistances(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                                      output_path=self.output_path, dependency=dep)

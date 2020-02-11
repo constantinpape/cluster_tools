@@ -19,7 +19,7 @@ class WriteDownscalingMetadata(luigi.Task):
     output_path = luigi.Parameter()
     scale_factors = luigi.ListParameter()
     dependency = luigi.TaskParameter()
-    metadata_format = luigi.Parameter(default='paintera')
+    metadata_format = luigi.Parameter()
     metadata_dict = luigi.DictParameter(default={})
     output_key_prefix = luigi.Parameter(default='')
     scale_offset = luigi.IntParameter(default=0)
@@ -71,12 +71,10 @@ class WriteDownscalingMetadata(luigi.Task):
             self._copy_max_id(g)
 
     def _bdv_metadata(self):
-        is_h5 = os.path.splitext(self.output_path)[1].lower() in ('.h5',
-                                                                  '.hdf5',
-                                                                  '.hdf')
+        is_h5 = self.metadata_format in ('bdv', 'bdv.hdf5')
         xml_out_path = os.path.splitext(self.output_path)[0] + ".xml"
 
-        scale_factors = [[1, 1, 1]] + self.scale_factors[self.scale_offset:]
+        scale_factors = [[1, 1, 1]] + list(self.scale_factors[self.scale_offset:])
 
         unit = self.metadata_dict.get('unit', 'pixel')
         resolution = self.metadata_dict.get('resolution', [1., 1., 1.])
@@ -90,7 +88,7 @@ class WriteDownscalingMetadata(luigi.Task):
     def run(self):
         if self.metadata_format == 'paintera':
             self._paintera_metadata()
-        elif self.metadata_format == 'bdv':
+        elif self.metadata_format in ('bdv', 'bdv.hdf5', 'bdv.n5'):
             self._bdv_metadata()
         else:
             raise RuntimeError("Invalid metadata format %s" % self.metadata_format)
@@ -115,6 +113,8 @@ class DownscalingWorkflow(WorkflowBase):
     skip_existing_levels = luigi.BoolParameter(default=False)
     scale_offset = luigi.IntParameter(default=0)
 
+    formats = ('bdv', 'bdv.hdf5', 'bdv.n5', 'paintera')
+
     @staticmethod
     def validate_scale_factors(scale_factors):
         assert all(isinstance(sf, (int, list, tuple)) for sf in scale_factors)
@@ -130,31 +130,39 @@ class DownscalingWorkflow(WorkflowBase):
         assert all(len(halo) == 3 for halo in halos if halo)
         return halos
 
+    def _is_h5(self):
+        h5_exts = ('.h5', '.hdf5', '.hdf')
+        return os.path.splitext(self.output_path)[1].lower() in h5_exts
+
+    def _is_n5(self):
+        n5_exts = ('.n5',)
+        return os.path.splitext(self.output_path)[1].lower() in n5_exts
+
     def validate_format(self):
-        assert self.metadata_format in ('paintera', 'bdv'),\
-            "Invalid format %s" % self.metadata_format
+        assert self.metadata_format in self.formats,\
+                "Invalid format: %s not in %s" % (self.metadata_format, str(self.formats))
         if self.metadata_format == 'paintera':
             assert self.output_key_prefix != '',\
                 "Need output_key_prefix for paintera data format"
+            assert self._is_n5(), "paintera format only supports n5 output"
         # for now, we only support a single 'setup' and a single
         # time-point for the bdv format
-        elif self.metadata_format == 'bdv':
+        else:
             assert self.output_key_prefix == '',\
                 "Must not give output_key_prefix for bdv data format"
+            if self.metadata_format in ('bdv', 'bdv.hdf5'):
+                assert self._is_h5(), "%s format only supports hdf5 output" % self.metadata_format
+            else:
+                assert self._is_n5(), "bdv.n5 format only supports n5 output"
 
     def get_scale_key(self, scale):
         if self.metadata_format == 'paintera':
             prefix = 's%i' % scale
             out_key = os.path.join(self.output_key_prefix, prefix)
-        elif self.metadata_format == 'bdv':
-            # we only support a single time-point and single set-up for now
+        else:
+            is_h5 = self.metadata_format in ('bdv', 'bdv.hdf5')
             # TODO support multiple set-ups for multi-channel data
-            out_key = 't00000/s00/%i/cells' % scale
-            is_h5 = os.path.splitext(self.output_path)[1].lower() in ('.hdf5',
-                                                                      '.hdf',
-                                                                      '.h5')
-            out_key = get_key(is_h5, time_point=0,
-                              setup_id=0, scale=scale)
+            out_key = get_key(is_h5, time_point=0, setup_id=0, scale=scale)
         return out_key
 
     def _link_scale_zero_h5(self, trgt):
@@ -196,9 +204,9 @@ class DownscalingWorkflow(WorkflowBase):
         if copy_initial_ds:
             dep = self._copy_scale_zero(out_path, out_key, dep)
         else:
-            if self.metadata_format == 'bdv':
+            if self.metadata_format in ('bdv', 'bdv.hdf5'):
                 self._link_scale_zero_h5(out_key)
-            elif self.metadata_format == 'paintera':
+            elif self.metadata_format in ('paintera', 'bdv.n5'):
                 self._link_scale_zero_n5(out_key)
         return dep
 
@@ -306,7 +314,8 @@ class PainteraToBdvWorkflow(WorkflowBase):
 
             if scale > 0:
                 assert prev_scale is not None
-                scale_factors.append([eff / prev for eff, prev in zip(effective_scale, prev_scale)])
+                scale_factors.append([eff / prev for eff, prev in zip(effective_scale,
+                                                                      prev_scale)])
             prev_scale = deepcopy(effective_scale)
 
             if self.skip_existing_levels and os.path.exists(self.output_path):
