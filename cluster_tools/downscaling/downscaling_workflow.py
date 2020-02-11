@@ -1,33 +1,17 @@
 import os
-import xml.etree.ElementTree as ET
 from copy import deepcopy
 from datetime import datetime
 
-import numpy as np
 import luigi
+from pybdv.metadata import (write_h5_metadata,
+                            write_n5_metadata,
+                            write_xml_metadata)
+from pybdv.util import get_key
 
-from ..utils.volume_utils import file_reader
 from ..cluster_tasks import WorkflowBase
+from ..utils.volume_utils import file_reader
 from .. import copy_volume as copy_tasks
 from . import downscaling as downscale_tasks
-
-
-# pretty print xml, from:
-# http://effbot.org/zone/element-lib.htm#prettyprint
-def indent_xml(elem, level=0):
-    i = "\n" + level*"  "
-    if len(elem):
-        if not elem.text or not elem.text.strip():
-            elem.text = i + "  "
-        if not elem.tail or not elem.tail.strip():
-            elem.tail = i
-        for elem in elem:
-            indent_xml(elem, level+1)
-        if not elem.tail or not elem.tail.strip():
-            elem.tail = i
-    else:
-        if level and (not elem.tail or not elem.tail.strip()):
-            elem.tail = i
 
 
 class WriteDownscalingMetadata(luigi.Task):
@@ -35,7 +19,7 @@ class WriteDownscalingMetadata(luigi.Task):
     output_path = luigi.Parameter()
     scale_factors = luigi.ListParameter()
     dependency = luigi.TaskParameter()
-    metadata_format = luigi.Parameter(default='paintera')
+    metadata_format = luigi.Parameter()
     metadata_dict = luigi.DictParameter(default={})
     output_key_prefix = luigi.Parameter(default='')
     scale_offset = luigi.IntParameter(default=0)
@@ -60,6 +44,8 @@ class WriteDownscalingMetadata(luigi.Task):
         with file_reader(self.output_path) as f:
             g = f[self.output_key_prefix]
 
+            # need to reverse the scale factors to be compatible with java
+
             # write metadata for the scale datasets: effective downsampling
             # facor compared to level 0
             for scale, scale_factor in enumerate(self.scale_factors, 1):
@@ -69,139 +55,40 @@ class WriteDownscalingMetadata(luigi.Task):
                 if isinstance(scale_factor, int):
                     effective_scale = [eff * scale_factor for eff in effective_scale]
                 else:
-                    effective_scale = [eff * sf for sf, eff in zip(scale_factor, effective_scale)]
+                    effective_scale = [eff * sf for sf, eff in zip(scale_factor,
+                                                                   effective_scale)]
                 g[scale_key].attrs['downsamplingFactors'] = effective_scale[::-1]
 
             # write attributes for the root multi-scale group
-            resolution = self.metadata_dict.get("resolution", 3 * [1.])[::-1]
-            offsets = self.metadata_dict.get("offsets", 3 * [0.])[::-1]
+            resolution = self.metadata_dict.get("resolution", 3 * [1.])
+            offsets = self.metadata_dict.get("offsets", 3 * [0.])
 
             g.attrs["multiScale"] = True
-            g.attrs["resolution"] = resolution
-            g.attrs["offset"] = offsets
+            g.attrs["resolution"] = resolution[::-1]
+            g.attrs["offset"] = offsets[::-1]
 
             # copy maxId attribute if it exists
             self._copy_max_id(g)
 
-    def _write_metadata_bdv(self, scales, chunks):
-        with file_reader(self.output_path) as f:
-            dsr = f.require_dataset('s00/resolutions', shape=scales.shape, dtype=scales.dtype)
-            dsr[:] = scales
-            dsc = f.require_dataset('s00/subdivisions', shape=chunks.shape, dtype=chunks.dtype)
-            dsc[:] = chunks
-
-    # write bdv xml, based on:
-    # https://github.com/tlambert03/imarispy/blob/master/imarispy/bdv.py#L136
-    def _write_bdv_xml(self):
-        # TODO we have hardcoded the number of
-        # channels and  time points to 1, but should support more channels
-        nt, nc = 1, 1
-        key = 't00000/s00/0/cells'
-        with file_reader(self.output_path, 'r') as f:
-            shape = f[key].shape
-            dtype = f[key].dtype
-        nz, ny, nx = tuple(shape)
-
-        # format for tischis bdv extension
-        bdv_dtype = 'bdv.hdf5.ulong' if np.dtype(dtype) == np.dtype('uint64') else 'bdv.hdf5'
-
-        # write top-level data
-        root = ET.Element('SpimData')
-        root.set('version', '0.2')
-        bp = ET.SubElement(root, 'BasePath')
-        bp.set('type', 'relative')
-        bp.text = '.'
-
-        # read metadata from dict
-        unit = self.metadata_dict.get('unit', 'micrometer')
-        resolution = self.metadata_dict.get('resolution', (1., 1., 1.))
-        dz, dy, dx = resolution
-        offsets = self.metadata_dict.get('offsets', (0., 0., 0.))
-        oz, oy, ox = offsets
-
-        seqdesc = ET.SubElement(root, 'SequenceDescription')
-        imgload = ET.SubElement(seqdesc, 'ImageLoader')
-        imgload.set('format', bdv_dtype)
-        el = ET.SubElement(imgload, 'hdf5')
-        el.set('type', 'relative')
-        el.text = os.path.basename(self.output_path)
-        viewsets = ET.SubElement(seqdesc, 'ViewSetups')
-        attrs = ET.SubElement(viewsets, 'Attributes')
-        attrs.set('name', 'channel')
-        for c in range(nc):
-            vs = ET.SubElement(viewsets, 'ViewSetup')
-            ET.SubElement(vs, 'id').text = str(c)
-            ET.SubElement(vs, 'name').text = 'channel {}'.format(c + 1)
-            ET.SubElement(vs, 'size').text = '{} {} {}'.format(nx, ny, nz)
-            vox = ET.SubElement(vs, 'voxelSize')
-            ET.SubElement(vox, 'unit').text = unit
-            ET.SubElement(vox, 'size').text = '{} {} {}'.format(dx, dy, dz)
-            a = ET.SubElement(vs, 'attributes')
-            ET.SubElement(a, 'channel').text = str(c + 1)
-            chan = ET.SubElement(attrs, 'Channel')
-            ET.SubElement(chan, 'id').text = str(c + 1)
-            ET.SubElement(chan, 'name').text = str(c + 1)
-        tpoints = ET.SubElement(seqdesc, 'Timepoints')
-        tpoints.set('type', 'range')
-        ET.SubElement(tpoints, 'first').text = str(0)
-        ET.SubElement(tpoints, 'last').text = str(nt - 1)
-
-        vregs = ET.SubElement(root, 'ViewRegistrations')
-        for t in range(nt):
-            for c in range(nc):
-                vreg = ET.SubElement(vregs, 'ViewRegistration')
-                vreg.set('timepoint', str(t))
-                vreg.set('setup', str(c))
-                vt = ET.SubElement(vreg, 'ViewTransform')
-                vt.set('type', 'affine')
-                ET.SubElement(vt, 'affine').text = '{} 0.0 0.0 {} 0.0 {} 0.0 {} 0.0 0.0 {} {}'.format(dx, ox,
-                                                                                                      dy, oy,
-                                                                                                      dz, oz)
-
-        indent_xml(root)
-        tree = ET.ElementTree(root)
-        tree.write(os.path.splitext(self.output_path)[0] + ".xml")
-
     def _bdv_metadata(self):
-        effective_scale = [1, 1, 1]
+        is_h5 = self.metadata_format in ('bdv', 'bdv.hdf5')
+        xml_out_path = os.path.splitext(self.output_path)[0] + ".xml"
 
-        # get the scale and chunks for the initial (0th) scale
-        scales = [deepcopy(effective_scale)]
-        with file_reader(self.output_path, 'r') as f:
-            out_key = 't00000/s00/0/cells'
-            chunks = [f[out_key].chunks[::-1]]
+        scale_factors = [[1, 1, 1]] + list(self.scale_factors[self.scale_offset:])
 
-        # iterate over the scales
-        for scale, scale_factor in enumerate(self.scale_factors):
-            self._write_log("getting metadata for scale %i: factor %s" % (scale, str(scale_factor)))
+        unit = self.metadata_dict.get('unit', 'pixel')
+        resolution = self.metadata_dict.get('resolution', [1., 1., 1.])
+        write_xml_metadata(xml_out_path, self.output_path, unit, resolution, is_h5)
 
-            # compute the effective scale at this level
-            if isinstance(scale_factor, int):
-                effective_scale = [eff * scale_factor for eff in effective_scale]
-            else:
-                effective_scale = [eff * sf for sf, eff in zip(scale_factor, effective_scale)]
-
-            self._write_log("results in effective scale %s" % str(effective_scale))
-            # get the chunk size for this level
-            out_key = 't00000/s00/%i/cells' % (scale + 1,)
-            with file_reader(self.output_path, 'r') as f:
-                # check if this dataset exists
-                if out_key not in f:
-                    continue
-                # for some reason I don't understand we do not need to invert here
-                chunk = f[out_key].chunks[::-1]
-
-            scales.append(effective_scale[::-1])
-            chunks.append(chunk)
-
-        self._write_metadata_bdv(np.array(scales).astype('float32'),
-                                 np.array(chunks).astype('int'))
-        self._write_bdv_xml()
+        if is_h5:
+            write_h5_metadata(self.output_path, scale_factors)
+        else:
+            write_n5_metadata(self.output_path, scale_factors, resolution)
 
     def run(self):
         if self.metadata_format == 'paintera':
             self._paintera_metadata()
-        elif self.metadata_format == 'bdv':
+        elif self.metadata_format in ('bdv', 'bdv.hdf5', 'bdv.n5'):
             self._bdv_metadata()
         else:
             raise RuntimeError("Invalid metadata format %s" % self.metadata_format)
@@ -226,6 +113,8 @@ class DownscalingWorkflow(WorkflowBase):
     skip_existing_levels = luigi.BoolParameter(default=False)
     scale_offset = luigi.IntParameter(default=0)
 
+    formats = ('bdv', 'bdv.hdf5', 'bdv.n5', 'paintera')
+
     @staticmethod
     def validate_scale_factors(scale_factors):
         assert all(isinstance(sf, (int, list, tuple)) for sf in scale_factors)
@@ -241,26 +130,39 @@ class DownscalingWorkflow(WorkflowBase):
         assert all(len(halo) == 3 for halo in halos if halo)
         return halos
 
+    def _is_h5(self):
+        h5_exts = ('.h5', '.hdf5', '.hdf')
+        return os.path.splitext(self.output_path)[1].lower() in h5_exts
+
+    def _is_n5(self):
+        n5_exts = ('.n5',)
+        return os.path.splitext(self.output_path)[1].lower() in n5_exts
+
     def validate_format(self):
-        assert self.metadata_format in ('paintera', 'bdv'),\
-            "Invalid format %s" % self.metadata_format
+        assert self.metadata_format in self.formats,\
+                "Invalid format: %s not in %s" % (self.metadata_format, str(self.formats))
         if self.metadata_format == 'paintera':
             assert self.output_key_prefix != '',\
                 "Need output_key_prefix for paintera data format"
+            assert self._is_n5(), "paintera format only supports n5 output"
         # for now, we only support a single 'setup' and a single
         # time-point for the bdv format
-        elif self.metadata_format == 'bdv':
+        else:
             assert self.output_key_prefix == '',\
                 "Must not give output_key_prefix for bdv data format"
+            if self.metadata_format in ('bdv', 'bdv.hdf5'):
+                assert self._is_h5(), "%s format only supports hdf5 output" % self.metadata_format
+            else:
+                assert self._is_n5(), "bdv.n5 format only supports n5 output"
 
     def get_scale_key(self, scale):
         if self.metadata_format == 'paintera':
             prefix = 's%i' % scale
             out_key = os.path.join(self.output_key_prefix, prefix)
-        elif self.metadata_format == 'bdv':
-            # we only support a single time-point and single set-up for now
+        else:
+            is_h5 = self.metadata_format in ('bdv', 'bdv.hdf5')
             # TODO support multiple set-ups for multi-channel data
-            out_key = 't00000/s00/%i/cells' % scale
+            out_key = get_key(is_h5, time_point=0, setup_id=0, scale=scale)
         return out_key
 
     def _link_scale_zero_h5(self, trgt):
@@ -272,8 +174,10 @@ class DownscalingWorkflow(WorkflowBase):
         with file_reader(self.input_path) as f:
             if trgt not in f:
                 os.makedirs(os.path.split(os.path.join(self.input_path, trgt))[0], exist_ok=True)
-                src_path = os.path.abspath(os.path.realpath(os.path.join(self.input_path, self.input_key)))
-                trgt_path = os.path.abspath(os.path.realpath(os.path.join(self.input_path, trgt)))
+                src_path = os.path.abspath(os.path.realpath(os.path.join(self.input_path,
+                                                                         self.input_key)))
+                trgt_path = os.path.abspath(os.path.realpath(os.path.join(self.input_path,
+                                                                          trgt)))
                 os.symlink(src_path, trgt_path)
 
     def _have_scale(self, scale):
@@ -300,9 +204,9 @@ class DownscalingWorkflow(WorkflowBase):
         if copy_initial_ds:
             dep = self._copy_scale_zero(out_path, out_key, dep)
         else:
-            if self.metadata_format == 'bdv':
+            if self.metadata_format in ('bdv', 'bdv.hdf5'):
                 self._link_scale_zero_h5(out_key)
-            elif self.metadata_format == 'paintera':
+            elif self.metadata_format in ('paintera', 'bdv.n5'):
                 self._link_scale_zero_n5(out_key)
         return dep
 
@@ -318,7 +222,8 @@ class DownscalingWorkflow(WorkflowBase):
 
         task = getattr(downscale_tasks, self._get_task_name('Downscaling'))
         effective_scale = [1, 1, 1]
-        for scale, (scale_factor, halo) in enumerate(zip(self.scale_factors, halos), self.scale_offset + 1):
+        for scale, (scale_factor, halo) in enumerate(zip(self.scale_factors, halos),
+                                                     self.scale_offset + 1):
             out_key = self.get_scale_key(scale)
 
             if isinstance(scale_factor, int):
@@ -409,7 +314,8 @@ class PainteraToBdvWorkflow(WorkflowBase):
 
             if scale > 0:
                 assert prev_scale is not None
-                scale_factors.append([eff / prev for eff, prev in zip(effective_scale, prev_scale)])
+                scale_factors.append([eff / prev for eff, prev in zip(effective_scale,
+                                                                      prev_scale)])
             prev_scale = deepcopy(effective_scale)
 
             if self.skip_existing_levels and os.path.exists(self.output_path):
@@ -438,15 +344,10 @@ class PainteraToBdvWorkflow(WorkflowBase):
             offsets = attrs.get('offset', None)
             resolution = attrs.get('resolution', None)
 
-        # we need to invert here, because java stores as XYZ,
-        # but we expect ZYX input
         if 'offsets' not in metadata_dict and offsets is not None:
-            metadata_dict.update({'offsets': offsets[::-1]})
+            metadata_dict.update({'offsets': offsets})
         if 'resolution' not in metadata_dict and resolution is not None:
-            metadata_dict.update({'resolution': resolution[::-1]})
-
-        # we also need to invert the scale factors for the same reason
-        scale_factors = [sf[::-1] for sf in scale_factors]
+            metadata_dict.update({'resolution': resolution})
 
         # task to write the metadata
         dep = WriteDownscalingMetadata(tmp_folder=self.tmp_folder,
