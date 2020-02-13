@@ -42,7 +42,7 @@ class CopyVolumeBase(luigi.Task):
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
         config.update({'chunks': None, 'compression': 'gzip',
-                       'reduce_channels': None})
+                       'reduce_channels': None, 'map_uniform_blocks_to_background': False})
         return config
 
     def requires(self):
@@ -177,7 +177,8 @@ def cast_type(data, dtype):
         return data.astype(dtype)
 
 
-def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin, reduce_function, n_threads):
+def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin, reduce_function, n_threads,
+                 map_uniform_blocks_to_background):
     dtype = ds_out.dtype
 
     def _copy_block(block_id):
@@ -191,6 +192,10 @@ def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin, reduce_function
         data = ds_in[bb]
         # don't write empty blocks
         if data.sum() == 0:
+            fu.log_block_success(block_id)
+            return
+
+        if map_uniform_blocks_to_background and (len(np.unique(data)) == 1):
             fu.log_block_success(block_id)
             return
 
@@ -241,6 +246,7 @@ def copy_volume(job_id, config_path):
     if reduce_function is not None:
         reduce_function = getattr(np, reduce_function)
 
+    map_uniform_blocks_to_background = config.get('map_uniform_blocks_to_background', False)
     n_threads = config.get('threads_per_job', 1)
 
     # submit blocks
@@ -253,7 +259,7 @@ def copy_volume(job_id, config_path):
             shape = shape[1:]
         blocking = nt.blocking([0, 0, 0], shape, block_shape)
         _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin,
-                     reduce_function, n_threads)
+                     reduce_function, n_threads, map_uniform_blocks_to_background)
 
         # copy the attributes with job 0
         if job_id == 0:
