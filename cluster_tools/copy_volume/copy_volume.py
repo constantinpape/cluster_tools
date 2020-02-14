@@ -189,7 +189,16 @@ def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin, reduce_function
         if ds_in.ndim == 4:
             bb = (slice(None),) + bb
 
+        # hackery for broken knossos files, leave here for reference
+        # try:
+        #     data = ds_in[bb]
+        # except EOFError:
+        #     fu.log("%i failed with eof error" % block_id)
+        #     fu.log_block_success(block_id)
+        #     return
+
         data = ds_in[bb]
+
         # don't write empty blocks
         if data.sum() == 0:
             fu.log_block_success(block_id)
@@ -262,11 +271,10 @@ def copy_volume(job_id, config_path):
                      reduce_function, n_threads, map_uniform_blocks_to_background)
 
         # copy the attributes with job 0
-        if job_id == 0:
+        if job_id == 0 and hasattr(ds_in, 'attrs') and hasattr(ds_out, 'attrs'):
             attrs_in = ds_in.attrs
-            attrs_out = ds_out.attrs
             for k, v in attrs_in.items():
-                attrs_out[k] = v
+                ds_out.attrs[k] = v
 
     # log success
     fu.log_job_success(job_id)

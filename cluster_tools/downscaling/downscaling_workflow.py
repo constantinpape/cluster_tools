@@ -132,11 +132,13 @@ class DownscalingWorkflow(WorkflowBase):
 
     def _is_h5(self):
         h5_exts = ('.h5', '.hdf5', '.hdf')
-        return os.path.splitext(self.output_path)[1].lower() in h5_exts
+        out_path = self.input_path if self.output_path == '' else self.output_path
+        return os.path.splitext(out_path)[1].lower() in h5_exts
 
     def _is_n5(self):
         n5_exts = ('.n5',)
-        return os.path.splitext(self.output_path)[1].lower() in n5_exts
+        out_path = self.input_path if self.output_path == '' else self.output_path
+        return os.path.splitext(out_path)[1].lower() in n5_exts
 
     def validate_format(self):
         assert self.metadata_format in self.formats,\
