@@ -9,7 +9,7 @@ import numpy as np
 import nifty.tools as nt
 import nifty.distributed as ndist
 from elf.wrapper.resized_volume import ResizedVolume
-from elf.label_multiset import deserialize_labels
+from elf.io.label_multiset_wrapper import LabelMultisetWrapper
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -74,10 +74,6 @@ class BlockNodeLabelsBase(luigi.Task):
             except KeyError:
                 raise KeyError("Dataset %s:%s does not have attribute maxId" % (self.ws_path,
                                                                                 self.ws_key))
-            is_label_multiset = attrs.get('isLabelMultiset', False)
-
-            if is_label_multiset:
-                assert all(ch == dch for ch, dch in zip(chunks, ds.chunks)), "%s, %s" % (str(chunks), str(ds.chunks))
 
         # create output dataset
         with vu.file_reader(self.output_path) as f:
@@ -133,28 +129,15 @@ class BlockNodeLabelsLSF(BlockNodeLabelsBase, LSFTask):
 # Implementation
 #
 
-def _load_block(ds, bb, is_label_multiset):
-    if is_label_multiset:
-        chunks = ds.chunks
-        start = [b.start for b in bb]
-        chunk_id = tuple(st // ch for st, ch in zip(start, chunks))
-        bb_shape = tuple(b.stop - b.start for b in bb)
-        data = ds.read_chunk(chunk_id)
-        data = np.zeros(bb_shape, dtype='uint32') if data is None else\
-            deserialize_labels(data, bb_shape)
-    else:
-        data = ds[bb]
-    return data
-
 
 def _labels_for_block(block_id, blocking,
                       ds_ws, output_path, output_key,
-                      labels, ignore_label, is_label_multiset):
+                      labels, ignore_label):
     fu.log("start processing block %i" % block_id)
     # read labels and input in this block
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
-    ws = _load_block(ds_ws, bb, is_label_multiset)
+    ws = ds_ws[bb]
 
     # check if watershed block is empty
     if ws.sum() == 0:
@@ -230,10 +213,11 @@ def block_node_labels(job_id, config_path):
 
     with vu.file_reader(ws_path, 'r') as f_in:
         ds_ws = f_in[ws_key]
-        is_label_multiset = ds_ws.attrs.get('isLabelMultiset', False)
+        if ds_ws.attrs.get('isLabelMultiset', False):
+            ds_ws = LabelMultisetWrapper(ds_ws)
         [_labels_for_block(block_id, blocking,
                            ds_ws, output_path, output_key,
-                           labels, ignore_label, is_label_multiset)
+                           labels, ignore_label)
          for block_id in block_list]
 
     f_lab.close()

@@ -5,14 +5,13 @@ import sys
 import json
 import pickle
 from concurrent import futures
-from functools import partial
 
 # this is a task called by multiple processes,
 # so we need to restrict the number of threads used by numpy
 from elf.util import set_numpy_threads
 set_numpy_threads(1)
 import numpy as np
-from elf.label_multiset import deserialize_labels
+from elf.io.label_multiset_wrapper import LabelMultisetWrapper
 
 import luigi
 import nifty.tools as nt
@@ -75,17 +74,11 @@ class WriteBase(luigi.Task):
         with vu.file_reader(self.input_path) as f:
             ds = f[self.input_key]
             shape = ds.shape
-            ds_chunks = ds.chunks
-            is_label_multiset = ds.attrs.get("isLabelMultiset", False)
 
         config = self.get_task_config()
         chunks = config.pop('chunks', None)
         if chunks is None:
-            chunks = ds_chunks if is_label_multiset else\
-                tuple(min(bs // 2, sh) for bs, sh in zip(block_shape, shape))
-
-        if is_label_multiset:
-            assert tuple(block_shape) == ds_chunks, "%s, %s" % (str(block_shape), str(ds_chunks))
+            chunks = tuple(min(bs // 2, sh) for bs, sh in zip(block_shape, shape))
 
         # require output dataset
         with vu.file_reader(self.output_path) as f:
@@ -106,8 +99,7 @@ class WriteBase(luigi.Task):
         # update the config with input and output paths and keys
         # as well as block shape
         config.update({'input_path': self.input_path, 'input_key': self.input_key, 'block_shape': block_shape,
-                       'assignment_path': self.assignment_path, 'assignment_key': self.assignment_key,
-                       'is_label_multiset': is_label_multiset})
+                       'assignment_path': self.assignment_path, 'assignment_key': self.assignment_key})
         if self.offset_path != '':
             config.update({'offset_path': self.offset_path})
         # we only add output path and key if we do not write in place
@@ -189,13 +181,12 @@ def _apply_node_labels(seg, node_labels, allow_empty_assignments):
 
 
 def _write_block_with_offsets(ds_in, ds_out, blocking, block_id,
-                              node_labels, offsets, allow_empty_assignments,
-                              read_function):
+                              node_labels, offsets, allow_empty_assignments):
     fu.log("start processing block %i" % block_id)
     off = offsets[block_id]
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
-    seg = read_function(ds_in, bb)
+    seg = ds_in[bb]
 
     # check if this block is empty and don't write if it is
     mask = seg != 0
@@ -211,7 +202,7 @@ def _write_block_with_offsets(ds_in, ds_out, blocking, block_id,
 
 def _write_with_offsets(ds_in, ds_out, blocking, block_list,
                         n_threads, node_labels, offset_path,
-                        allow_empty_assignments, read_function):
+                        allow_empty_assignments):
 
     fu.log("loading offsets from %s" % offset_path)
     with open(offset_path) as f:
@@ -222,17 +213,17 @@ def _write_with_offsets(ds_in, ds_out, blocking, block_list,
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(_write_block_with_offsets, ds_in, ds_out,
                            blocking, block_id, node_labels, offsets,
-                           allow_empty_assignments, read_function)
+                           allow_empty_assignments)
                  for block_id in block_list if block_id not in empty_blocks]
         [t.result() for t in tasks]
 
 
 def _write_block(ds_in, ds_out, blocking, block_id, node_labels,
-                 allow_empty_assignments, read_function):
+                 allow_empty_assignments):
     fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
-    seg = read_function(ds_in, bb)
+    seg = ds_in[bb]
     # check if this block is empty and don't write if it is
     if np.sum(seg != 0) == 0:
         fu.log_block_success(block_id)
@@ -244,12 +235,11 @@ def _write_block(ds_in, ds_out, blocking, block_id, node_labels,
 
 
 def _write(ds_in, ds_out, blocking, block_list,
-           n_threads, node_labels,
-           allow_empty_assignments, read_function):
+           n_threads, node_labels, allow_empty_assignments):
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(_write_block, ds_in, ds_out,
                            blocking, block_id, node_labels,
-                           allow_empty_assignments, read_function)
+                           allow_empty_assignments)
                  for block_id in block_list]
         [t.result() for t in tasks]
 
@@ -297,19 +287,6 @@ def _write_maxlabel(output_path, output_key, node_labels):
         f[output_key].attrs['maxId'] = max_id
 
 
-def _read_labels(ds, bb):
-    return ds[bb]
-
-
-def _read_multiset(ds, bb, chunks):
-    chunk_id = tuple(b.start // ch for b, ch in zip(bb, chunks))
-    data = ds.read_chunk(chunk_id)
-    shape = tuple(b.stop - b.start for b in bb)
-    if data is None:
-        return np.zeros(shape, dtype=ds.dtype)
-    return deserialize_labels(data, shape)
-
-
 def write(job_id, config_path):
     fu.log("start processing job %i" % job_id)
     fu.log("loading config from %s" % config_path)
@@ -340,25 +317,23 @@ def write(job_id, config_path):
     node_labels = _load_assignments(assignment_path, assignment_key, n_threads)
 
     offset_path = config.get('offset_path', None)
-    is_label_multiset = config['is_label_multiset']
-    read_function = partial(_read_multiset, chunks=block_shape) if is_label_multiset else _read_labels
 
     # if we write in-place, we only need to open one file and one dataset
     if in_place:
         with vu.file_reader(input_path) as f:
             ds_in = f[input_key]
+            if ds_in.attrs.get('isLabelMultiset', False):
+                raise RuntimeError("Cannot write inplace for label multiset")
             ds_out = ds_in
 
             shape = ds_in.shape
             blocking = nt.blocking([0, 0, 0], list(shape), list(block_shape))
 
             if offset_path is None:
-                _write(ds_in, ds_out, blocking, block_list, n_threads, node_labels,
-                       allow_empty_assignments, read_function)
+                _write(ds_in, ds_out, blocking, block_list, n_threads, node_labels, allow_empty_assignments)
             else:
                 _write_with_offsets(ds_in, ds_out, blocking, block_list,
-                                    n_threads, node_labels, offset_path,
-                                    allow_empty_assignments, read_function)
+                                    n_threads, node_labels, offset_path, allow_empty_assignments)
         # write the max-label
         # for job 0
         if job_id == 0:
@@ -371,6 +346,8 @@ def write(job_id, config_path):
         if input_path == output_path:
             with vu.file_reader(input_path) as f:
                 ds_in = f[input_key]
+                if ds_in.attrs.get('isLabelMultiset', False):
+                    ds_in = LabelMultisetWrapper(ds_in)
                 ds_out = f[output_key]
 
                 shape = ds_in.shape
@@ -378,14 +355,16 @@ def write(job_id, config_path):
 
                 if offset_path is None:
                     _write(ds_in, ds_out, blocking, block_list, n_threads, node_labels,
-                           allow_empty_assignments, read_function)
+                           allow_empty_assignments)
                 else:
                     _write_with_offsets(ds_in, ds_out, blocking, block_list,
                                         n_threads, node_labels, offset_path,
-                                        allow_empty_assignments, read_function)
+                                        allow_empty_assignments)
         else:
             with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
                 ds_in = f_in[input_key]
+                if ds_in.attrs.get('isLabelMultiset', False):
+                    ds_in = LabelMultisetWrapper(ds_in)
                 ds_out = f_out[output_key]
 
                 shape = ds_in.shape
@@ -393,11 +372,11 @@ def write(job_id, config_path):
 
                 if offset_path is None:
                     _write(ds_in, ds_out, blocking, block_list, n_threads, node_labels,
-                           allow_empty_assignments, read_function)
+                           allow_empty_assignments)
                 else:
                     _write_with_offsets(ds_in, ds_out, blocking, block_list,
                                         n_threads, node_labels, offset_path,
-                                        allow_empty_assignments, read_function)
+                                        allow_empty_assignments)
         # write the max-label
         # for job 0
         if job_id == 0:
