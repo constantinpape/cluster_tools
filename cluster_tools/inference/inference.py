@@ -250,7 +250,7 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
         # if we have a mask, check if this block is in mask
         if mask is not None:
             bb = vu.block_to_bb(block)
-            bb_mask = mask[bb]
+            bb_mask = mask[bb].astype('bool')
             if np.sum(bb_mask) == 0:
                 return block_id, None
 
@@ -367,6 +367,7 @@ def inference(job_id, config_path):
         channel_accumulation = getattr(np, channel_accumulation)
 
     fu.log("run inference with framework %s, with %i threads" % (framework, n_threads))
+    fu.log("input block size is %s and halo is %s" % (str(block_shape), str(halo)))
 
     output_keys = config['output_keys']
     channel_mapping = config['channel_mapping']
@@ -407,7 +408,10 @@ def inference(job_id, config_path):
         ds_out = [f_out[key] for key in output_keys]
 
         if 'mask_path' in config:
-            mask = vu.load_mask(config['mask_path'], config['mask_key'], shape)
+            mask_path, mask_key = config['mask_path'], config['mask_key']
+            fu.log("Load mask from %s:%s" % (mask_path, mask_key))
+            mask = vu.load_mask(mask_path, mask_key, shape)
+            fu.log("Have loaded mask")
         else:
             mask = None
         _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,

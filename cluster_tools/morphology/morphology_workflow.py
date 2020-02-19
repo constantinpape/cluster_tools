@@ -13,7 +13,7 @@ class MorphologyWorkflow(WorkflowBase):
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
-    max_jobs_merge = luigi.Parameter(default=None)
+    max_jobs_merge = luigi.IntParameter(default=None)
     prefix = luigi.Parameter(default='')
 
     def requires(self):
