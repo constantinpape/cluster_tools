@@ -7,22 +7,18 @@ import json
 import luigi
 import numpy as np
 import nifty.tools as nt
-from skimage.morphology import label
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
+from cluster_tools.utils.task_utils import DummyTask
 
 
-#
-# Block-wise connected components tasks
-#
-
-class BlockComponentsBase(luigi.Task):
-    """ BlockComponents base class
+class ThresholdBase(luigi.Task):
+    """ Threshold base class
     """
 
-    task_name = 'block_components'
+    task_name = 'threshold'
     src_file = os.path.abspath(__file__)
     allow_retry = False
 
@@ -30,13 +26,11 @@ class BlockComponentsBase(luigi.Task):
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
-    # task that is required before running this task
-    dependency = luigi.TaskParameter()
     threshold = luigi.FloatParameter()
     threshold_mode = luigi.Parameter(default='greater')
-    mask_path = luigi.Parameter(default='')
-    mask_key = luigi.Parameter(default='')
     channel = luigi.Parameter(default=None)
+    # task that is required before running this task
+    dependency = luigi.TaskParameter(DummyTask())
 
     threshold_modes = ('greater', 'less', 'equal')
 
@@ -51,7 +45,8 @@ class BlockComponentsBase(luigi.Task):
         return self.dependency
 
     def run_impl(self):
-        shebang, block_shape, roi_begin, roi_end = self.global_config_values()
+        shebang, block_shape, roi_begin, roi_end, block_list_path\
+            = self.global_config_values(with_block_list_path=True)
         self.init(shebang)
 
         # get shape and make block config
@@ -64,15 +59,8 @@ class BlockComponentsBase(luigi.Task):
                        'output_path': self.output_path,
                        'output_key': self.output_key,
                        'block_shape': block_shape,
-                       'tmp_folder': self.tmp_folder,
                        'threshold': self.threshold,
                        'threshold_mode': self.threshold_mode})
-
-        # check if we have a mask and add to the config if we do
-        if self.mask_path != '':
-            assert self.mask_key != ''
-            config.update({'mask_path': self.mask_path,
-                           'mask_key': self.mask_key})
 
         # get chunks
         chunks = config.pop('chunks', None)
@@ -102,11 +90,11 @@ class BlockComponentsBase(luigi.Task):
         # make output dataset
         compression = config.pop('compression', 'gzip')
         with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key,  shape=shape, dtype='uint64',
+            f.require_dataset(self.output_key,  shape=shape, dtype='uint8',
                               compression=compression, chunks=chunks)
 
-        block_list = vu.blocks_in_volume(shape, block_shape,
-                                         roi_begin, roi_end)
+        block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end,
+                                         block_list_path=block_list_path)
         n_jobs = min(len(block_list), self.max_jobs)
 
         # we only have a single job to find the labeling
@@ -119,80 +107,33 @@ class BlockComponentsBase(luigi.Task):
         self.check_jobs(n_jobs)
 
 
-class BlockComponentsLocal(BlockComponentsBase, LocalTask):
+class ThresholdLocal(ThresholdBase, LocalTask):
     """
-    BlockComponents on local machine
-    """
-    pass
-
-
-class BlockComponentsSlurm(BlockComponentsBase, SlurmTask):
-    """
-    BlockComponents on slurm cluster
+    Threshold on local machine
     """
     pass
 
 
-class BlockComponentsLSF(BlockComponentsBase, LSFTask):
+class ThresholdSlurm(ThresholdBase, SlurmTask):
     """
-    BlockComponents on lsf cluster
+    Threshold on slurm cluster
     """
     pass
 
 
-def _cc_block(block_id, blocking,
-              ds_in, ds_out, threshold,
-              threshold_mode, channel, sigma):
-    fu.log("start processing block %i" % block_id)
-    block = blocking.getBlock(block_id)
-
-    bb = vu.block_to_bb(block)
-    if channel is None:
-        input_ = vu.normalize(ds_in[bb])
-    else:
-        block_shape = tuple(b.stop - b.start for b in bb)
-        input_ = np.zeros(block_shape, dtype=ds_in.dtype)
-        channel_ = [channel] if isinstance(channel, int) else channel
-        for chan in channel_:
-            bb_inp = (slice(chan, chan + 1),) + bb
-            input_ += ds_in[bb_inp].squeeze()
-
-    if sigma > 0:
-        input_ = vu.apply_filter(input_, 'gaussianSmoothing', sigma)
-        input_ = vu.normalize(input_)
-
-    if threshold_mode == 'greater':
-        input_ = input_ > threshold
-    elif threshold_mode == 'less':
-        input_ = input_ < threshold
-    elif threshold_mode == 'equal':
-        input_ = input_ == threshold
-    else:
-        raise RuntimeError("Thresholding Mode %s not supported" % threshold_mode)
-
-    if np.sum(input_) == 0:
-        fu.log_block_success(block_id)
-        return 0
-
-    components = label(input_)
-    ds_out[bb] = components
-    fu.log_block_success(block_id)
-    return int(components.max()) + 1
+class ThresholdLSF(ThresholdBase, LSFTask):
+    """
+    Threshold on lsf cluster
+    """
+    pass
 
 
-def _cc_block_with_mask(block_id, blocking,
-                        ds_in, ds_out, threshold,
-                        threshold_mode, mask,
-                        channel, sigma):
+def _threshold_block(block_id, blocking,
+                     ds_in, ds_out, threshold,
+                     threshold_mode, channel, sigma):
     fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
-
-    # get the mask and check if we have any pixels
-    in_mask = mask[bb].astype('bool')
-    if np.sum(in_mask) == 0:
-        fu.log_block_success(block_id)
-        return 0
 
     bb = vu.block_to_bb(block)
     if channel is None:
@@ -219,18 +160,11 @@ def _cc_block_with_mask(block_id, blocking,
     else:
         raise RuntimeError("Thresholding Mode %s not supported" % threshold_mode)
 
-    input_[np.logical_not(in_mask)] = 0
-    if np.sum(input_) == 0:
-        fu.log_block_success(block_id)
-        return 0
-
-    components = label(input_)
-    ds_out[bb] = components
+    ds_out[bb] = input_.astype('uint8')
     fu.log_block_success(block_id)
-    return int(components.max()) + 1
 
 
-def block_components(job_id, config_path):
+def threshold(job_id, config_path):
 
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
@@ -242,16 +176,11 @@ def block_components(job_id, config_path):
     output_path = config['output_path']
     output_key = config['output_key']
     block_list = config['block_list']
-    tmp_folder = config['tmp_folder']
     block_shape = config['block_shape']
     threshold = config['threshold']
     threshold_mode = config['threshold_mode']
 
     sigma = config.get('sigma_prefilter', 0)
-
-    mask_path = config.get('mask_path', '')
-    mask_key = config.get('mask_key', '')
-
     channel = config.get('channel', None)
 
     fu.log("Applying threshold %f with mode %s" % (threshold, threshold_mode))
@@ -268,23 +197,10 @@ def block_components(job_id, config_path):
 
         blocking = nt.blocking([0, 0, 0], list(shape), block_shape)
 
-        if mask_path != '':
-            mask = vu.load_mask(mask_path, mask_key, shape)
-            offsets = [_cc_block_with_mask(block_id, blocking,
-                                           ds_in, ds_out, threshold,
-                                           threshold_mode, mask, channel,
-                                           sigma) for block_id in block_list]
+        [_threshold_block(block_id, blocking,
+                          ds_in, ds_out, threshold,
+                          threshold_mode, channel, sigma) for block_id in block_list]
 
-        else:
-            offsets = [_cc_block(block_id, blocking,
-                                 ds_in, ds_out, threshold,
-                                 threshold_mode, channel, sigma) for block_id in block_list]
-
-    offset_dict = {block_id: off for block_id, off in zip(block_list, offsets)}
-    save_path = os.path.join(tmp_folder,
-                             'connected_components_offsets_%i.json' % job_id)
-    with open(save_path, 'w') as f:
-        json.dump(offset_dict, f)
     fu.log_job_success(job_id)
 
 
@@ -292,4 +208,4 @@ if __name__ == '__main__':
     path = sys.argv[1]
     assert os.path.exists(path), path
     job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
-    block_components(job_id, path)
+    threshold(job_id, path)
