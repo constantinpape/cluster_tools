@@ -49,6 +49,7 @@ class InitialSubGraphsBase(luigi.Task):
     def run_impl(self):
         # get the global config and init configs
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
+        block_shape = tuple(block_shape)
         self.init(shebang)
 
         # load the task config
@@ -65,7 +66,7 @@ class InitialSubGraphsBase(luigi.Task):
 
             # make sub-graph dataset for nodes and edges
             g = f.require_group('s0/sub_graphs')
-            g.attrs['shape'] = shape
+            g.attrs['shape'] = tuple(shape)
             g.attrs['ignore_label'] = config['ignore_label']
 
             g.require_dataset('nodes', shape=shape, chunks=block_shape,

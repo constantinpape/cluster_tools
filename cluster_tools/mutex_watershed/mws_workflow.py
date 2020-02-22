@@ -38,9 +38,8 @@ class MwsWorkflow(WorkflowBase):
 
     relabel_key = 'assignments/mws_relabel'
 
-    def multicut_stitching(self, dep):
+    def multicut_stitching(self, problem_path, dep):
         task = MulticutStitchingWorkflow
-        problem_path = os.path.join(self.tmp_folder, 'data.n5')
         ass_key = 'node_labels/stitch-mc'
         dep = task(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
                    max_jobs=self.max_jobs, target=self.target,
@@ -52,6 +51,7 @@ class MwsWorkflow(WorkflowBase):
         return dep
 
     def requires(self):
+        problem_path = os.path.join(self.tmp_folder, 'data.n5')
         mws_task = getattr(mws_tasks, self._get_task_name('MwsBlocks'))
         dep = mws_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                        config_dir=self.config_dir, dependency=self.dependency,
@@ -62,9 +62,9 @@ class MwsWorkflow(WorkflowBase):
         dep = RelabelWorkflow(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
                               max_jobs=self.max_jobs, target=self.target, dependency=dep,
                               input_path=self.output_path, input_key=self.output_key,
-                              assignment_path=self.output_path, assignment_key=self.relabel_key)
+                              assignment_path=problem_path, assignment_key=self.relabel_key)
         if self.stitch_via_mc:
-            dep = self.multicut_stitching(dep)
+            dep = self.multicut_stitching(problem_path, dep)
         return dep
 
     @staticmethod

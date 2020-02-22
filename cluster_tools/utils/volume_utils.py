@@ -349,3 +349,12 @@ def fit_to_hmap(objs, hmap, erode_by, fit_3d=True):
     # set background to 0
     objs_new[objs_new == bg_id] = 0
     return objs_new, obj_ids
+
+
+def force_dataset(f, key, **kwargs):
+    try:
+        ds = f.require_dataset(key, **kwargs)
+    except TypeError:
+        del f[key]
+        ds = f.create_dataset(key, **kwargs)
+    return ds

@@ -119,8 +119,8 @@ def find_labeling(job_id, config_path):
     with vu.file_reader(assignment_path) as f:
         chunk_size = min(int(1e6), len(assignments))
         chunks = (chunk_size, 2)
-        ds = f.require_dataset(assignment_key, shape=assignments.shape, dtype='uint64',
-                               compression='gzip', chunks=chunks)
+        ds = vu.force_dataset(f, assignment_key, shape=assignments.shape, dtype='uint64',
+                              compression='gzip', chunks=chunks)
         ds.n_threads = n_threads
         ds[:] = assignments
 
