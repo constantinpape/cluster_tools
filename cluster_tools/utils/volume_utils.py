@@ -354,7 +354,9 @@ def fit_to_hmap(objs, hmap, erode_by, fit_3d=True):
 def force_dataset(f, key, **kwargs):
     try:
         ds = f.require_dataset(key, **kwargs)
-    except TypeError:
+    except TypeError as err:
+        if key not in f:
+            raise err
         del f[key]
         ds = f.create_dataset(key, **kwargs)
     return ds

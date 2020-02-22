@@ -413,7 +413,7 @@ class MulticutStitchingWorkflow(WorkflowBase):
                                            target=self.target, config_dir=self.config_dir,
                                            problem_path=self.problem_path,
                                            labels_path=self.labels_path, labels_key=self.labels_key,
-                                           assignments_path=self.assignment_path, assignments_key=edge_key,
+                                           assignments_path=self.problem_path, assignments_key=edge_key,
                                            features_key=feat_key, graph_key=graph_key, serialize_edges=True,
                                            dependency=dep)
 

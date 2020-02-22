@@ -114,8 +114,8 @@ def simple_stitch_edges(job_id, config_path):
 
     with vu.file_reader(out_path) as f:
         chunks = (min(int(1e6), len(res)),)
-        f.create_dataset(out_key, data=res.astype('uint8'), compression='gzip',
-                         chunks=chunks)
+        vu.force_dataset(f, out_key, data=res.astype('uint8'), compression='gzip',
+                         chunks=chunks, shape=res.shape)
 
     fu.log_job_success(job_id)
 
