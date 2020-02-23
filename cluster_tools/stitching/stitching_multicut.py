@@ -112,12 +112,12 @@ def stitching_multicut(job_id, config_path):
         stitch_edges = ds[:].astype('bool')
 
         g = f[graph_key]
-        n_nodes = g.attrs['numberOfNodes']
+        n_nodes = g.attrs['nodeMaxId'] + 1
         ds = g['edges']
         ds.n_threads = n_threads
         uv_ids = ds[:]
 
-    assert uv_ids.max() < n_nodes
+    assert uv_ids.max() < n_nodes, "%i, %i" % (int(uv_ids.max()), n_nodes)
     assert len(stitch_edges) == len(uv_ids), "%i, %i" % (len(stitch_edges),
                                                          len(uv_ids))
     assert len(feats) == len(uv_ids), "%i, %i" % (len(feats), len(uv_ids))
