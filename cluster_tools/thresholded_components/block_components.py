@@ -148,15 +148,17 @@ def _cc_block(block_id, blocking,
 
     bb = vu.block_to_bb(block)
     if channel is None:
-        input_ = vu.normalize(ds_in[bb])
+        input_ = ds_in[bb]
     else:
-        block_shape = tuple(b.stop - b.start for b in bb)
-        input_ = np.zeros(block_shape, dtype=ds_in.dtype)
         channel_ = [channel] if isinstance(channel, int) else channel
-        for chan in channel_:
+        in_shape = (len(channel_),) + tuple(b.stop - b.start for b in bb)
+        input_ = np.zeros(in_shape, dtype=ds_in.dtype)
+        for chan_id, chan in enumerate(channel_):
             bb_inp = (slice(chan, chan + 1),) + bb
-            input_ += ds_in[bb_inp].squeeze()
+            input_[chan_id] = ds_in[bb_inp].squeeze()
+        input_ = np.mean(input_, axis=0)
 
+    input_ = vu.normalize(input_)
     if sigma > 0:
         input_ = vu.apply_filter(input_, 'gaussianSmoothing', sigma)
         input_ = vu.normalize(input_)
@@ -198,15 +200,16 @@ def _cc_block_with_mask(block_id, blocking,
     if channel is None:
         input_ = ds_in[bb]
     else:
-        block_shape = tuple(b.stop - b.start for b in bb)
-        input_ = np.zeros(block_shape, dtype=ds_in.dtype)
         channel_ = [channel] if isinstance(channel, int) else channel
-        for chan in channel_:
+        in_shape = (len(channel_),) + tuple(b.stop - b.start for b in bb)
+        input_ = np.zeros(in_shape, dtype=ds_in.dtype)
+        for chan_id, chan in enumerate(channel_):
             bb_inp = (slice(chan, chan + 1),) + bb
-            input_ += ds_in[bb_inp].squeeze()
+            input_[chan_id] = ds_in[bb_inp].squeeze()
+        input_ = np.mean(input_, axis=0)
 
+    input_ = vu.normalize(input_)
     if sigma > 0:
-        input_ = vu.normalize(input_)
         input_ = vu.apply_filter(input_, 'gaussianSmoothing', sigma)
         input_ = vu.normalize(input_)
 

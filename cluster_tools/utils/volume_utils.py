@@ -30,7 +30,7 @@ def get_shape(path, key):
 
 def blocks_in_volume(shape, block_shape,
                      roi_begin=None, roi_end=None,
-                     block_list_path=None):
+                     block_list_path=None, return_blocking=False):
     assert len(shape) == len(block_shape), '%i; %i' % (len(shape), len(block_shape))
     assert (roi_begin is None) == (roi_end is None)
     have_roi = roi_begin is not None
@@ -64,7 +64,10 @@ def blocks_in_volume(shape, block_shape,
         else:
             block_list = list_from_path
 
-    return block_list
+    if return_blocking:
+        return block_list, blocking_
+    else:
+        return block_list
 
 
 def block_to_bb(block):
