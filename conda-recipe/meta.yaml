@@ -25,14 +25,12 @@ requirements:
     - python {{PY_VER}}*
 
   run:
-    - python {{PY_VER}}*
-    - scikit-image
-    - nifty
+    - elf >=0.2.2
     - luigi
-    - z5py
-    - h5py
-    - skan
-    - elf
+    - nifty >=v1.0.7
+    - pybdv >=0.4.1
+    - python {{PY_VER}}*
+    - z5py >=2.0.5
 
 test:
   imports:
