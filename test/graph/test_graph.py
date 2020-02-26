@@ -20,12 +20,14 @@ except ValueError:
 
 class TestGraph(BaseTest):
     input_key = 'volumes/segmentation/watershed'
+    label_multiset_key = 'volumes/segmentation/multicut_label_multiset/s0'
+    label_multiset_key_ref = 'volumes/segmentation/multicut'
     output_key = 'graph'
 
-    def check_subresults(self):
+    def check_subresults(self, seg_key):
         f = z5py.File(self.input_path)
         f_out = z5py.File(self.output_path)
-        ds_ws = f[self.input_key]
+        ds_ws = f[seg_key]
 
         full_graph = ndist.Graph(self.output_path, self.output_key)
 
@@ -90,15 +92,15 @@ class TestGraph(BaseTest):
             expected_ids = full_graph.findEdges(uv_ids)
             self.assertTrue(np.array_equal(edge_ids, expected_ids))
 
-    def check_result(self):
+    def check_result(self, seg_key):
         # check shapes
         with z5py.File(self.input_path) as f:
-            seg = f[self.input_key]
+            seg = f[seg_key]
             seg.n_threads = 8
             seg = seg[:]
             shape = seg.shape
         with z5py.File(self.output_path) as f:
-            shape_ = tuple(f.attrs['shape'])
+            shape_ = tuple(f[self.graph_key].attrs['shape'])
         self.assertEqual(shape, shape_)
 
         # check graph
@@ -132,8 +134,31 @@ class TestGraph(BaseTest):
                                 target=self.target,
                                 max_jobs=self.max_jobs)], local_scheduler=True)
         self.assertTrue(ret)
-        self.check_subresults()
-        self.check_result()
+        self.check_subresults(self.input_key)
+        self.check_result(self.input_key)
+
+    def test_graph_label_multiset(self):
+        from cluster_tools.graph import GraphWorkflow
+        task = GraphWorkflow
+
+        task_config = GraphWorkflow.get_config()['initial_sub_graphs']
+        task_config['ignore_label'] = False
+        with open(os.path.join(self.config_folder, 'initial_sub_graphs.config'),
+                  'w') as f:
+            json.dump(task_config, f)
+
+        ret = luigi.build([task(input_path=self.input_path,
+                                input_key=self.label_multiset_key,
+                                graph_path=self.output_path,
+                                output_key=self.output_key,
+                                n_scales=1,
+                                config_dir=self.config_folder,
+                                tmp_folder=self.tmp_folder,
+                                target=self.target,
+                                max_jobs=self.max_jobs)], local_scheduler=True)
+        self.assertTrue(ret)
+        self.check_subresults(self.label_multiset_key_ref)
+        self.check_result(self.label_multiset_key_ref)
 
 
 if __name__ == '__main__':
