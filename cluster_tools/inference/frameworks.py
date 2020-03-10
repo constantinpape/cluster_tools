@@ -55,8 +55,11 @@ class PytorchPredicter:
             opt_level = 'O1'  # TODO allow to set opt level
             self.model = amp.initialize(self.model, opt_level=opt_level)
 
-        #
+        # save the halo and check if this is a multi-scale halo
+        # (halo is nested list)
         self.halo = halo
+        self.has_multiscale_halo = isinstance(halo[0], list)
+
         self.lock = threading.Lock()
         # build the test-time-augmenter if we have augmentation kwargs
         if augmentation_kwargs:
@@ -116,9 +119,12 @@ class PytorchPredicter:
             out = self.apply_model(input_data)
         else:
             out = self.apply_model_with_augmentations(input_data)
-        if isinstance(out, list):
+        if isinstance(out, list) and self.has_multiscale_halo:
             assert len(self.halo) == len(out) and all(isinstance(halo, list) for halo in self.halo)
             out = [self.crop(oo, halo) for oo, halo in zip(out, self.halo)]
+        elif isinstance(out, list):
+            out = out[0]
+            out = self.crop(out, self.halo)
         else:
             out = self.crop(out, self.halo)
         return out

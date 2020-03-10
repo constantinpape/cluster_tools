@@ -3,6 +3,7 @@
 import os
 import sys
 import json
+from warnings import warn
 
 import luigi
 import dask
@@ -22,7 +23,8 @@ from cluster_tools.inference.inference import get_prep_model, _to_uint8
 # Inference Tasks
 #
 
-
+# TODO support ROI
+# TODO support different channel mapping for different scales
 class MultiscaleInferenceBase(luigi.Task):
     """ MultiscaleInference base class
     """
@@ -85,7 +87,7 @@ class MultiscaleInferenceBase(luigi.Task):
         shape = shapes[0]
         n_scales = len(self.input_scales)
         assert len(self.scale_factors) == n_scales - 1
-        assert len(self.halos) == n_scales
+        assert len(self.halos) == n_scales, "%i, %i" % (len(self.halos), n_scales)
 
         # get shapes and chunks
         chunks = tuple(chunks) if chunks is not None else tuple(bs // 2 for bs in block_shape)
@@ -143,7 +145,6 @@ class MultiscaleInferenceBase(luigi.Task):
             config.update({'mask_path': self.mask_path, 'mask_key': self.mask_key})
 
         if self.n_retries == 0:
-            # TODO support roi
             block_list = vu.blocks_in_volume(shape, block_shape)
         else:
             block_list = self.block_list
@@ -267,6 +268,49 @@ def _load_inputs(datasets, offset, block_shape, halos, scale_factors):
     return data
 
 
+# for debugging
+def _show_inputs(inputs, scale_factors):
+    from heimdall import view, to_source
+    from vigra.sampling import resize
+    raw0 = inputs[0]
+    shape = raw0.shape
+    data = [to_source(raw0, name='scale0')]
+
+    effective_scale = [1, 1, 1]
+    for scale, (inp, scale_factor) in enumerate(zip(inputs[1:], scale_factors[1:]), 1):
+        effective_scale = [eff * sf for eff, sf in zip(effective_scale, scale_factor)]
+        exp_shape = [int(sh / sf) for sh, sf in zip(shape, effective_scale)]
+        act_shape = inp.shape
+
+        halo = [(ash - esh) // 2 for ash, esh in zip(act_shape, exp_shape)]
+        bb = tuple(slice(ha, sh - ha) for ha, sh in zip(halo, act_shape))
+
+        d = inp[bb]
+        d = resize(d.astype('float32'), shape=shape)
+        data.append(to_source(d, name='scale%i' % scale))
+
+    view(*data)
+
+
+def align_out_bb(out_bb, out_shape):
+    if len(out_bb) != len(out_shape):
+        raise RuntimeError("Invalid roi")
+    bb_shape = tuple(osh if bb.start is None else bb.stop - bb.start
+                     for bb, osh in zip(out_bb, out_shape))
+    if any(osh != bsh for osh, bsh in zip(out_shape, bb_shape)):
+        warn("Output bounding box and out data do not align")
+        new_out_bb = []
+        for osh, bsh, bb in zip(out_shape, bb_shape, out_bb):
+            diff = osh - bsh
+            if diff == 0:
+                new_out_bb.append(bb)
+            else:
+                new_bb = slice(bb.start, bb.stop + diff)
+                new_out_bb.append(new_bb)
+        out_bb = tuple(new_out_bb)
+    return out_bb
+
+
 def _run_inference(blocking, block_list, halos, ds_in, ds_out, mask,
                    scale_factors, preprocess, predict, channel_mapping,
                    channel_accumulation, n_threads,
@@ -289,8 +333,9 @@ def _run_inference(blocking, block_list, halos, ds_in, ds_out, mask,
             if np.sum(bb_mask) == 0:
                 return block_id, None
 
-        return block_id, _load_inputs(ds_in, block.begin,
-                                      block_shape, halos, scale_factors)
+        inputs = _load_inputs(ds_in, block.begin,
+                              block_shape, halos, scale_factors)
+        return block_id, inputs
 
     @dask.delayed
     def preprocess_impl(inputs):
@@ -344,7 +389,9 @@ def _run_inference(blocking, block_list, halos, ds_in, ds_out, mask,
                 out_bb = (slice(None),) + bb
 
             if output.ndim == 4:
-                channel_output = output[chan_start:chan_stop].squeeze()
+                channel_output = output[chan_start:chan_stop]
+                if channel_output.shape[0] == 1:
+                    channel_output = channel_output[0]
             else:
                 channel_output = output
 
@@ -420,7 +467,9 @@ def _run_inference(blocking, block_list, halos, ds_in, ds_out, mask,
                     out_bb = (slice(None),) + this_bb
 
                 if output.ndim == 4:
-                    channel_output = output[chan_start:chan_stop].squeeze()
+                    channel_output = output[chan_start:chan_stop]
+                    if channel_output.shape[0] == 1:
+                        channel_output = channel_output[0]
                 else:
                     channel_output = output
 
@@ -432,6 +481,9 @@ def _run_inference(blocking, block_list, halos, ds_in, ds_out, mask,
                 if dtype == 'uint8':
                     channel_output = _to_uint8(channel_output)
 
+                # misalignment can happen for higher scale;
+                # this is just a hot-fix
+                out_bb = align_out_bb(out_bb, channel_output.shape)
                 dso[out_bb] = channel_output
 
         return block_id
@@ -441,17 +493,31 @@ def _run_inference(blocking, block_list, halos, ds_in, ds_out, mask,
         fu.log_block_success(block_id)
         return 1
 
-    # iterate over the blocks in block list, get the input data and predict
-    writer = write_multiscale_output if multiscale_output else write_output
-    results = []
-    for block_id in block_list:
-        res = tz.pipe(block_id, load_input,
-                      preprocess_impl, predict_impl,
-                      writer, log2)
-        results.append(res)
+    # for debugging purposes
+    debug_inputs = False
+    if debug_inputs:
+        n_debug = 2
+        results = []
+        for block_id in block_list[:n_debug]:
+            res = tz.pipe(block_id, load_input)
+            results.append(res)
+        results = dask.compute(*results, scheduler='threads', num_workers=n_threads)
+        for block_id, inputs in results:
+            print("Show inputs for block", block_id)
+            _show_inputs(inputs, scale_factors)
 
-    success = dask.compute(*results, scheduler='threads', num_workers=n_threads)
-    fu.log('Finished prediction for %i blocks' % sum(success))
+    else:
+        # normal code strand, no debugging
+        # iterate over the blocks in block list, get the input data and predict
+        writer = write_multiscale_output if multiscale_output else write_output
+        results = []
+        for block_id in block_list:
+            res = tz.pipe(block_id, load_input,
+                          preprocess_impl, predict_impl,
+                          writer, log2)
+            results.append(res)
+        success = dask.compute(*results, scheduler='threads', num_workers=n_threads)
+        fu.log('Finished prediction for %i blocks' % sum(success))
 
 
 def multiscale_inference(job_id, config_path):
