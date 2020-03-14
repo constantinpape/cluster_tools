@@ -23,7 +23,6 @@ from cluster_tools.inference.inference import get_prep_model, _to_uint8
 # Inference Tasks
 #
 
-# TODO support ROI
 # TODO support different channel mapping for different scales
 class MultiscaleInferenceBase(luigi.Task):
     """ MultiscaleInference base class
@@ -65,9 +64,7 @@ class MultiscaleInferenceBase(luigi.Task):
     def run_impl(self):
         assert self.framework in ('pytorch', 'inferno')
 
-        # TODO support ROI
-        # shebang, block_shape, roi_begin, roi_end = self.global_config_values()
-        shebang, block_shape = self.global_config_values()[:2]
+        shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 
         # load the task config
@@ -121,7 +118,8 @@ class MultiscaleInferenceBase(luigi.Task):
 
                         this_key = os.path.join(out_key, scale)
                         f.require_dataset(this_key, shape=out_shape,
-                                          chunks=out_chunks, dtype=dtype, compression=compression)
+                                          chunks=out_chunks, dtype=dtype,
+                                          compression=compression)
                 else:
                     if n_channels > 1 and channel_accumulation is None:
                         out_shape = (n_channels,) + shape
@@ -145,7 +143,7 @@ class MultiscaleInferenceBase(luigi.Task):
             config.update({'mask_path': self.mask_path, 'mask_key': self.mask_key})
 
         if self.n_retries == 0:
-            block_list = vu.blocks_in_volume(shape, block_shape)
+            block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
         else:
             block_list = self.block_list
             self.clean_up_for_retry(block_list)
