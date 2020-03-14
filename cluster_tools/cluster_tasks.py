@@ -4,6 +4,8 @@ import stat
 import json
 import time
 import fileinput
+import sys
+from copy import deepcopy
 from concurrent import futures
 from subprocess import call, check_output, CalledProcessError, STDOUT
 from datetime import datetime, timedelta
@@ -215,7 +217,7 @@ class BaseClusterTask(luigi.Task):
         """ Return default global config
         """
         return {"block_shape": [50, 512, 512],
-                "shebang": "#! /bin/python",
+                "shebang": sys.executable,
                 "roi_begin": None,
                 "roi_end": None,
                 "groupname": "kreshuk",
@@ -346,10 +348,17 @@ class BaseClusterTask(luigi.Task):
         assert os.path.exists(self.src_file), self.src_file
         trgt_file = os.path.join(self.tmp_folder, self.task_name + '.py')
         shutil.copy(self.src_file, trgt_file)
-        # shebang can either be a valid shebang OR path to a python interpreter without shebang prefix
-        if not shebang.startswith('#!'):
-            assert os.path.exists(shebang), "%s is not a valid python interpreter" % shebang
+
+        # check that the shebang/executable is valid
+        if shebang.startswith('#!'):
+            executable = shebang.lstrip('#!').lstrip()
+        else:
+            executable = deepcopy(shebang)
             shebang = "#! " + shebang
+        # TODO check if the executable is actually executable in a portable way
+        if not os.path.exists(executable):
+            raise RuntimeError("The python executable %s is not valid" % executable)
+
         self._replace_shebang(trgt_file, shebang)
         self._make_executable(trgt_file)
         self._write_log('copied python script from %s to %s' % (self.src_file, trgt_file))
