@@ -317,7 +317,10 @@ def _run_inference(blocking, block_list, halos, ds_in, ds_out, mask,
                    multiscale_output):
 
     block_shape = blocking.blockShape
-    dtypes = [dss.dtype for dso in ds_out for dss in dso]
+    if multiscale_output:
+        dtypes = [dss.dtype for dso in ds_out for dss in dso]
+    else:
+        dtypes = [dso.dtype for dso in ds_out]
     dtype = dtypes[0]
     assert all(dtp == dtype for dtp in dtypes)
 
@@ -360,6 +363,8 @@ def _run_inference(blocking, block_list, halos, ds_in, ds_out, mask,
         if output is None:
             return block_id
 
+        if isinstance(output, (list, tuple)):
+            output = output[0]
         out_shape = output.shape
         if len(out_shape) == 3:
             assert len(ds_out) == 1
