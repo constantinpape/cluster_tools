@@ -158,6 +158,12 @@ class InferenceSlurm(InferenceBase, SlurmTask):
         trgt_file = os.path.join(self.tmp_folder, self.task_name + '.py')
         config_tmpl = self._config_path('$1', job_prefix)
         job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
+        # NOTE the lines:
+        # module purge
+        # module load GCC
+        # assume an esaybuild setup on the cluster (which is the case at embl)
+        # this is not tied to slurm and if it is not available, these lines need to be removed;
+        # should find a more portable solution for this
         slurm_template = ("#!/bin/bash\n"
                           "#SBATCH -A %s\n"
                           "#SBATCH -N 1\n"
@@ -167,7 +173,8 @@ class InferenceSlurm(InferenceBase, SlurmTask):
                           '#SBATCH -p gpu\n'
                           '#SBATCH -C gpu=%s\n'
                           '#SBATCH --gres=gpu:1\n'
-                          "%s %s") % (groupname, n_threads,
+                          'module purge\n'
+                          '%s %s') % (groupname, n_threads,
                                       mem_limit, time_limit,
                                       gpu_type,
                                       trgt_file, config_tmpl)
