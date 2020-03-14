@@ -284,10 +284,8 @@ def _show_inputs(inputs, scale_factors):
     shape = raw0.shape
     data = [to_source(raw0, name='scale0')]
 
-    effective_scale = [1, 1, 1]
     for scale, (inp, scale_factor) in enumerate(zip(inputs[1:], scale_factors[1:]), 1):
-        effective_scale = [eff * sf for eff, sf in zip(effective_scale, scale_factor)]
-        exp_shape = [int(sh / sf) for sh, sf in zip(shape, effective_scale)]
+        exp_shape = [int(sh / sf) for sh, sf in zip(shape, scale_factor)]
         act_shape = inp.shape
 
         halo = [(ash - esh) // 2 for ash, esh in zip(act_shape, exp_shape)]
@@ -509,7 +507,7 @@ def _run_inference(blocking, block_list, halos, ds_in, ds_out, mask,
     # for debugging purposes
     debug_inputs = False
     if debug_inputs:
-        n_debug = 2
+        n_debug = 4
         results = []
         for block_id in block_list[:n_debug]:
             res = tz.pipe(block_id, load_input)
