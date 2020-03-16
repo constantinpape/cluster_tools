@@ -69,6 +69,14 @@ def run_mc(input_path, tmp_folder, max_jobs,
     with open('./configs/global.config', 'w') as f:
         json.dump(global_config, f)
 
+    # config for the watershed calculation
+    ws_config = configs['watershed']
+    ws_config.update({'threshold': 0.25, 'apply_ws_2d': True, 'apply_dt_2d': True})
+    if from_affinities:
+        ws_config.update({'channel_begin': 0, 'channel_end': 3, 'agglomerate_channels': 'max'})
+    with open('./configs/watershed.config', 'w') as f:
+        json.dump(ws_config, f)
+
     # config for edge feature calculation
     feat_config = configs['block_edge_features']
     # specify offsets if you have affinity features.
