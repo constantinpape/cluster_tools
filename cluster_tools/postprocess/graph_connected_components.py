@@ -4,12 +4,14 @@ import os
 import sys
 import json
 import luigi
-import nifty.distributed as ndist
+import nifty
 import vigra
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
+
+PAINTERA_IGNORE_ID = 18446744073709551615
 
 
 #
@@ -115,21 +117,25 @@ def graph_connected_components(job_id, config_path):
         assignments = ds_ass[:]
         chunks = ds_ass.chunks
 
-    graph = ndist.Graph(problem_path, graph_key, n_threads)
-    if paintera_hack:
-        paintera_ignore_id = 18446744073709551615
-        fu.log("Paintera hack activated, ignoring graph node %i" % paintera_ignore_id)
-        assert graph.maxNodeId == paintera_ignore_id,\
-            "Paintera Hack: Expect graph max id to be %i, got %i" % (paintera_ignore_id,
-                                                                     graph.maxNodeId)
-        assignments = ndist.connectedComponentsFromNodes(graph, assignments, ignore_label)
-    else:
-        assert graph.maxNodeId + 1 == len(assignments),\
-            "Expect same number of nodes and assignments, got %i, %i" % (graph.maxNodeId + 1,
-                                                                         len(assignments))
-        assignments = ndist.connectedComponentsFromNodes(graph, assignments, ignore_label)
+    with vu.file_reader(problem_path, 'r') as f:
+        g = f[graph_path]
+        ds = g['edges']
+        ds.n_threads = n_threads
+        edges = ds[:]
+
+    max_id = int(edges.max())
+    exclude_pt_ignore = paintera_hack and max_id == PAINTERA_IGNORE_ID
+    if exclude_pt_ignore:
+        edge_mask = (edges != PAINTERA_IGNORE_ID).all(axis=1)
+        edges = edges[edge_mask]
+        max_id = int(edges.max())
+
+    graph = nifty.graph.undirectedGraph(max_id + 1)
+    graph.insertEdges(edges)
+    assignments = nifty.graph.connectedComponentsFromNodeLabels(graph, assignments, ignoreBackground=ignore_label)
     vigra.analysis.relabelConsecutive(assignments, out=assignments, start_label=1,
                                       keep_zeros=True)
+
     fu.log("Found %i number of components" % int(assignments.max()))
 
     with vu.file_reader(output_path) as f:
