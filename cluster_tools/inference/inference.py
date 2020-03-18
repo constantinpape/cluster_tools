@@ -51,8 +51,8 @@ class InferenceBase(luigi.Task):
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
         config.update({'dtype': 'uint8', 'compression': 'gzip', 'chunks': None,
-                       'gpu_type': '2080Ti', 'device_mapping': None,
-                       'use_best': True, 'tda_config': {}, 'prep_model': None,
+                       'device_mapping': None, 'use_best': True, 'tda_config': {},
+                       'prep_model': None, "gpu_type": "2080Ti",
                        'channel_accumulation': None, 'mixed_precision': False,
                        'preprocess_kwargs': {}})
         return config
@@ -145,42 +145,20 @@ class InferenceLocal(InferenceBase, LocalTask):
 class InferenceSlurm(InferenceBase, SlurmTask):
     """ Inference on slurm cluster
     """
-    def _write_slurm_file(self, job_prefix=None):
-        groupname = self.get_global_config().get('groupname', 'kreshuk')
-        # read and parse the relevant task config
-        task_config = self.get_task_config()
-        n_threads = task_config.get("threads_per_job", 1)
-        time_limit = self._parse_time_limit(task_config.get("time_limit", 60))
-        mem_limit = self._parse_mem_limit(task_config.get("mem_limit", 2))
-        gpu_type = task_config.get('gpu_type', '2080Ti')
+    # update the configs to run on slurm gpu nodes
+    @staticmethod
+    def default_task_config():
+        conf = InferenceBase.default_task_config()
+        slurm_requirements = conf.get("slurm_requirements", [])
+        slurm_requirements.append(conf.get("gpu_type", "2080Ti"))
+        conf.update({"slurm_requirements": slurm_requirements})
+        return conf
 
-        # get file paths
-        trgt_file = os.path.join(self.tmp_folder, self.task_name + '.py')
-        config_tmpl = self._config_path('$1', job_prefix)
-        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
-        # NOTE the lines:
-        # module purge
-        # module load GCC
-        # assume an esaybuild setup on the cluster (which is the case at embl)
-        # this is not tied to slurm and if it is not available, these lines need to be removed;
-        # should find a more portable solution for this
-        slurm_template = ("#!/bin/bash\n"
-                          "#SBATCH -A %s\n"
-                          "#SBATCH -N 1\n"
-                          "#SBATCH -n %i\n"
-                          "#SBATCH --mem %s\n"
-                          "#SBATCH -t %s\n"
-                          '#SBATCH -p gpu\n'
-                          '#SBATCH -C gpu=%s\n'
-                          '#SBATCH --gres=gpu:1\n'
-                          'module purge\n'
-                          '%s %s') % (groupname, n_threads,
-                                      mem_limit, time_limit,
-                                      gpu_type,
-                                      trgt_file, config_tmpl)
-        script_path = os.path.join(self.tmp_folder, 'slurm_%s.sh' % job_name)
-        with open(script_path, 'w') as f:
-            f.write(slurm_template)
+    @staticmethod
+    def default_global_config():
+        conf = SlurmTask.default_global_config()
+        conf.update({"partition": "gpu"})
+        return conf
 
 
 class InferenceLSF(InferenceBase, LSFTask):

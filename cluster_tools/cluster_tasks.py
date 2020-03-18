@@ -126,6 +126,12 @@ class BaseClusterTask(luigi.Task):
             self._write_log("%s failed for jobs:" % self.task_name)
             self._write_log("%s" % ', '.join(map(str, failed_jobs)))
 
+            # For slurm, we also write out the failed slurm ids
+            if hasattr(self, 'slurm_ids'):
+                self._write_log("corresponds to failed slurm ids:")
+                failed_slurm_ids = [self.slurm_ids[fjob_id] for fjob_id in list(failed_jobs)]
+                self._write_log("%s" % ', '.join(map(str, failed_slurm_ids)))
+
             # check if conditions to retry jobs are met
             max_num_retries = self.get_global_config().get('max_num_retries', 0)
             # does the number of retries exceed the max number of retries?
@@ -195,7 +201,7 @@ class BaseClusterTask(luigi.Task):
         """
         # time-limit in minutes
         # mem_limit in GB
-        return {'threads_per_job': 1, 'time_limit': 60, 'mem_limit': 1., 'qos': 'normal'}
+        return {"threads_per_job": 1, "time_limit": 60, "mem_limit": 1., "qos": "normal"}
 
     def get_global_config(self):
         """ Get the global configuration
@@ -223,7 +229,8 @@ class BaseClusterTask(luigi.Task):
                 "groupname": "kreshuk",
                 "partition": None,
                 "max_num_retries": 0,
-                "block_list_path": None}
+                "block_list_path": None,
+                "easybuild": True}
 
     def global_config_values(self, with_block_list_path=False):
         """ Load the global config values that are needed
@@ -326,7 +333,6 @@ class BaseClusterTask(luigi.Task):
             with open(config_path, 'w') as f:
                 json.dump(job_config, f)
 
-    # TODO allow config for individual blocks
     def _write_job_config(self, n_jobs, block_list, config,
                           job_prefix=None, consecutive_blocks=False):
         # check f we have a reduce style block, that is
@@ -404,6 +410,7 @@ class SlurmTask(BaseClusterTask):
         global_config = self.get_global_config()
         groupname = global_config.get('groupname', 'kreshuk')
         partition = global_config.get('partition', None)
+        easybuild = global_config.get("easybuild", True)
         # read and parse the relevant task config
         task_config = self.get_task_config()
         n_threads = task_config.get("threads_per_job", 1)
@@ -411,34 +418,36 @@ class SlurmTask(BaseClusterTask):
         mem_limit = self._parse_mem_limit(task_config.get("mem_limit", 2))
         qos = task_config.get("qos", "normal")
 
+        # additional job requirements
+        requirements = task_config.get("slurm_requirements", [])
+
         # get file paths
         trgt_file = os.path.join(self.tmp_folder, self.task_name + '.py')
         config_tmpl = self._config_path('$1', job_prefix)
-        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name, job_prefix)
-        if partition is None:
-            slurm_template = ("#!/bin/bash\n"
-                              "#SBATCH -A %s\n"
-                              "#SBATCH -N 1\n"
-                              "#SBATCH -c %i\n"
-                              "#SBATCH --mem %s\n"
-                              "#SBATCH -t %s\n"
-                              "#SBATCH --qos=%s\n"
-                              "%s %s") % (groupname, n_threads,
-                                          mem_limit, time_limit, qos,
-                                          trgt_file, config_tmpl)
-        else:
-            slurm_template = ("#!/bin/bash\n"
-                              "#SBATCH -A %s\n"
-                              "#SBATCH -N 1\n"
-                              "#SBATCH -c %i\n"
-                              "#SBATCH --mem %s\n"
-                              "#SBATCH -t %s\n"
-                              "#SBATCH --qos=%s\n"
-                              "#SBATCH -p=%s\n"
-                              "%s %s") % (groupname, n_threads,
-                                          mem_limit, time_limit, qos,
-                                          partition,
-                                          trgt_file, config_tmpl)
+        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name,
+                                                                        job_prefix)
+        slurm_template = ("#!/bin/bash\n"
+                          "#SBATCH -A %s\n"
+                          "#SBATCH -N 1\n"
+                          "#SBATCH -c %i\n"
+                          "#SBATCH --mem %s\n"
+                          "#SBATCH -t %s\n"
+                          "#SBATCH --qos=%s\n") % (groupname, n_threads,
+                                                   mem_limit, time_limit, qos)
+        # add the partition (= which queue should be used, if specified)
+        if partition is not None:
+            slurm_template += "#SBATCH -p %s\n" % partition
+        for req in requirements:
+            slurm_template += "#SBATCH -C %s\n" % req
+
+        # slurm directives are done
+        slurm_template += "\n"
+        # do we have easybuild ?
+        if easybuild:
+            slurm_template += "module purge\n"
+            slurm_template += "module load GCC\n"
+        slurm_template += ("%s %s") % (trgt_file, config_tmpl)
+
         script_path = os.path.join(self.tmp_folder, 'slurm_%s.sh' % job_name)
         with open(script_path, 'w') as f:
             f.write(slurm_template)
