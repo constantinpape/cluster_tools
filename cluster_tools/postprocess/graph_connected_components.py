@@ -118,7 +118,7 @@ def graph_connected_components(job_id, config_path):
         chunks = ds_ass.chunks
 
     with vu.file_reader(problem_path, 'r') as f:
-        g = f[graph_path]
+        g = f[graph_key]
         ds = g['edges']
         ds.n_threads = n_threads
         edges = ds[:]
