@@ -201,7 +201,7 @@ class BaseClusterTask(luigi.Task):
         """
         # time-limit in minutes
         # mem_limit in GB
-        return {"threads_per_job": 1, "time_limit": 60, "mem_limit": 1., "qos": "normal"}
+        return {"threads_per_job": 1, "time_limit": 60, "mem_limit": 1., "qos": "normal", "slurm_requirements": []}
 
     def get_global_config(self):
         """ Get the global configuration
@@ -230,7 +230,8 @@ class BaseClusterTask(luigi.Task):
                 "partition": None,
                 "max_num_retries": 0,
                 "block_list_path": None,
-                "easybuild": True}
+                "easybuild": True,
+                "qos": "normal"}
 
     def global_config_values(self, with_block_list_path=False):
         """ Load the global config values that are needed
@@ -411,12 +412,16 @@ class SlurmTask(BaseClusterTask):
         groupname = global_config.get('groupname', 'kreshuk')
         partition = global_config.get('partition', None)
         easybuild = global_config.get("easybuild", True)
+
         # read and parse the relevant task config
         task_config = self.get_task_config()
         n_threads = task_config.get("threads_per_job", 1)
         time_limit = self._parse_time_limit(task_config.get("time_limit", 60))
         mem_limit = self._parse_mem_limit(task_config.get("mem_limit", 2))
-        qos = task_config.get("qos", "normal")
+
+        # TODO we should be able to set a global qos
+        # and a local qos that overrides the global one
+        qos = global_config.get("qos", "normal")
 
         # additional job requirements
         requirements = task_config.get("slurm_requirements", [])
