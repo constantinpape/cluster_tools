@@ -3,11 +3,12 @@
 import os
 import sys
 import json
+from concurrent import futures
 
 import numpy as np
 import luigi
 import nifty.tools as nt
-from concurrent import futures
+from elf.io.label_multiset_wrapper import LabelMultisetWrapper
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -42,7 +43,8 @@ class CopyVolumeBase(luigi.Task):
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
         config.update({'chunks': None, 'compression': 'gzip',
-                       'reduce_channels': None, 'map_uniform_blocks_to_background': False})
+                       'reduce_channels': None, 'map_uniform_blocks_to_background': False,
+                       'value_list': None})
         return config
 
     def requires(self):
@@ -178,7 +180,7 @@ def cast_type(data, dtype):
 
 
 def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin, reduce_function, n_threads,
-                 map_uniform_blocks_to_background):
+                 map_uniform_blocks_to_background, value_list):
     dtype = ds_out.dtype
 
     def _copy_block(block_id):
@@ -198,6 +200,10 @@ def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin, reduce_function
         #     return
 
         data = ds_in[bb]
+
+        if value_list is not None:
+            value_mask = np.isin(data, value_list)
+            data[~value_mask] = 0
 
         # don't write empty blocks
         if data.sum() == 0:
@@ -255,12 +261,17 @@ def copy_volume(job_id, config_path):
     if reduce_function is not None:
         reduce_function = getattr(np, reduce_function)
 
+    # check if we copy only specified values
+    value_list = config.get('value_list', None)
+
     map_uniform_blocks_to_background = config.get('map_uniform_blocks_to_background', False)
     n_threads = config.get('threads_per_job', 1)
 
     # submit blocks
     with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
         ds_in = f_in[input_key]
+        if ds_in.attrs.get('isLabelMultiset', False):
+            ds_in = LabelMultisetWrapper(ds_in)
         ds_out = f_out[output_key]
 
         shape = list(ds_in.shape)
@@ -268,7 +279,8 @@ def copy_volume(job_id, config_path):
             shape = shape[1:]
         blocking = nt.blocking([0, 0, 0], shape, block_shape)
         _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin,
-                     reduce_function, n_threads, map_uniform_blocks_to_background)
+                     reduce_function, n_threads, map_uniform_blocks_to_background,
+                     value_list)
 
         # copy the attributes with job 0
         if job_id == 0 and hasattr(ds_in, 'attrs') and hasattr(ds_out, 'attrs'):
