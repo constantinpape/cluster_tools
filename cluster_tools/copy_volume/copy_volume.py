@@ -61,9 +61,14 @@ class CopyVolumeBase(luigi.Task):
 
         # get shape, dtype and make block config
         with vu.file_reader(self.input_path, 'r') as f:
-            shape = f[self.input_key].shape
-            ds_dtype = f[self.input_key].dtype
-            ds_chunks = f[self.input_key].chunks
+            ds = f[self.input_key]
+            shape = ds.shape
+            ds_chunks = ds.chunks
+
+            # if this is a label multi-set, the dtypes needs to be changed
+            # to be uint64
+            is_label_multiset = ds.attrs.get('isLabelMultiset', False)
+            ds_dtype = 'uint64' if is_label_multiset else ds.dtype
 
         # load the config
         task_config = self.get_task_config()
