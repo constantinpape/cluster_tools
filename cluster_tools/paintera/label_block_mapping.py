@@ -6,10 +6,12 @@ import sys
 
 import luigi
 import nifty.distributed as ndist
+from elf.io import open_file
 
 import cluster_tools.utils.function_utils as fu
 import cluster_tools.utils.volume_utils as vu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
+from cluster_tools.utils.task_utils import DummyTask
 
 
 class LabelBlockMappingBase(luigi.Task):
@@ -24,9 +26,13 @@ class LabelBlockMappingBase(luigi.Task):
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
-    number_of_labels = luigi.IntParameter()
-    dependency = luigi.TaskParameter()
     prefix = luigi.Parameter()
+    # if unique path is given, we only compute the label block mapping for the unique ids
+    # otherwise, number_of_labels has to be passed and we comput the labels in the range
+    unique_path = luigi.Parameter(default='')
+    unique_key = luigi.Parameter(default='')
+    number_of_labels = luigi.IntParameter(default=None)
+    dependency = luigi.TaskParameter(default=DummyTask())
 
     @staticmethod
     def default_task_config():
@@ -55,12 +61,18 @@ class LabelBlockMappingBase(luigi.Task):
                               chunks=chunks, dtype='int8')
 
         config.update({"input_path": self.input_path, "input_key": self.input_key,
-                       "output_path": self.output_path, "output_key": self.output_key,
-                       "number_of_labels": self.number_of_labels})
+                       "output_path": self.output_path, "output_key": self.output_key})
+
+        assert (self.number_of_labels is not None) != (self.unique_path != '')
+        if self.number_of_labels is not None:
+            config.update({"number_of_labels": self.number_of_labels})
+        if self.unique_path != '':
+            assert self.unique_key != ''
+            config.update({'unique_path': self.unique_path, 'unique_key': self.unique_key})
+
         if roi_begin is not None:
             assert roi_end is not None
-            config.update({'roi_begin': roi_begin,
-                           'roi_end': roi_end})
+            config.update({'roi_begin': roi_begin, 'roi_end': roi_end})
 
         # prime and run the jobs
         self.prepare_jobs(1, None, config, self.prefix)
@@ -112,7 +124,15 @@ def label_block_mapping(job_id, config_path):
     input_key = config['input_key']
     output_path = config['output_path']
     output_key = config['output_key']
-    number_of_labels = config['number_of_labels']
+    if 'number_of_labels' in config:
+        number_of_labels = config['number_of_labels']
+
+    elif 'unique_path' in config:
+        unique_path = config['unique_path']
+        unique_key = config['unique_key']
+        with open_file(unique_path, 'r') as f:
+            labels = f[unique_key][:]
+        number_of_labels = None
 
     roi_begin = config.get('roi_begin', None)
     roi_end = config.get('roi_end', None)
@@ -125,10 +145,13 @@ def label_block_mapping(job_id, config_path):
         roi_end = []
 
     n_threads = config.get('threads_per_job', 1)
-    ndist.serializeBlockMapping(input_path, input_key,
-                                output_path, output_key,
-                                number_of_labels, n_threads,
-                                roi_begin, roi_end)
+    if number_of_labels is None:
+        pass
+    else:
+        ndist.serializeBlockMapping(input_path, input_key,
+                                    output_path, output_key,
+                                    number_of_labels, n_threads,
+                                    roi_begin, roi_end)
     # log success
     fu.log_job_success(job_id)
 
