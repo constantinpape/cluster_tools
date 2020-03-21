@@ -76,6 +76,12 @@ class DownscaleMultisetBase(luigi.Task):
                        'output_path': self.output_path, 'output_key': self.output_key,
                        'scale_factor': self.scale_factor, 'restrict_set': self.restrict_set,
                        'effective_scale_factor': self.effective_scale_factor, 'block_shape': block_shape})
+
+        # if we have a roi, we need to adjust it given the effective scaling factor
+        if roi_begin is not None:
+            roi_begin = [rb // eff for rb, eff in zip(roi_begin, self.effective_scale_factor)]
+            roi_end = [re // eff for re, eff in zip(roi_end, self.effective_scale_factor)]
+
         block_list = vu.blocks_in_volume(out_shape, block_shape, roi_begin, roi_end)
         self._write_log('scheduling %i blocks to be processed' % len(block_list))
         n_jobs = min(len(block_list), self.max_jobs)

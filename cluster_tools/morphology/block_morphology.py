@@ -126,10 +126,11 @@ def _morphology_for_block(block_id, blocking, ds_in,
                      for beg, ch in zip(block.begin,
                                         blocking.blockShape))
     # extract and save simple morphology:
-    # - size of segments
-    # - center of mass of segments
-    # - minimum coordinates of segments
-    # - maximum coordinates of segments
+    # - size of segments                 1
+    # - center of mass of segments       2:5
+    # - minimum coordinates of segments  5:8
+    # - maximum coordinates of segments  8:11
+    # [:,0] is the label id
     ndist.computeAndSerializeMorphology(seg, block.begin,
                                         output_path, output_key,
                                         chunk_id)
