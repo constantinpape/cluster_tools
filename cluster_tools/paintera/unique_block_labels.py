@@ -31,7 +31,7 @@ class UniqueBlockLabelsBase(luigi.Task):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     dependency = luigi.TaskParameter()
-    effective_scale_factor = luigi.ListParameter(default=[])
+    effective_scale_factor = luigi.ListParameter()
     prefix = luigi.Parameter(default='')
 
     def requires(self):

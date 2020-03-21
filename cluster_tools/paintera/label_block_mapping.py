@@ -25,6 +25,7 @@ class LabelBlockMappingBase(luigi.Task):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     number_of_labels = luigi.IntParameter()
+    effective_scale_factor = luigi.ListParameter()
     dependency = luigi.TaskParameter()
     prefix = luigi.Parameter()
 
@@ -59,8 +60,9 @@ class LabelBlockMappingBase(luigi.Task):
                        "number_of_labels": self.number_of_labels})
         if roi_begin is not None:
             assert roi_end is not None
-            config.update({'roi_begin': roi_begin,
-                           'roi_end': roi_end})
+            roi_begin = [rb // eff for rb, eff in zip(roi_begin, self.effective_scale_factor)]
+            roi_end = [re // eff for re, eff in zip(roi_end, self.effective_scale_factor)]
+            config.update({'roi_begin': roi_begin, 'roi_end': roi_end})
 
         # prime and run the jobs
         self.prepare_jobs(1, None, config, self.prefix)

@@ -228,15 +228,17 @@ class ConversionWorkflow(WorkflowBase):
             max_id = f[self.label_in_key].attrs['maxId']
 
         # compte the label to block mapping for all scales
-        n_scales = len(scale_factors)
-        for scale in range(n_scales):
+        effective_scale = [1, 1, 1]
+        for scale, factor in enumerate(scale_factors):
             in_key = os.path.join(self.label_out_key, 'unique-labels', 's%i' % scale)
             out_key = os.path.join(self.label_out_key, 'label-to-block-mapping', 's%i' % scale)
+            effective_scale = [eff * sf for eff, sf in zip(effective_scale, factor)]
             dep = task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                        config_dir=self.config_dir,
                        input_path=self.path, output_path=self.path,
                        input_key=in_key, output_key=out_key,
                        number_of_labels=max_id + 1, dependency=dep,
+                       effective_scale_factor=effective_scale,
                        prefix='s%i' % scale)
         return dep
 
