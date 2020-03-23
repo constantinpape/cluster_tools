@@ -54,12 +54,6 @@ class MergeNodeLabelsBase(luigi.Task):
         node_chunks = (min(number_of_labels, 100000),)
         block_list = vu.blocks_in_volume(node_shape, node_chunks)
 
-        # create output dataset
-        with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, shape=node_shape,
-                              chunks=node_chunks, compression='gzip',
-                              dtype='uint64')
-
         # update the config with input and graph paths and keys
         # as well as block shape
         config.update({'input_path': self.input_path,
@@ -71,6 +65,16 @@ class MergeNodeLabelsBase(luigi.Task):
                        'node_chunks': node_chunks,
                        'ignore_label': self.ignore_label,
                        'serialize_counts': self.serialize_counts})
+
+        if self.serialize_counts:
+            node_shape = node_shape + (2,)
+            node_chunks = node_chunks + (1,)
+
+        # create output dataset
+        with vu.file_reader(self.output_path) as f:
+            f.require_dataset(self.output_key, shape=node_shape,
+                              chunks=node_chunks, compression='gzip',
+                              dtype='uint64')
 
         # prime and run the jobs
         prefix = 'max_ol' if self.max_overlap else 'all_ol'
