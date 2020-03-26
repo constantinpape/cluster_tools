@@ -61,10 +61,8 @@ class WritePainteraMetadata(luigi.Task):
             g.attrs['painteraData'] = {'type': 'label'}
             g.attrs['maxId'] = self.max_id
             # add the metadata referencing the label to block lookup
-            scale_ds_pattern = os.path.join(self.label_group, 'label-to-block-mapping', 's%d')
-            g.attrs["labelBlockLookup"] = {"type": "n5-filesystem",
-                                           "root": os.path.abspath(os.path.realpath(self.path)),
-                                           "scaleDatasetPattern": scale_ds_pattern}
+            g.attrs["labelBlockLookup"] = {"type": "n5-filesystem-relative",
+                                           "scaleDatasetPattern": "label-to-block-mapping/s%d"}
 
             # write metadata for the label-data group
             data_group = g['data']
