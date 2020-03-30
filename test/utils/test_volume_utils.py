@@ -53,7 +53,7 @@ class TestVolumeUtils(unittest.TestCase):
             for block_id in block_list:
                 block = blocking.getBlock(block_id)
                 this_bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
-                ds[this_bb] = block_id
+                ds[this_bb] = (block_id + 1)
 
             out = ds[bb]
             self.assertTrue((out > 0).all())
@@ -70,13 +70,29 @@ class TestVolumeUtils(unittest.TestCase):
         k = 'd2'
         shape = (1023, 2049, 355)
         block_shape = (65, 93, 24)
-        ds = f.create_dataset(k, shape=shape, chunks=block_shape, dtype='uint8')
+        ds = f.create_dataset(k, shape=shape, chunks=block_shape, dtype='uint32')
         roi_begin = (104, 1039, 27)
         roi_end = (911, 1855, 134)
         block_list, blocking = blocks_in_volume(shape, block_shape, return_blocking=True,
                                                 roi_begin=roi_begin, roi_end=roi_end)
         bb = tuple(slice(rb, re) for rb, re in zip(roi_begin, roi_end))
         check_block_list(blocking, block_list, ds, bb)
+
+        # test with random shape and roi
+        N = 8
+        max_shape = (1024, 1024, 1024)
+        max_block_shape = (128, 128, 128)
+        for ii in range(N):
+            k = 'd_random%i' % ii
+            shape = tuple(np.random.randint(1, ms) for ms in max_shape)
+            block_shape = tuple(np.random.randint(10, ms) for ms in max_block_shape)
+            ds = f.create_dataset(k, shape=shape, chunks=block_shape, dtype='uint32')
+            roi_begin = tuple(np.random.randint(0, sh - 1) for sh in shape)
+            roi_end = tuple(np.random.randint(rb, sh) for rb, sh in zip(roi_begin, shape))
+            block_list, blocking = blocks_in_volume(shape, block_shape, return_blocking=True,
+                                                    roi_begin=roi_begin, roi_end=roi_end)
+            bb = tuple(slice(rb, re) for rb, re in zip(roi_begin, roi_end))
+            check_block_list(blocking, block_list, ds, bb)
 
 
 if __name__ == '__main__':
