@@ -44,7 +44,10 @@ def blocks_in_volume(shape, block_shape,
     # we don't have a roi and don't have a block_list_path
     # -> return all block_ids
     if not have_roi and not block_list_path:
-        return list(range(blocking_.numberOfBlocks))
+        if return_blocking:
+            return list(range(blocking_.numberOfBlocks)), blocking_
+        else:
+            return list(range(blocking_.numberOfBlocks))
 
     # if we have a roi load the blocks in roi
     if have_roi:
