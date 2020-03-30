@@ -44,7 +44,7 @@ class CopyVolumeBase(luigi.Task):
         config = LocalTask.default_task_config()
         config.update({'chunks': None, 'compression': 'gzip',
                        'reduce_channels': None, 'map_uniform_blocks_to_background': False,
-                       'value_list': None})
+                       'value_list': None, 'offset': None, 'insert_mode': False})
         return config
 
     def requires(self):
@@ -185,7 +185,7 @@ def cast_type(data, dtype):
 
 
 def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin, reduce_function, n_threads,
-                 map_uniform_blocks_to_background, value_list):
+                 map_uniform_blocks_to_background, value_list, offset, insert_mode):
     dtype = ds_out.dtype
 
     def _copy_block(block_id):
@@ -230,6 +230,14 @@ def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin, reduce_function
             data = reduce_function(data[0:3], axis=0)
             bb = bb[1:]
 
+        if offset is not None:
+            data[data != 0] += offset
+
+        if insert_mode:
+            prev_data = ds_out[bb]
+            insert_mask = data == 0
+            data[insert_mask] = prev_data[insert_mask]
+
         ds_out[bb] = cast_type(data, dtype)
         fu.log_block_success(block_id)
 
@@ -269,6 +277,12 @@ def copy_volume(job_id, config_path):
     # check if we copy only specified values
     value_list = config.get('value_list', None)
 
+    # check if we have an offset value
+    offset = config.get('offset', None)
+
+    # check if we are in insert mode
+    insert_mode = config.get('insert_mode', False)
+
     map_uniform_blocks_to_background = config.get('map_uniform_blocks_to_background', False)
     n_threads = config.get('threads_per_job', 1)
 
@@ -285,7 +299,7 @@ def copy_volume(job_id, config_path):
         blocking = nt.blocking([0, 0, 0], shape, block_shape)
         _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin,
                      reduce_function, n_threads, map_uniform_blocks_to_background,
-                     value_list)
+                     value_list, offset, insert_mode)
 
         # copy the attributes with job 0
         if job_id == 0 and hasattr(ds_in, 'attrs') and hasattr(ds_out, 'attrs'):
