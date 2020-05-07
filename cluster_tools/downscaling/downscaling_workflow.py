@@ -262,7 +262,8 @@ class DownscalingWorkflow(WorkflowBase):
     @staticmethod
     def get_config():
         configs = super(DownscalingWorkflow, DownscalingWorkflow).get_config()
-        configs.update({'downscaling': downscale_tasks.DownscalingLocal.default_task_config()})
+        configs.update({'downscaling': downscale_tasks.DownscalingLocal.default_task_config(),
+                        'copy_volume': copy_tasks.CopyVolumeLocal.default_task_config()})
         return configs
 
 
