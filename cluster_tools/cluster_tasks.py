@@ -226,7 +226,7 @@ class BaseClusterTask(luigi.Task):
                 "shebang": sys.executable,
                 "roi_begin": None,
                 "roi_end": None,
-                "groupname": "kreshuk",
+                "groupname": None,
                 "partition": None,
                 "max_num_retries": 0,
                 "block_list_path": None,
@@ -409,7 +409,7 @@ class SlurmTask(BaseClusterTask):
 
     def _write_slurm_file(self, job_prefix=None):
         global_config = self.get_global_config()
-        groupname = global_config.get('groupname', 'kreshuk')
+        groupname = global_config.get('groupname', None)
         partition = global_config.get('partition', None)
         easybuild = global_config.get("easybuild", True)
 
@@ -432,13 +432,14 @@ class SlurmTask(BaseClusterTask):
         job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name,
                                                                         job_prefix)
         slurm_template = ("#!/bin/bash\n"
-                          "#SBATCH -A %s\n"
                           "#SBATCH -N 1\n"
                           "#SBATCH -c %i\n"
                           "#SBATCH --mem %s\n"
                           "#SBATCH -t %s\n"
-                          "#SBATCH --qos=%s\n") % (groupname, n_threads,
-                                                   mem_limit, time_limit, qos)
+                          "#SBATCH --qos=%s\n") % (n_threads, mem_limit, time_limit, qos)
+        # add the groupname if specified
+        if groupname is not None:
+            slurm_template += "#SBATCH -A %s\n" % groupname
         # add the partition (= which queue should be used, if specified)
         if partition is not None:
             slurm_template += "#SBATCH -p %s\n" % partition
