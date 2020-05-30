@@ -14,4 +14,4 @@ We provide four different examples that show how to map biological knowledge fro
 1. You can find the [data on EMPIAR/EMDB](TODO).
 2. [The original data comes from the Janelia Flyem team](https://www.janelia.org/tools-and-data-release).
 3. The data will be made available upon the publication of [the original studies manutscript](https://www.biorxiv.org/content/10.1101/758276v1.article-metrics).
-4. The original data is [available on osf](TODO).
+4. The original data is [available on osf](https://osf.io/uzq3w/).
