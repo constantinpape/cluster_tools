@@ -9,4 +9,9 @@ We provide four different examples that show how to map biological knowledge fro
 4. Based on nucleus instance segmentation in LM image volume of primordia roots. 
 5. Additional experiments for new lifted multicut solver.
 
-TODO explain from where to get the data for the experiments.
+## Obtaining the data
+
+1. You can find the [data on EMPIAR/EMDB](TODO).
+2. [The original data comes from the Janelia Flyem team](https://www.janelia.org/tools-and-data-release).
+3. The data will be made available upon the publication of [the original studies manutscript](https://www.biorxiv.org/content/10.1101/758276v1.article-metrics).
+4. The original data is [available on osf](TODO).
