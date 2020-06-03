@@ -71,6 +71,7 @@ class RegionFeaturesWorkflow(WorkflowBase):
     labels_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
+    prefix = luigi.Parameter(default='')
     # it may be advisable to use less jobs for merging the features
     # because this is very I/O bound
     max_jobs_merge = luigi.IntParameter(default=None)
@@ -92,7 +93,8 @@ class RegionFeaturesWorkflow(WorkflowBase):
                         labels_path=self.labels_path,
                         labels_key=self.labels_key,
                         channel=self.channel,
-                        dependency=self.dependency)
+                        dependency=self.dependency,
+                        prefix=self.prefix)
         merge_task = getattr(merge_reg_tasks,
                              self._get_task_name('MergeRegionFeatures'))
         n_labels = self.read_number_of_labels()
@@ -103,7 +105,8 @@ class RegionFeaturesWorkflow(WorkflowBase):
                          output_path=self.output_path,
                          output_key=self.output_key,
                          number_of_labels=n_labels,
-                         dependency=dep)
+                         dependency=dep,
+                         prefix=self.prefix)
         return dep
 
     @staticmethod

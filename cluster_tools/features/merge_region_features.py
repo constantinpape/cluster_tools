@@ -27,6 +27,7 @@ class MergeRegionFeaturesBase(luigi.Task):
     output_key = luigi.Parameter()
     number_of_labels = luigi.IntParameter()
     dependency = luigi.TaskParameter()
+    prefix = luigi.Parameter(default='')
 
     def requires(self):
         return self.dependency
@@ -61,12 +62,18 @@ class MergeRegionFeaturesBase(luigi.Task):
 
         n_jobs = min(len(node_block_list), self.max_jobs)
         # prime and run the jobs
-        self.prepare_jobs(n_jobs, node_block_list, config, consecutive_blocks=True)
-        self.submit_jobs(n_jobs)
+        self.prepare_jobs(n_jobs, node_block_list, config, consecutive_blocks=True,
+                          job_prefix=self.prefix)
+        self.submit_jobs(n_jobs, self.prefix)
 
         # wait till jobs finish and check for job success
         self.wait_for_jobs()
-        self.check_jobs(n_jobs)
+        self.check_jobs(n_jobs, self.prefix)
+
+    # part of the luigi API
+    def output(self):
+        return luigi.LocalTarget(os.path.join(self.tmp_folder,
+                                              self.task_name + '_%s.log' % self.prefix))
 
 
 class MergeRegionFeaturesLocal(MergeRegionFeaturesBase, LocalTask):

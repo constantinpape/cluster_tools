@@ -31,6 +31,7 @@ class RegionFeaturesBase(luigi.Task):
     labels_path = luigi.Parameter()
     labels_key = luigi.Parameter()
     channel = luigi.IntParameter(default=None)
+    prefix = luigi.Parameter(default='')
     dependency = luigi.TaskParameter()
 
     def requires(self):
@@ -91,12 +92,17 @@ class RegionFeaturesBase(luigi.Task):
 
         n_jobs = min(len(block_list), self.max_jobs)
         # prime and run the jobs
-        self.prepare_jobs(n_jobs, block_list, config)
-        self.submit_jobs(n_jobs)
+        self.prepare_jobs(n_jobs, block_list, config, self.prefix)
+        self.submit_jobs(n_jobs, self.prefix)
 
         # wait till jobs finish and check for job success
         self.wait_for_jobs()
-        self.check_jobs(n_jobs)
+        self.check_jobs(n_jobs, self.prefix)
+
+    # part of the luigi API
+    def output(self):
+        return luigi.LocalTarget(os.path.join(self.tmp_folder,
+                                              self.task_name + '_%s.log' % self.prefix))
 
 
 class RegionFeaturesLocal(RegionFeaturesBase, LocalTask):
