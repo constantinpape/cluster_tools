@@ -18,12 +18,17 @@ def view_result():
         ds.n_threads = 4
         mc_seg = ds[:]
 
+        ds = f['volumes/segmentation/lifted_multicut']
+        ds.n_threads = 4
+        lmc_seg = ds[:]
+
     with napari.gui_qt():
         viewer = napari.Viewer()
         viewer.add_image(raw, name='raw')
         viewer.add_image(mem, name='membranes')
 
         viewer.add_labels(mc_seg, name='mc-seg')
+        viewer.add_labels(lmc_seg, name='lmc-seg')
 
 
 view_result()
