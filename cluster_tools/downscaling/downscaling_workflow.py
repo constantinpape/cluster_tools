@@ -164,7 +164,7 @@ class DownscalingWorkflow(WorkflowBase):
         else:
             is_h5 = self.metadata_format in ('bdv', 'bdv.hdf5')
             # TODO support multiple set-ups for multi-channel data
-            out_key = get_key(is_h5, time_point=0, setup_id=0, scale=scale)
+            out_key = get_key(is_h5, timepoint=0, setup_id=0, scale=scale)
         return out_key
 
     def _link_scale_zero_h5(self, trgt):
