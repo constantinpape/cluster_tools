@@ -80,7 +80,7 @@ class WriteDownscalingMetadata(luigi.Task):
         resolution = self.metadata_dict.get('resolution', [1., 1., 1.])
         write_xml_metadata(xml_out_path, self.output_path, unit, resolution, is_h5,
                            setup_id=0, timepoint=0, setup_name=None, affine=None,
-                           attributes={'channel': {'id': None}}, overwrite=False,
+                           attributes={'channel': {'id': 0}}, overwrite=False,
                            overwrite_data=False, enforce_consistency=False)
 
         if is_h5:
