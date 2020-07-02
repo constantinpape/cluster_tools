@@ -50,7 +50,9 @@ class DownscalingBase(luigi.Task):
     effective_scale_factor = luigi.ListParameter(default=[])
     dependency = luigi.TaskParameter(default=DummyTask())
 
-    interpolatable_types = ('float32', 'float64', 'uint8', 'uint16')
+    interpolatable_types = ('float32', 'float64',
+                            'uint8', 'int8',
+                            'uint16', 'int16')
 
     def requires(self):
         return self.dependency
