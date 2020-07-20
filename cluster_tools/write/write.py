@@ -33,7 +33,7 @@ class WriteBase(luigi.Task):
     task_name = 'write'
     src_file = os.path.abspath(__file__)
 
-    # path adn key to input and output datasets
+    # path and key to input and output datasets
     input_path = luigi.Parameter()
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()

@@ -45,13 +45,16 @@ class MergeEdgeFeaturesBase(luigi.Task):
             g = f[self.graph_key]
             shape = tuple(g.attrs['shape'])
             n_edges = g.attrs['numberOfEdges']
+        self._write_log("Merging edge features for %i edges" % n_edges)
 
         # if we don't have a roi, we only serialize the number of blocks
         # otherwise we serialize the blocks in roi
         if roi_begin is None:
             block_ids = nt.blocking([0, 0, 0], shape, block_shape).numberOfBlocks
+            self._write_log("Merging edge features for %i blocks" % block_ids)
         else:
             block_ids = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
+            self._write_log("Merging edge features for %i blocks" % len(block_ids))
 
         subfeat_key = 's0/sub_features'
         subgraph_key = 's0/sub_graphs'
@@ -61,8 +64,10 @@ class MergeEdgeFeaturesBase(luigi.Task):
         # require the output dataset
         chunk_size = min(262144, n_edges)  # chunk size = 64**3
         with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, dtype='float64', shape=(n_edges, n_features),
-                              chunks=(chunk_size, 1), compression='gzip')
+            feat_shape = (n_edges, n_features)
+            feat_chunks = (chunk_size, 1)
+            f.require_dataset(self.output_key, dtype='float64', shape=feat_shape,
+                              chunks=feat_chunks, compression='gzip')
 
         # update the task config
         config.update({'graph_path': self.graph_path, 'subgraph_key': subgraph_key,

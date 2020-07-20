@@ -57,5 +57,5 @@ class PairwiseDistanceWorkflow(WorkflowBase):
     @staticmethod
     def get_config():
         configs = super(PairwiseDistanceWorkflow, PairwiseDistanceWorkflow).get_config()
-        configs.update({'object_distances': distance_tasks.ObjectDistancesLocal.get_default_config()})
+        configs.update({'object_distances': distance_tasks.ObjectDistancesLocal.default_task_config()})
         return configs
