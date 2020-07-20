@@ -38,6 +38,7 @@ class ObjectDistancesBase(luigi.Task):
     morphology_key = luigi.Parameter()
     max_distance = luigi.FloatParameter()
     resolution = luigi.ListParameter()
+    max_size = luigi.IntParameter(default=None)
 
     @staticmethod
     def default_task_config():
@@ -57,7 +58,7 @@ class ObjectDistancesBase(luigi.Task):
         config.update({'input_path': self.input_path, 'input_key': self.input_key,
                        'morphology_path': self.morphology_path, 'morphology_key': self.morphology_key,
                        'max_distance': self.max_distance, 'resolution': self.resolution,
-                       'tmp_folder': self.tmp_folder})
+                       'tmp_folder': self.tmp_folder, 'max_size': self.max_size})
 
         with vu.file_reader(self.input_path, 'r') as f:
             n_labels = f[self.input_key].attrs['maxId'] + 1
@@ -179,7 +180,8 @@ def _object_distances(label_id, ds, bb_start, bb_stop,
 
 
 def _distances_id_chunks(blocking, block_id, ds_in,
-                         bb_start, bb_stop, max_distance, resolution):
+                         bb_start, bb_stop, max_distance, resolution,
+                         sizes, max_size):
     block = blocking.getBlock(block_id)
     id_start, id_stop = block.begin[0], block.end[0]
     # skip 0, which is the ignore label
@@ -187,6 +189,11 @@ def _distances_id_chunks(blocking, block_id, ds_in,
 
     block_distances = {}
     for label_id in range(id_start, id_stop):
+
+        if max_size is not None and sizes[label_id] > max_size:
+            fu.log(f"Skipping id {label_id} due to size threshold")
+            continue
+
         dists = _object_distances(label_id, ds_in,
                                   bb_start, bb_stop,
                                   max_distance, resolution)
@@ -210,6 +217,7 @@ def object_distances(job_id, config_path):
 
     max_distance = config['max_distance']
     resolution = config['resolution']
+    max_size = config.get('max_size', None)
 
     block_list = config['block_list']
     id_chunks = config['id_chunks']
@@ -217,6 +225,7 @@ def object_distances(job_id, config_path):
 
     with vu.file_reader(morphology_path, 'r') as f:
         morpho = f[morphology_key][:]
+        sizes = morpho[:, 1]
         bb_start = morpho[:, 5:8].astype('uint64')
         bb_stop = morpho[:, 8:11].astype('uint64') + 1
 
@@ -231,7 +240,8 @@ def object_distances(job_id, config_path):
         res_dict = {}
         for block_id in block_list:
             block_dict = _distances_id_chunks(blocking, block_id, ds_in,
-                                              bb_start, bb_stop, max_distance, resolution)
+                                              bb_start, bb_stop, max_distance, resolution,
+                                              sizes, max_size)
             res_dict.update(block_dict)
 
         out_path = os.path.join(tmp_folder, 'object_distances_%i.pkl' % job_id)

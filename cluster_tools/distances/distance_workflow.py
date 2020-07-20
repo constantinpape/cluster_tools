@@ -40,6 +40,7 @@ class PairwiseDistanceWorkflow(WorkflowBase):
     output_path = luigi.Parameter()
     max_distance = luigi.FloatParameter()
     resolution = luigi.ListParameter()
+    max_size = luigi.IntParameter(default=None)
 
     def requires(self):
         distance_task = getattr(distance_tasks,
@@ -49,7 +50,8 @@ class PairwiseDistanceWorkflow(WorkflowBase):
                             input_path=self.input_path, input_key=self.input_key,
                             morphology_path=self.morphology_path,
                             morphology_key=self.morphology_key,
-                            max_distance=self.max_distance, resolution=self.resolution)
+                            max_distance=self.max_distance, resolution=self.resolution,
+                            max_size=self.max_size)
         dep = MergePairwiseDistances(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                                      output_path=self.output_path, dependency=dep)
         return dep
