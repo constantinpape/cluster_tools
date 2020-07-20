@@ -30,6 +30,7 @@ class FindUniquesBase(luigi.Task):
     input_key = luigi.Parameter()
     dependency = luigi.TaskParameter()
     return_counts = luigi.BoolParameter(default=False)
+    prefix = luigi.Parameter(default=None)
 
     def requires(self):
         return self.dependency
@@ -67,6 +68,12 @@ class FindUniquesBase(luigi.Task):
         # wait till jobs finish and check for job success
         self.wait_for_jobs()
         self.check_jobs(n_jobs)
+
+    def output(self):
+        if self.prefix is None:
+            return luigi.LocalTarget(os.path.join(self.tmp_folder, self.task_name + '.log'))
+        else:
+            return luigi.LocalTarget(os.path.join(self.tmp_folder, f"{self.task_name}_{self.prefix}.log"))
 
 
 class FindUniquesLocal(FindUniquesBase, LocalTask):

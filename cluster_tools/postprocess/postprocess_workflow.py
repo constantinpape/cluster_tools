@@ -371,7 +371,8 @@ class SizeFilterAndGraphWatershedWorkflow(WorkflowBase):
                       input_path=self.path,
                       input_key=self.segmentation_key,
                       return_counts=True,
-                      dependency=dep)
+                      dependency=dep,
+                      prefix='size-filter-and-graph-watershed')
         sf_task = getattr(size_filter_tasks,
                           self._get_task_name('SizeFilterBlocks'))
         dep = sf_task(tmp_folder=self.tmp_folder,
