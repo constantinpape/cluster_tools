@@ -14,7 +14,7 @@ from cluster_tools.utils.task_utils import DummyTask
 
 
 #
-# copy tasks
+# linear transformation tasks
 #
 
 class LinearBase(luigi.Task):
