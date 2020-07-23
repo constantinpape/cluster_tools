@@ -1,8 +1,9 @@
 import luigi
 
 from ..cluster_tasks import WorkflowBase
-from . import linear as linear_tasks
 from . import affine as affine_tasks
+from . import linear as linear_tasks
+from . import transformix as transformix_tasks
 
 
 class LinearTransformationWorkflow(WorkflowBase):
@@ -66,4 +67,37 @@ class AffineTransformationWorkflow(WorkflowBase):
     def get_config():
         configs = super(AffineTransformationWorkflow, AffineTransformationWorkflow).get_config()
         configs.update({'affine': affine_tasks.AffineLocal.default_task_config()})
+        return configs
+
+
+class TransformixTransformationWorkflow(WorkflowBase):
+    """ Apply linear intensity transform.
+    """
+
+    input_path_file = luigi.Parameter()
+    output_path_file = luigi.Parameter()
+    transformation_file = luigi.Parameter()
+    fiji_executable = luigi.Parameter()
+    elastix_directory = luigi.Parameter()
+    interpolation = luigi.Parameter(default='nearest')
+    output_format = luigi.Parameter(default='bdv')
+
+    formats = transformix_tasks.TransformixBase.formats
+    result_types = transformix_tasks.TransformixBase.result_types
+    interpolation_modes = transformix_tasks.TransformixBase.interpolation_modes
+
+    def requires(self):
+        transformix_task = getattr(transformix_tasks, self._get_task_name('Transformix'))
+        dep = transformix_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                               config_dir=self.config_dir, dependency=self.dependency,
+                               input_path_file=self.input_path_file, output_path_file=self.output_path_file,
+                               transformation_file=self.transformation_file, fiji_executable=self.fiji_executable,
+                               elastix_directory=self.elastix_directory, interpolation=self.interpolation,
+                               output_format=self.output_format)
+        return dep
+
+    @staticmethod
+    def get_config():
+        configs = super(TransformixTransformationWorkflow, TransformixTransformationWorkflow).get_config()
+        configs.update({'transformix': transformix_tasks.TransformixLocal.default_task_config()})
         return configs
