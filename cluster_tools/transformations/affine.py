@@ -6,7 +6,7 @@ import json
 
 import luigi
 import nifty.tools as nt
-from elf.transformation import bdv_transformation_to_affine_matrix
+from elf.transformation import parameters_to_matrix
 from elf.wrapper.affine_volume import AffineVolume
 
 import cluster_tools.utils.volume_utils as vu
@@ -152,7 +152,7 @@ def affine(job_id, config_path):
 
     # compute the transformation matrix
     trafo = config['transformation']
-    trafo = bdv_transformation_to_affine_matrix(trafo)
+    trafo = parameters_to_matrix(trafo)
 
     # load additional trafo parameter
     order = config['order']
