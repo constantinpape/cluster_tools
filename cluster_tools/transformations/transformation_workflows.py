@@ -81,6 +81,9 @@ class TransformixTransformationWorkflow(WorkflowBase):
     elastix_directory = luigi.Parameter()
     interpolation = luigi.Parameter(default='nearest')
     output_format = luigi.Parameter(default='bdv')
+    shape = luigi.Parameter(default=None)
+    resolution = luigi.Parameter(default=None)
+    scale_factor = luigi.FloatParameter(default=1.e-3)
 
     formats = transformix_tasks.TransformixBase.formats
     result_types = transformix_tasks.TransformixBase.result_types
@@ -88,12 +91,19 @@ class TransformixTransformationWorkflow(WorkflowBase):
 
     def requires(self):
         transformix_task = getattr(transformix_tasks, self._get_task_name('Transformix'))
+
+        if self.resolution is None:
+            resolution = None
+        else:
+            resolution = [res * self.scale_factor for res in self.resolution]
+
         dep = transformix_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                                config_dir=self.config_dir, dependency=self.dependency,
                                input_path_file=self.input_path_file, output_path_file=self.output_path_file,
                                transformation_file=self.transformation_file, fiji_executable=self.fiji_executable,
                                elastix_directory=self.elastix_directory, interpolation=self.interpolation,
-                               output_format=self.output_format)
+                               output_format=self.output_format, shape=self.shape,
+                               resolution=resolution)
         return dep
 
     @staticmethod

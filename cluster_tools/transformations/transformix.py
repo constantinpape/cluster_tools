@@ -32,6 +32,8 @@ class TransformixBase(luigi.Task):
     transformation_file = luigi.Parameter()
     fiji_executable = luigi.Parameter()
     elastix_directory = luigi.Parameter()
+    shape = luigi.ListParameter(default=None)
+    resolution = luigi.ListParameter(default=None)
     interpolation = luigi.Parameter(default='nearest')
     output_format = luigi.Parameter(default='bdv')
     dependency = luigi.TaskParameter(default=DummyTask())
@@ -51,10 +53,13 @@ class TransformixBase(luigi.Task):
 
         interpolator_name = self.interpolation_modes[self.interpolation]
 
-        def update_line(line, to_write):
+        def update_line(line, to_write, is_numeric):
             line = line.rstrip('\n')
             line = line.split()
-            line = [line[0], "\"%s\")" % to_write]
+            if is_numeric:
+                line = [line[0], "%s)" % to_write]
+            else:
+                line = [line[0], "\"%s\")" % to_write]
             line = " ".join(line) + "\n"
             return line
 
@@ -62,10 +67,16 @@ class TransformixBase(luigi.Task):
             for line in f_in:
                 # change the interpolator
                 if line.startswith("(ResampleInterpolator"):
-                    line = update_line(line, interpolator_name)
+                    line = update_line(line, interpolator_name, False)
                 # change the pixel result type
                 elif line.startswith("(ResultImagePixelType") and res_type is not None:
-                    line = update_line(line, res_type)
+                    line = update_line(line, res_type, False)
+                elif line.startswith("(Size") and self.shape is not None:
+                    shape_str = " ".join(map(str, self.shape[::-1]))
+                    line = update_line(line, shape_str, True)
+                elif line.startswith("(Spacing") and self.resolution is not None:
+                    resolution_str = " ".join(map(str, self.resolution[::-1]))
+                    line = update_line(line, resolution_str, True)
                 f_out.write(line)
 
     def update_transformations(self, res_type):

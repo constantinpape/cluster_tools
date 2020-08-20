@@ -153,8 +153,8 @@ class DownscalingWorkflow(WorkflowBase):
         # for now, we only support a single 'setup' and a single
         # time-point for the bdv format
         else:
-            assert self.output_key_prefix == '',\
-                "Must not give output_key_prefix for bdv data format"
+            msg = f"Must not give output_key_prefix for bdv data format, got {self.output_key_prefix}"
+            assert self.output_key_prefix == '', msg
             if self.metadata_format in ('bdv', 'bdv.hdf5'):
                 assert self._is_h5(), "%s format only supports hdf5 output" % self.metadata_format
             else:
