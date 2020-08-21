@@ -23,7 +23,7 @@ class TransformixBase(luigi.Task):
                            'nearest': 'FinalNearestNeighborInterpolator'}
     result_types = ('unsigned char', 'unsigned short')
 
-    task_name = 'apply_registration'
+    task_name = 'transformix'
     src_file = os.path.abspath(__file__)
     allow_retry = False
 

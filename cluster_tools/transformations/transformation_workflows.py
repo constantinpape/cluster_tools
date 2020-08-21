@@ -4,6 +4,7 @@ from ..cluster_tasks import WorkflowBase
 from . import affine as affine_tasks
 from . import linear as linear_tasks
 from . import transformix as transformix_tasks
+from . import transformix_coordinate as transformix_coordinate_tasks
 
 
 class LinearTransformationWorkflow(WorkflowBase):
@@ -42,7 +43,7 @@ class LinearTransformationWorkflow(WorkflowBase):
 
 
 class AffineTransformationWorkflow(WorkflowBase):
-    """ Apply linear intensity transform.
+    """ Apply affine transform.
     """
 
     input_path = luigi.Parameter()
@@ -71,7 +72,7 @@ class AffineTransformationWorkflow(WorkflowBase):
 
 
 class TransformixTransformationWorkflow(WorkflowBase):
-    """ Apply linear intensity transform.
+    """ Apply elastix transform via transformix.
     """
 
     input_path_file = luigi.Parameter()
@@ -99,15 +100,62 @@ class TransformixTransformationWorkflow(WorkflowBase):
 
         dep = transformix_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                                config_dir=self.config_dir, dependency=self.dependency,
-                               input_path_file=self.input_path_file, output_path_file=self.output_path_file,
-                               transformation_file=self.transformation_file, fiji_executable=self.fiji_executable,
-                               elastix_directory=self.elastix_directory, interpolation=self.interpolation,
+                               input_path_file=self.input_path_file,
+                               output_path_file=self.output_path_file,
+                               transformation_file=self.transformation_file,
+                               fiji_executable=self.fiji_executable,
+                               elastix_directory=self.elastix_directory,
+                               interpolation=self.interpolation,
                                output_format=self.output_format, shape=self.shape,
                                resolution=resolution)
         return dep
 
     @staticmethod
     def get_config():
-        configs = super(TransformixTransformationWorkflow, TransformixTransformationWorkflow).get_config()
+        configs = super(TransformixTransformationWorkflow,
+                        TransformixTransformationWorkflow).get_config()
         configs.update({'transformix': transformix_tasks.TransformixLocal.default_task_config()})
+        return configs
+
+
+class TransformixCoordinateTransformationWorkflow(WorkflowBase):
+    """ Apply elastix transform via transformix based on transforming coordinates.
+    """
+
+    input_path = luigi.Parameter()
+    input_key = luigi.Parameter()
+    output_path = luigi.Parameter()
+    output_key = luigi.Parameter()
+
+    transformation_file = luigi.Parameter()
+    elastix_directory = luigi.Parameter()
+
+    shape = luigi.Parameter()
+    resolution = luigi.Parameter(default=None)
+    scale_factor = luigi.FloatParameter(default=1.e-3)
+
+    def requires(self):
+        transformix_task = getattr(transformix_coordinate_tasks,
+                                   self._get_task_name('TransformixCoordinate'))
+
+        if self.resolution is None:
+            resolution = None
+        else:
+            resolution = [res * self.scale_factor for res in self.resolution]
+
+        dep = transformix_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
+                               config_dir=self.config_dir, dependency=self.dependency,
+                               input_path=self.input_path, input_key=self.input_key,
+                               output_path=self.output_path, output_key=self.output_key,
+                               transformation_file=self.transformation_file,
+                               elastix_directory=self.elastix_directory,
+                               resolution=resolution, shape=self.shape)
+        return dep
+
+    @staticmethod
+    def get_config():
+        configs = super(TransformixCoordinateTransformationWorkflow,
+                        TransformixCoordinateTransformationWorkflow).get_config()
+        configs.update({'transformix_coordinate':
+                        transformix_tasks.TransformixCoordinateLocal.default_task_config()})
         return configs
