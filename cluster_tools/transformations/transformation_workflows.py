@@ -157,5 +157,5 @@ class TransformixCoordinateTransformationWorkflow(WorkflowBase):
         configs = super(TransformixCoordinateTransformationWorkflow,
                         TransformixCoordinateTransformationWorkflow).get_config()
         configs.update({'transformix_coordinate':
-                        transformix_tasks.TransformixCoordinateLocal.default_task_config()})
+                        transformix_coordinate_tasks.TransformixCoordinateLocal.default_task_config()})
         return configs

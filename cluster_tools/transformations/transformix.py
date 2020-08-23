@@ -77,6 +77,14 @@ class TransformixBase(luigi.Task):
                 elif line.startswith("(Spacing") and self.resolution is not None:
                     resolution_str = " ".join(map(str, self.resolution[::-1]))
                     line = update_line(line, resolution_str, True)
+                elif line.startswith("(InitialTransformParametersFileName"):
+                    initial_trafo_file = line.split()[-1][1:-2]
+                    if initial_trafo_file == 'NoInitialTransform':
+                        continue
+                    new_initial_trafo_file = os.path.split(initial_trafo_file)[1]
+                    new_initial_trafo_file = os.path.join(self.tmp_folder, 'transformations',
+                                                          new_initial_trafo_file)
+                    line = update_line(line, new_initial_trafo_file, False)
                 f_out.write(line)
 
     def update_transformations(self, res_type):

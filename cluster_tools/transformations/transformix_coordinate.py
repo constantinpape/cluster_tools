@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 from glob import glob
+from shutil import rmtree
 
 import luigi
 import cluster_tools.utils.function_utils as fu
@@ -65,6 +66,16 @@ class TransformixCoordinateBase(luigi.Task):
                 if line.startswith("(Spacing") and self.resolution is not None:
                     resolution_str = " ".join(map(str, self.resolution[::-1]))
                     line = update_line(line, resolution_str, True)
+
+                elif line.startswith("(InitialTransformParametersFileName"):
+                    initial_trafo_file = line.split()[-1][1:-2]
+                    if initial_trafo_file == 'NoInitialTransform':
+                        continue
+                    new_initial_trafo_file = os.path.split(initial_trafo_file)[1]
+                    new_initial_trafo_file = os.path.join(self.tmp_folder, 'transformations',
+                                                          new_initial_trafo_file)
+                    line = update_line(line, new_initial_trafo_file, False)
+
                 f_out.write(line)
 
     def update_transformations(self):
@@ -96,8 +107,8 @@ class TransformixCoordinateBase(luigi.Task):
             chunks = block_shape
         compression = config['compression']
 
-        with open_file(self.output_path, 'r') as f:
-            f.require_dataset(self.output_key, shape=self.shape, chunks=chunks,
+        with open_file(self.output_path, 'a') as f:
+            f.require_dataset(self.output_key, shape=self.shape, chunks=tuple(chunks),
                               compression=compression, dtype=dtype)
 
         trafo_file = self.update_transformations()
@@ -108,7 +119,8 @@ class TransformixCoordinateBase(luigi.Task):
                        "output_key": self.output_key,
                        "transformation_file": trafo_file,
                        "elastix_directory": self.elastix_directory,
-                       "tmp_folder": self.tmp_folder})
+                       "tmp_folder": self.tmp_folder,
+                       "block_shape": block_shape})
 
         block_list = vu.blocks_in_volume(self.shape, block_shape, roi_begin, roi_end)
         self._write_log("scheduled %i blocks to run" % len(block_list))
@@ -159,7 +171,7 @@ class TransformixCoordinateLSF(TransformixCoordinateBase, LSFTask):
 
 
 def _write_coords(starts, stops, out_file):
-    n_coords = (stops[0] - starts[0]) * (stops[1] - stops[1]) * (stops[2] - starts[2])
+    n_coords = (stops[0] - starts[0]) * (stops[1] - starts[1]) * (stops[2] - starts[2])
     with open(out_file, 'w') as f:
 
         f.write("index\n")
@@ -179,6 +191,7 @@ def process_block(ds_in, ds_out,
                   tmp_folder):
     block = blocking.getBlock(block_id)
     coord_folder = os.path.join(tmp_folder, f'coords_{block_id}')
+    os.makedirs(coord_folder, exist_ok=True)
 
     # get the output coordinates for this block and write to file
     in_coord_file = os.path.join(coord_folder, 'inpoints.txt')
@@ -200,6 +213,9 @@ def process_block(ds_in, ds_out,
 
     # write the output
     ds_out[bb] = out
+
+    # clean up
+    rmtree(coord_folder)
 
 
 def transformix_coordinate(job_id, config_path):
