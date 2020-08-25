@@ -134,15 +134,6 @@ class TransformixCoordinateBase(luigi.Task):
         self.wait_for_jobs()
         self.check_jobs(n_jobs)
 
-        # prime and run the jobs
-        n_jobs = min(self.max_jobs, len(block_list))
-        self.prepare_jobs(n_jobs, block_list, config)
-        self.submit_jobs(n_jobs)
-
-        # wait till jobs finish and check for job success
-        self.wait_for_jobs()
-        self.check_jobs(n_jobs)
-
 
 class TransformixCoordinateLocal(TransformixCoordinateBase, LocalTask):
     """
