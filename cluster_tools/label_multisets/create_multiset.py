@@ -15,6 +15,7 @@ from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 # so we need to restrict the number of threads used by numpy
 from elf.util import set_numpy_threads
 set_numpy_threads(1)
+from elf.io.label_multiset_wrapper import LabelMultisetWrapper
 from elf.label_multiset import create_multiset_from_labels, serialize_multiset
 
 
@@ -161,6 +162,8 @@ def create_multiset(job_id, config_path):
     # submit blocks
     with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
         ds_in = f_in[input_key]
+        if ds_in.attrs.get('isLabelMultiset', False):
+            ds_in = LabelMultisetWrapper(ds_in)
         ds_out = f_out[output_key]
 
         for block_id in block_list:

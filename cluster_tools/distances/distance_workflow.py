@@ -17,6 +17,7 @@ class MergePairwiseDistances(luigi.Task):
 
     def run(self):
         res_dict = {}
+
         for job_id in range(self.max_jobs):
             path = os.path.join(self.tmp_folder, 'object_distances_%i.pkl' % job_id)
             # path might not exist because the number of actual jobs is smaller than max_jobs
@@ -24,9 +25,10 @@ class MergePairwiseDistances(luigi.Task):
                 continue
             with open(path, 'rb') as f:
                 distances = pickle.load(f)
-                res_dict.update(distances)
-            with open(self.output_path, 'wb') as f:
-                pickle.dump(res_dict, f)
+            res_dict.update(distances)
+
+        with open(self.output_path, 'wb') as f:
+            pickle.dump(res_dict, f)
 
     def output(self):
         return luigi.LocalTarget(self.output_path)
