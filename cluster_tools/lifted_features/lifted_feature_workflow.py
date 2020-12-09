@@ -191,7 +191,7 @@ class LiftedFeaturesFromNodeLabelsWorkflow(WorkflowBase):
         configs.update({**NodeLabelWorkflow.get_config(),
                         'sparse_lifted_neighborhood':
                         nh_tasks.SparseLiftedNeighborhoodLocal.default_task_config(),
-                        'features_from_node_labels':
+                        'costs_from_node_labels':
                         cost_tasks.CostsFromNodeLabelsLocal.default_task_config(),
                         'clear_lifted_edges_from_labels':
                         clear_tasks.ClearLiftedEdgesFromLabelsLocal.default_task_config()})
