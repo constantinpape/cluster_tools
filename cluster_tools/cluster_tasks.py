@@ -479,7 +479,8 @@ class SlurmTask(BaseClusterTask):
             # call(command)
             outp = check_output(command).decode().rstrip()
             # get the slurm job-id
-            slurm_id = int(outp.split()[-1])
+            # NOTE: slurm ids are not always integer, so we cannot cast to int here
+            slurm_id = outp.split()[-1]
             self.slurm_ids.append(slurm_id)
             # print slurm message
             print(outp)
@@ -506,7 +507,7 @@ class SlurmTask(BaseClusterTask):
             if n_running == 0:
                 break
             # if we have jobs, check how many belong to this task
-            n_running = sum([int(out.split()[0]) in self.slurm_ids for out in outp])
+            n_running = sum([out.split()[0] in self.slurm_ids for out in outp])
             if n_running == 0:
                 break
 
