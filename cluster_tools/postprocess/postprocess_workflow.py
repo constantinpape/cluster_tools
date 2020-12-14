@@ -30,6 +30,7 @@ class SizeFilterWorkflow(WorkflowBase):
     hmap_path = luigi.Parameter(default='')
     hmap_key = luigi.Parameter(default='')
     relabel = luigi.BoolParameter(default=True)
+    preserve_zeros = luigi.BoolParameter(default=False)
 
     def _bg_filter(self, dep):
         filter_task = getattr(bg_tasks,
@@ -56,6 +57,7 @@ class SizeFilterWorkflow(WorkflowBase):
                           output_key=self.output_key,
                           hmap_path=self.hmap_path,
                           hmap_key=self.hmap_key,
+                          preserve_zeros=self.preserve_zeros,
                           dependency=dep)
         return dep
 
