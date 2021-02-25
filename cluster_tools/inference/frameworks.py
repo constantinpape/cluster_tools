@@ -1,5 +1,8 @@
 import os
+from contextlib import nullcontext
 from functools import partial
+from importlib import import_module
+
 import threading
 import numpy as np
 
@@ -24,11 +27,6 @@ try:
 except ImportError:
     TestTimeAugmenter = None
 
-try:
-    from apex import amp
-except ImportError:
-    amp = None
-
 
 #
 # Prediction classes
@@ -51,9 +49,9 @@ class PytorchPredicter:
 
         self.mixed_precision = mixed_precision
         if self.mixed_precision:
-            assert amp is not None, "Need apex to use mixed precision inference"
-            opt_level = 'O1'  # TODO allow to set opt level
-            self.model = amp.initialize(self.model, opt_level=opt_level)
+            self.autocast = torch.cuda.amp.autocast
+        else:
+            self.autocast = nullcontext
 
         # save the halo and check if this is a multi-scale halo
         # (halo is nested list)
@@ -69,11 +67,34 @@ class PytorchPredicter:
         else:
             self.augmenter = None
 
+    def load_model(self, model_path):
+        # load model from a saved pytorch model
+        if isinstance(model_path, str):
+            assert os.path.exists(model_path), model_path
+            model = torch.load(model_path)
+
+        # load model from a model state dict
+        elif isinstance(model_path, dict):
+            module, model_name = model_path['class']
+            model_kwargs = model_path['kwargs']
+            model_class = getattr(import_module(module), model_name)
+            model = model_class(**model_kwargs)
+
+            state_path = model_path['checkpoint_path']
+            assert os.path.exists(state_path), state_path
+            model_key = model_path.get('model_state_key', None)
+
+            state = torch.load(state_path)
+            if model_key is not None:
+                state = state[model_key]
+            model.load_state_dict(state)
+
+        return model
+
     def __init__(self, model_path, halo, gpu=0, use_best=True, prep_model=None,
                  mixed_precision=False, **augmentation_kwargs):
         # load the model and prep it if specified
-        assert os.path.exists(model_path), model_path
-        self.model = torch.load(model_path)
+        self.model = self.load_model(model_path)
         self.set_up(halo, gpu, use_best, prep_model, mixed_precision,
                     **augmentation_kwargs)
 
@@ -85,7 +106,7 @@ class PytorchPredicter:
         return out[bb]
 
     def apply_model(self, input_data):
-        with self.lock, torch.no_grad():
+        with self.lock, torch.no_grad(), self.autocast():
             if isinstance(input_data, np.ndarray):
                 torch_data = torch.from_numpy(input_data[None, None]).cuda(self.gpu)
             else:
