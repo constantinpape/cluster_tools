@@ -54,6 +54,7 @@ class WatershedBase(luigi.Task):
         config.update({'threshold': .5,
                        'apply_dt_2d': True, 'pixel_pitch': None,
                        'apply_ws_2d': True, 'sigma_seeds': 2., 'size_filter': 25,
+                       'apply_filters_2d': False,
                        'sigma_weights': 2., 'halo': [0, 0, 0],
                        'channel_begin': 0, 'channel_end': None,
                        'agglomerate_channels': 'mean', 'alpha': 0.8,
@@ -161,12 +162,13 @@ def _apply_dt(input_, config):
     return dt
 
 
-def _make_hmap(input_, distances, alpha, sigma_weights):
+def _make_hmap(input_, distances, alpha, sigma_weights, apply_filters_2d):
     distances = 1. - vu.normalize(distances)
     hmap = alpha * input_ + (1. - alpha) * distances
     # smooth input if sigma is given
     if sigma_weights != 0:
-        hmap = vu.apply_filter(hmap, 'gaussianSmoothing', sigma_weights)
+        hmap = vu.apply_filter(hmap, 'gaussianSmoothing', sigma_weights,
+                               apply_in_2d=apply_filters_2d)
     return hmap
 
 
@@ -187,7 +189,8 @@ def _make_seeds(dt, config):
     # find local maxima of the distance transform
     max_fu = vigra.analysis.localMaxima if dt.ndim == 2 else vigra.analysis.localMaxima3D
     if sigma_seeds:
-        seeds = max_fu(vu.apply_filter(dt, 'gaussianSmoothing', sigma_seeds),
+        seeds = max_fu(vu.apply_filter(dt, 'gaussianSmoothing', sigma_seeds,
+                                       apply_in_2d=config.get('apply_filters_2d', False)),
                        marker=np.nan, allowAtBorder=True, allowPlateaus=True)
     else:
         seeds = max_fu(dt, marker=np.nan, allowAtBorder=True, allowPlateaus=True)
@@ -223,7 +226,7 @@ def _apply_watershed(input_, dt, config, mask=None):
             # run watershed for this slice
             dtz = dt[z]
             seeds = _make_seeds(dtz, config)
-            hmap = _make_hmap(input_[z], dtz, alpha, sigma_weights)
+            hmap = _make_hmap(input_[z], dtz, alpha, sigma_weights, config.get('apply_filters_2d', False))
             wsz, max_id = run_watershed(hmap, seeds=seeds, size_filter=size_filter)
 
             # mask seeds if we have a mask
@@ -242,7 +245,7 @@ def _apply_watershed(input_, dt, config, mask=None):
     # apply the watersheds in 3d
     else:
         seeds = _make_seeds(dt, config)
-        hmap = _make_hmap(input_, dt, alpha, sigma_weights)
+        hmap = _make_hmap(input_, dt, alpha, sigma_weights, config.get('apply_filters_2d', False))
         ws, max_id = run_watershed(hmap, seeds, size_filter=size_filter)
         # check if we have a mask
         if mask is not None:
