@@ -155,7 +155,7 @@ def _block_features(block_id, blocking,
             return
 
     # get global normalization values
-    min_val = 0
+    min_val = 0.
     max_val = 255. if ds_in.dtype == np.dtype('uint8') else 1.
 
     bb_in = bb if channel is None else (channel,) + bb

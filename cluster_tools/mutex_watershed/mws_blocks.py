@@ -40,6 +40,7 @@ class MwsBlocksBase(luigi.Task):
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
+        # FIXME size_filter is never used
         config.update({'strides': [1, 1, 1], 'randomize_strides': False,
                        'size_filter': 25, 'noise_level': 0.})
         return config

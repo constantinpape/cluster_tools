@@ -70,7 +70,8 @@ class SizeFilterWorkflow(WorkflowBase):
                       input_path=self.input_path,
                       input_key=self.input_key,
                       return_counts=True,
-                      dependency=self.dependency)
+                      dependency=self.dependency,
+                      prefix='size_filter')
         sf_task = getattr(size_filter_tasks,
                           self._get_task_name('SizeFilterBlocks'))
         dep = sf_task(tmp_folder=self.tmp_folder,
@@ -236,6 +237,7 @@ class FilterByThresholdWorkflow(WorkflowBase):
                                   input_key=self.seg_out_key,
                                   assignment_path=self.seg_out_path,
                                   assignment_key='assignments/relabel_filter',
+                                  prefix='pp_filter_by_threshold',
                                   dependency=dep)
         return dep
 

@@ -32,6 +32,7 @@ class FindLabelingBase(luigi.Task):
     assignment_key = luigi.Parameter()
     # task that is required before running this task
     dependency = luigi.TaskParameter()
+    prefix = luigi.Parameter(default=None)
 
     def requires(self):
         return self.dependency
@@ -58,6 +59,12 @@ class FindLabelingBase(luigi.Task):
         self.wait_for_jobs()
         # log the save-path again
         self.check_jobs(1)
+
+    def output(self):
+        if self.prefix is None:
+            return luigi.LocalTarget(os.path.join(self.tmp_folder, self.task_name + '.log'))
+        else:
+            return luigi.LocalTarget(os.path.join(self.tmp_folder, f"{self.task_name}_{self.prefix}.log"))
 
 
 class FindLabelingLocal(FindLabelingBase, LocalTask):

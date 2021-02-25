@@ -204,7 +204,7 @@ class MulticutSegmentationWorkflow(SegmentationWorkflowBase):
     # number of jobs used for sub multicuts
     max_jobs_multicut = luigi.IntParameter(default=1)
     # number of scales
-    n_scales = luigi.IntParameter()
+    n_scales = luigi.IntParameter(default=1)
 
     def _multicut_tasks(self, dep):
         dep = MulticutWorkflow(tmp_folder=self.tmp_folder,
