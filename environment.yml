@@ -1,18 +1,14 @@
 name: cluster_env
 
 channels:
-  - cpape
   - conda-forge
-  - ilastik-forge
+  - cpape
 
 dependencies:
-  - python 3.7
   - scikit-image
   - scikit-learn
   - vigra
   - h5py
-  - z5py
   - luigi
-  - nifty
-  # not yet available for python 3.7, we have vigra as fallback
-  # - fastfilters  
+  - elf >=0.2.4
+  - pybdv >=0.5.0
