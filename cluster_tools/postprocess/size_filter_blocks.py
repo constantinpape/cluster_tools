@@ -103,7 +103,7 @@ def size_filter_blocks(job_id, config_path):
 
     for uniques_job, counts_job in zip(unique_values, count_values):
         counts[uniques_job] += counts_job.astype('uint64')
-    counts = counts[counts != 0]
+    counts = counts[uniques]
     assert len(counts) == len(uniques)
 
     if 'size_threshold' in config:

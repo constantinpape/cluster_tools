@@ -82,8 +82,8 @@ class SizeFilterWorkflow(WorkflowBase):
                       size_threshold=self.size_threshold,
                       dependency=dep)
 
-        if self.hmap_path == '':
-            assert self.hmap_key == ''
+        if self.hmap_path == '' or self.hmap_path is None:
+            assert self.hmap_key == '' or self.hmap_key is None
             dep = self._bg_filter(dep)
         else:
             assert self.hmap_key != ''

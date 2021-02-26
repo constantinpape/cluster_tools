@@ -6,8 +6,8 @@ import json
 
 import luigi
 import numpy as np
-import vigra
 import nifty.tools as nt
+from skimage.segmentation import watershed
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -133,17 +133,9 @@ def apply_block(block_id, blocking, ds_hmap, ds_in, ds_out, discard_ids, preserv
     hmap_bb = (slice(0, 1),) + bb if ds_hmap.ndim == 4 else bb
     hmap = ds_hmap[hmap_bb].squeeze()
 
-    if preserve_zeros:
-        preserve_mask = labels == 0
-        zero_label = labels.max() + 1
-        labels[preserve_mask] = zero_label
-
+    mask = labels != 0 if preserve_zeros else None
     labels[discard_mask] = 0
-    labels = labels.astype('uint32')
-    vigra.analysis.watershedsNew(hmap, seeds=labels, out=labels)
-
-    if preserve_zeros:
-        labels[preserve_mask] = 0
+    labels = watershed(hmap, markers=labels, mask=mask)
 
     ds_out[bb] = labels.astype(ds_out.dtype)
     fu.log_block_success(block_id)

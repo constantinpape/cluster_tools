@@ -162,7 +162,7 @@ def find_uniques(job_id, config_path):
         counts = np.zeros(int(unique_values[-1] + 1), dtype='uint64')
         for uniques_block, counts_block in uniques:
             counts[uniques_block] += counts_block.astype('uint64')
-        counts = counts[counts != 0]
+        counts = counts[unique_values]
         assert len(counts) == len(unique_values)
 
         count_path = os.path.join(tmp_folder, 'counts_job_%i.npy' % job_id)
