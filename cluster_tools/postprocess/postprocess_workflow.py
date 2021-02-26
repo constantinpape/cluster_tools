@@ -98,6 +98,7 @@ class SizeFilterWorkflow(WorkflowBase):
                                   input_key=self.output_key,
                                   assignment_path=self.output_path,
                                   assignment_key='relabel_size_filter',
+                                  prefix='size_filter',
                                   dependency=dep)
         return dep
 
