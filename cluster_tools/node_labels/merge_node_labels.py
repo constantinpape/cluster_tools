@@ -66,10 +66,6 @@ class MergeNodeLabelsBase(luigi.Task):
                        'ignore_label': self.ignore_label,
                        'serialize_counts': self.serialize_counts})
 
-        if self.serialize_counts:
-            node_shape = node_shape + (2,)
-            node_chunks = node_chunks + (1,)
-
         # create output dataset
         with vu.file_reader(self.output_path) as f:
             f.require_dataset(self.output_key, shape=node_shape,

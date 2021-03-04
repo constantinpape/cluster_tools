@@ -5,7 +5,9 @@ import sys
 import json
 
 import luigi
-from elf.evaluation.variation_of_information import compute_object_vi_scores
+import numpy as np
+from scipy.optimize import linear_sum_assignment
+from elf.evaluation.matching import intersection_over_union
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -18,11 +20,11 @@ from cluster_tools.evaluation.measures import contigency_table_from_overlaps, lo
 # Validation measure tasks
 #
 
-class ObjectViBase(luigi.Task):
-    """ ObjectVi base class
+class ObjectIouBase(luigi.Task):
+    """ ObjectIou base class
     """
 
-    task_name = 'object_vi'
+    task_name = 'object_iou'
     src_file = os.path.abspath(__file__)
     allow_retry = False
 
@@ -54,20 +56,20 @@ class ObjectViBase(luigi.Task):
         self.check_jobs(n_jobs)
 
 
-class ObjectViLocal(ObjectViBase, LocalTask):
-    """ ObjectVi on local machine
+class ObjectIouLocal(ObjectIouBase, LocalTask):
+    """ ObjectIou on local machine
     """
     pass
 
 
-class ObjectViSlurm(ObjectViBase, SlurmTask):
-    """ ObjectVi on slurm cluster
+class ObjectIouSlurm(ObjectIouBase, SlurmTask):
+    """ ObjectIou on slurm cluster
     """
     pass
 
 
-class ObjectViLSF(ObjectViBase, LSFTask):
-    """ ObjectVi on lsf cluster
+class ObjectIouLSF(ObjectIouBase, LSFTask):
+    """ ObjectIou on lsf cluster
     """
     pass
 
@@ -77,7 +79,41 @@ class ObjectViLSF(ObjectViBase, LSFTask):
 #
 
 
-def object_vi(job_id, config_path):
+def compute_ious(p_ids, p_counts):
+    # compute the label overlaps
+    p_ids = p_ids.astype('uint64')
+    max_a, max_b = int(p_ids[:, 0].max()), int(p_ids[:, 1].max())
+    overlap = np.zeros((max_a + 1, max_b + 1), dtype='uint64')
+    index = (p_ids[:, 0], p_ids[:, 1])
+    overlap[index] = p_counts
+
+    # compute the ious
+    scores = intersection_over_union(overlap)
+    assert 0 <= np.min(scores) <= np.max(scores) <= 1
+
+    n_pred, n_true = scores.shape
+    n_matched = min(n_true, n_pred)
+
+    threshold = 0.5
+    if not (scores > threshold).any():
+        return dict(zip(range(n_pred), n_pred * [0.]))
+
+    costs = -(scores >= threshold).astype(float) - scores / (2*n_matched)
+    pred_ind, true_ind = linear_sum_assignment(costs)
+    assert n_matched == len(true_ind) == len(pred_ind)
+    scores = scores[pred_ind, true_ind]
+
+    matched_ids = p_ids[pred_ind].tolist()
+    scores = dict(zip(matched_ids, scores.tolist()))
+
+    # set scores for non-matched ids to zero
+    missing_ids = list(set(range(max_a + 1)) - set(matched_ids))
+    scores.update({mid: 0. for mid in missing_ids})
+
+    return scores
+
+
+def object_iou(job_id, config_path):
 
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
@@ -99,7 +135,7 @@ def object_vi(job_id, config_path):
     overlaps = load_overlaps(input_path, overlap_key, n_chunks, n_threads)
 
     a_dict, b_dict, p_ids, p_counts, _ = contigency_table_from_overlaps(overlaps)
-    object_scores = compute_object_vi_scores(a_dict, b_dict, p_ids, p_counts, use_log2=True)
+    object_scores = compute_ious(p_ids, p_counts)
 
     # annoying json ...
     object_scores = {int(gt_id): score for gt_id, score in object_scores.items()}
@@ -113,4 +149,4 @@ if __name__ == '__main__':
     path = sys.argv[1]
     assert os.path.exists(path), path
     job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
-    object_vi(job_id, path)
+    object_iou(job_id, path)
