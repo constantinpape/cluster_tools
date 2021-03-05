@@ -15,6 +15,18 @@ import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 from cluster_tools.utils.task_utils import DummyTask
 
+# TODO this should maybe be go to z5py, but first check if it actually works
+DTYPE_MAPPING = {
+    '>u2': 'uint16',
+    '>u4': 'uint32',
+    '>u8': 'uint64',
+    '>i2': 'int16',
+    '>i4': 'int32',
+    '>i8': 'int64',
+    '>f4': 'float32',
+    '>f8': 'float64'
+}
+
 
 #
 # copy tasks
@@ -102,6 +114,7 @@ class CopyVolumeBase(luigi.Task):
 
         compression = task_config.pop('compression', 'gzip')
         dtype = str(ds_dtype) if self.dtype is None else self.dtype
+        dtype = DTYPE_MAPPING.get(dtype, dtype)
 
         chunks = task_config.pop('chunks', None)
         chunks = tuple(block_shape) if chunks is None else chunks
