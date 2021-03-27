@@ -347,7 +347,7 @@ def reduce_problem(job_id, config_path):
         ds = f[costs_key]
         ds.n_threads = n_threads
         costs = ds[:]
-    assert len(costs) == n_edges, "%i, %i" (len(costs), n_edges)
+    assert len(costs) == n_edges, "%i, %i" % (len(costs), n_edges)
 
     block_shape = [bsh * 2**scale for bsh in initial_block_shape]
     blocking = nt.blocking([0, 0, 0], shape, block_shape)
