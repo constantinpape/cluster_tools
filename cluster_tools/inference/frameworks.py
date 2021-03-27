@@ -32,7 +32,6 @@ except ImportError:
 # Prediction classes
 #
 
-# TODO enable to load from state dict and model
 class PytorchPredicter:
 
     @staticmethod

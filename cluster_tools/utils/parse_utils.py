@@ -15,12 +15,10 @@ def parse_runtime(log_file):
     """ Parse the job run-time from a log-file
     """
     with open(log_file, 'r') as f:
-        for ii, line in enumerate(f):
-            if ii == 0:
-                l0 = line
-            l1 = line
-    l0 = l0.strip("\n")
-    l1 = l1.strip("\n")
+        for line in f:
+            l0 = line.rstrip("\n")
+            break
+    l1 = tail(log_file, 1)[0].rstrip("\n")
 
     l0 = l0.split()[:2]
     l1 = l1.split()[:2]
