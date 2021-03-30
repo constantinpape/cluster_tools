@@ -42,7 +42,8 @@ class SolveGlobalBase(luigi.Task):
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
         config.update({'agglomerator': 'kernighan-lin',
-                       'time_limit_solver': None})
+                       'time_limit_solver': None,
+                       'solver_kwargs': {}})
         return config
 
     def run_impl(self):
@@ -113,13 +114,14 @@ def solve_global(job_id, config_path):
     agglomerator_key = config['agglomerator']
     n_threads = config['threads_per_job']
     time_limit = config.get('time_limit_solver', None)
+    solver_kwargs = config.get('solver_kwargs', {})
 
     fu.log("using solver %s" % agglomerator_key)
     if time_limit is None:
         fu.log("agglomeration without time limit")
     else:
         fu.log("agglomeration time limit %i" % time_limit)
-    solver = get_multicut_solver(agglomerator_key)
+    solver = get_multicut_solver(agglomerator_key, **solver_kwargs)
 
     with vu.file_reader(problem_path, 'r') as f:
         group = f['s%i' % scale]

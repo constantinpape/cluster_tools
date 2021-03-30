@@ -49,7 +49,8 @@ class SolveSubproblemsBase(luigi.Task):
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
         config.update({'agglomerator': 'kernighan-lin',
-                       'time_limit_solver': None})
+                       'time_limit_solver': None,
+                       'solver_kwargs': {}})
         return config
 
     def run_impl(self):
@@ -232,6 +233,7 @@ def solve_subproblems(job_id, config_path):
     n_threads = config['threads_per_job']
     agglomerator_key = config['agglomerator']
     time_limit = config.get('time_limit_solver', None)
+    solver_kwargs = config.get('solver_kwargs', {})
 
     fu.log("reading problem from %s" % problem_path)
     problem = z5py.N5File(problem_path)
@@ -254,7 +256,7 @@ def solve_subproblems(job_id, config_path):
     fu.log("ignore label is %s" % ('true' if ignore_label else 'false'))
 
     fu.log("using solver %s" % agglomerator_key)
-    solver = get_multicut_solver(agglomerator_key)
+    solver = get_multicut_solver(agglomerator_key, **solver_kwargs)
 
     # the output group
     out = problem['s%i/sub_results' % scale]
