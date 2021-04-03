@@ -144,7 +144,7 @@ def solve_global(job_id, config_path):
         ds = group['costs']
         ds.n_threads = n_threads
         costs = ds[:]
-        assert len(costs) == n_edges, "%i, %i" (len(costs), n_edges)
+        assert len(costs) == n_edges, "%i, %i" % (len(costs), n_edges)
 
     fu.log("creating graph with %i nodes an %i edges" % (n_nodes, len(uv_ids)))
     graph = nifty.graph.undirectedGraph(n_nodes)
