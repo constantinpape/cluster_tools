@@ -9,10 +9,9 @@ import luigi
 import numpy as np
 import nifty.tools as nt
 
-import nifty
-import nifty.graph.rag as nrag
+import elf.segmentation.features as feats
+import elf.segmentation.multicut as mc
 from vigra.analysis import relabelConsecutive
-from elf.segmentation.clustering import mala_clustering, agglomerative_clustering
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -43,18 +42,12 @@ class SliceAgglomerationBase(luigi.Task):
 
     @staticmethod
     def default_task_config():
-        # parameter:
-        # use_mala_agglomeration: whether to use thresholding based mala agglomeration
-        #                         or element number based agglomerative clustering
-        # threshold: threshold up to which to slice_agglomeration (mala) or fraction of nodes
-        #            after agglomeration (agglomerative clustering)
-        # size_regularizer: size regularizer in agglomerative clustering (wardness)
-        # invert_inputs: do we need to invert the inputs?
-        # offsets: offsets for affinities, set to None for boundaries
         config = LocalTask.default_task_config()
-        config.update({'use_mala_agglomeration': True, 'threshold': .9,
-                       'size_regularizer': .5, 'invert_inputs': False,
-                       'offsets': None})
+        config.update({'beta_stitch': 0.5,
+                       'beta': 0.75,
+                       'invert_inputs': False,
+                       'channel_begin': None,
+                       'channel_end': None})
         return config
 
     def clean_up_for_retry(self, block_list):
@@ -86,7 +79,8 @@ class SliceAgglomerationBase(luigi.Task):
         # as well as block shape
         config.update({'input_path': self.input_path, 'input_key': self.input_key,
                        'output_path': self.output_path, 'output_key': self.output_key,
-                       'block_shape': slice_block_shape, 'have_ignore_label': self.have_ignore_label})
+                       'block_shape': slice_block_shape, 'have_ignore_label': self.have_ignore_label,
+                       'block_shape_2d': block_shape[1:]})
 
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, slice_block_shape, roi_begin, roi_end)
@@ -132,15 +126,13 @@ class SliceAgglomerationLSF(SliceAgglomerationBase, LSFTask):
 #
 
 
-def agglomerate_slice(seg, input_, offsets, z, config):
+def agglomerate_slice(seg, input_, z, config):
     # check if this slic is empty
     if np.sum(seg) == 0:
         return seg
 
     have_ignore_label = config['have_ignore_label']
-    use_mala_agglomeration = config.get('use_mala_agglomeration', True)
-    threshold = config.get('threshold', 0.9)
-    size_regularizer = config.get('size_regularizer', .5)
+    block_shape = config['block_shape_2d']
 
     foreground_mask = seg != 0
 
@@ -148,44 +140,30 @@ def agglomerate_slice(seg, input_, offsets, z, config):
     _, max_id, _ = relabelConsecutive(seg, out=seg, keep_zeros=True, start_label=1)
     seg = seg.astype('uint32')
 
-    # construct rag
-    rag = nrag.gridRag(seg, numberOfLabels=max_id + 1, numberOfThreads=1)
+    # construct rag and get edge features
+    rag = feats.compute_rag(seg, n_labels=max_id + 1, n_threads=1)
+    edge_features = feats.compute_boundary_mean_and_length(rag, input_, n_threads=1)[:, 0]
 
-    # extract edge features
-    if offsets is None:
-        edge_features = nrag.accumulateEdgeMeanAndLength(rag, input_, numberOfThreads=1)
-    else:
-        edge_features = nrag.accumulateAffinityStandartFeatures(rag, input_, offsets,
-                                                                numberOfThreads=1)
-    edge_features, edge_sizes = edge_features[:, 0], edge_features[:, -1]
-    uv_ids = rag.uvIds()
     # set edges to ignore label to be maximally repulsive
     if have_ignore_label:
+        uv_ids = rag.uvIds()
         ignore_mask = (uv_ids == 0).any(axis=1)
         edge_features[ignore_mask] = 1
 
-    # build undirected graph
-    n_nodes = rag.numberOfNodes
-    graph = nifty.graph.undirectedGraph(n_nodes)
-    graph.insertEdges(uv_ids)
+    # get the stitiching edges
+    stitch_edges = feats.get_stitch_edges(rag, seg, block_shape)
+    beta1 = config.get('beta_stitch', 0.5)
+    beta2 = config.get('beta', 0.75)
 
-    # run clustering
-    if use_mala_agglomeration:
-        node_labels = mala_clustering(graph, edge_features, edge_sizes, threshold)
-    else:
-        node_ids, node_sizes = np.unique(seg, return_counts=True)
-        if node_ids[0] != 0:
-            node_sizes = np.concatenate([np.array([0]), node_sizes])
-        n_stop = int(threshold * n_nodes)
-        node_labels = agglomerative_clustering(graph, edge_features,
-                                               node_sizes, edge_sizes,
-                                               n_stop, size_regularizer)
+    costs = np.zeros_like(edge_features)
+    costs[stitch_edges] = mc.compute_edge_costs(edge_features[stitch_edges], beta=beta1)
+    costs[~stitch_edges] = mc.compute_edge_costs(edge_features[~stitch_edges], beta=beta2)
+    node_labels = mc.multicut_kernighan_lin(rag, costs)
 
     node_labels, max_id, _ = relabelConsecutive(node_labels, start_label=1, keep_zeros=True)
 
     # project node labels back to segmentation
-    seg = nrag.projectScalarNodeDataToPixels(rag, node_labels, numberOfThreads=1)
-    seg = seg.astype('uint64')
+    seg = feats.project_node_labels_to_pixels(rag, node_labels, n_threads=1).astype('uint64')
 
     # we change to slice base id offset
     id_offset = z * np.prod(list(seg.shape))
@@ -196,22 +174,6 @@ def agglomerate_slice(seg, input_, offsets, z, config):
     return seg
 
 
-# we assume here that affinities have chunking of 1 in the channle axis, otherwise
-# this might be fairly inefficient!
-def load_2d_affinities(ds_in, offsets, bb):
-    channels_2d = [i for i, off in enumerate(offsets) if off[0] == 0]
-    assert channels_2d, f"No 2d offsets in {offsets}"
-    offsets_2d = [offsets[i][1:] for i in channels_2d]
-    assert all(len(off) == 2 for off in offsets_2d)
-    input_ = []
-    for chan_id in channels_2d:
-        bb_chan = (chan_id,) + bb
-        aff_channel = vu.normalize(ds_in[bb_chan])
-        input_.append(aff_channel[None])
-    input_ = np.concatenate(input_, axis=0)
-    return input_, offsets_2d
-
-
 def _slice_agglomeration(blocking, block_id, ds_in, ds_out, config):
     fu.log("start processing block %i" % block_id)
 
@@ -220,7 +182,6 @@ def _slice_agglomeration(blocking, block_id, ds_in, ds_out, config):
     ds_out.n_threads = n_threads
 
     invert_inputs = config.get('invert_inputs', False)
-    offsets = config.get('offsets', None)
 
     bb = vu.block_to_bb(blocking.getBlock(block_id))
     # load the segmentation / output
@@ -228,25 +189,24 @@ def _slice_agglomeration(blocking, block_id, ds_in, ds_out, config):
 
     # load the input data
     ndim_in = ds_in.ndim
+    # we are conservative and always accumulate affinities with max
     if ndim_in == 4:
-        assert offsets is not None
-        assert len(offsets) <= ds_in.shape[0]
-        fu.log("Compute edge weights from affinities")
-        input_, offsets_2d = load_2d_affinities(ds_in, offsets, bb)
-        fu.log(f"With 2d offsets: {offsets_2d}")
+        channel_begin = config.get('channel_begin', None)
+        channel_end = config.get('channel_end', None)
+        channel_begin = 0 if channel_begin is None else channel_begin
+        channel_end = ds_in.shape[0] if channel_end is None else channel_end
+        bb_in = (slice(channel_begin, channel_end),) + bb
+        input_ = ds_in[bb_in]
+        if invert_inputs:
+            input_ = 1. - input_
+        input_ = vu.normalize(np.max(input_, axis=0))
     else:
-        assert offsets is None
-        fu.log("Compute edge weights from boundaries.")
         input_ = vu.normalize(ds_in[bb])
-        offsets_2d = None
-
-    if invert_inputs:
-        input_ = 1. - input_
+        if invert_inputs:
+            input_ = 1. - input_
 
     with futures.ThreadPoolExecutor(n_threads) as tp:
-        tasks = [tp.submit(agglomerate_slice, seg[z],
-                           input_[z] if input_.ndim == 3 else input_[:, z],
-                           offsets_2d, z, config)
+        tasks = [tp.submit(agglomerate_slice, seg[z], input_[z], z, config)
                  for z in range(seg.shape[0])]
         slice_segs = [t.result() for t in tasks]
 
