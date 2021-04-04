@@ -3,7 +3,6 @@
 import os
 import sys
 import json
-import pickle
 
 import luigi
 import numpy as np
@@ -75,7 +74,7 @@ class GradientsBase(luigi.Task):
             out_shape = shape
             out_chunks = chunks
         else:
-            n_channels = len(path_dict)
+            n_channels = len(self.path_dict)
             out_shape = (n_channels,) + shape
             out_chunks = (1,) + chunks
 
@@ -143,7 +142,7 @@ def _compute_all_gradients(input_datasets, shape, outer_bb):
     out_data = np.zeros(shape, dtype='float32')
     for chan, inds in enumerate(input_datasets):
         x = inds[outer_bb]
-        x = np.array(np.gradient(data))
+        x = np.array(np.gradient(x))
         x = np.mean(x, axis=0)
         out_data[chan] = x
     return out_data
