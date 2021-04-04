@@ -78,6 +78,8 @@ def block_to_bb(block):
 
 
 def apply_filter(input_, filter_name, sigma, apply_in_2d=False):
+    if filter_name == 'identity':
+        return input_
     # apply 3d filter with anisotropic sigma - only supported in vigra
     if isinstance(sigma, (tuple, list)):
         assert len(sigma) == input_.ndim

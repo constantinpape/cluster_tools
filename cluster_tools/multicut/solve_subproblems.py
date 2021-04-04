@@ -255,7 +255,11 @@ def solve_subproblems(job_id, config_path):
     ignore_label = problem[graph_key].attrs['ignore_label']
     fu.log("ignore label is %s" % ('true' if ignore_label else 'false'))
 
+    # don't log anything, otherwise parsing the log file fails
+    solver_kwargs.update({'log_level': 'NONE'})
+
     fu.log("using solver %s" % agglomerator_key)
+    fu.log(f"with solver kwargs: {solver_kwargs}")
     solver = get_multicut_solver(agglomerator_key, **solver_kwargs)
 
     # the output group

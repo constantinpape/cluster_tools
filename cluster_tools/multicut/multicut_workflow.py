@@ -50,6 +50,7 @@ class MulticutWorkflow(MulticutWorkflowBase):
         solve_task = getattr(solve_tasks,
                              self._get_task_name('SolveGlobal'))
         dep = self._hierarchical_tasks(self.dependency, self.n_scales)
+        return dep
         dep = solve_task(tmp_folder=self.tmp_folder,
                          max_jobs=self.max_jobs,
                          config_dir=self.config_dir,

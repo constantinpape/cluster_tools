@@ -121,6 +121,9 @@ def solve_global(job_id, config_path):
         fu.log("agglomeration without time limit")
     else:
         fu.log("agglomeration time limit %i" % time_limit)
+
+    # don't log anything, otherwise parsing the log file fails
+    solver_kwargs.update({'log_level': 'NONE'})
     solver = get_multicut_solver(agglomerator_key, **solver_kwargs)
 
     with vu.file_reader(problem_path, 'r') as f:

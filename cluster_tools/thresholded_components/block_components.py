@@ -38,7 +38,7 @@ class BlockComponentsBase(luigi.Task):
     mask_key = luigi.Parameter(default='')
     channel = luigi.Parameter(default=None)
 
-    threshold_modes = ('greater', 'less', 'equal')
+    threshold_modes = ('greater', 'less', 'equal', 'none')
 
     @staticmethod
     def default_task_config():
@@ -140,13 +140,7 @@ class BlockComponentsLSF(BlockComponentsBase, LSFTask):
     pass
 
 
-def _cc_block(block_id, blocking,
-              ds_in, ds_out, threshold,
-              threshold_mode, channel, sigma):
-    fu.log("start processing block %i" % block_id)
-    block = blocking.getBlock(block_id)
-
-    bb = vu.block_to_bb(block)
+def _load_input(ds_in, bb, channel):
     if channel is None:
         input_ = ds_in[bb]
     else:
@@ -157,9 +151,12 @@ def _cc_block(block_id, blocking,
             bb_inp = (slice(chan, chan + 1),) + bb
             input_[chan_id] = ds_in[bb_inp].squeeze()
         input_ = np.mean(input_, axis=0)
+    return input_
 
-    input_ = vu.normalize(input_)
-    if sigma > 0:
+
+def _threshold_impl(input_, threshold, threshold_mode, sigma):
+    input_ = input_ if threshold_mode == 'none' else vu.normalize(input_)
+    if sigma > 0 and threshold_mode != 'none':
         input_ = vu.apply_filter(input_, 'gaussianSmoothing', sigma)
         input_ = vu.normalize(input_)
 
@@ -169,9 +166,22 @@ def _cc_block(block_id, blocking,
         input_ = input_ < threshold
     elif threshold_mode == 'equal':
         input_ = input_ == threshold
+    elif threshold_mode == 'none':
+        pass
     else:
         raise RuntimeError("Thresholding Mode %s not supported" % threshold_mode)
+    return input_
 
+
+def _cc_block(block_id, blocking,
+              ds_in, ds_out, threshold,
+              threshold_mode, channel, sigma):
+    fu.log("start processing block %i" % block_id)
+    block = blocking.getBlock(block_id)
+    bb = vu.block_to_bb(block)
+
+    input_ = _load_input(ds_in, bb, channel)
+    input_ = _threshold_impl(input_, threshold, threshold_mode, sigma)
     if np.sum(input_) == 0:
         fu.log_block_success(block_id)
         return 0
@@ -196,32 +206,8 @@ def _cc_block_with_mask(block_id, blocking,
         fu.log_block_success(block_id)
         return 0
 
-    bb = vu.block_to_bb(block)
-    if channel is None:
-        input_ = ds_in[bb]
-    else:
-        channel_ = [channel] if isinstance(channel, int) else channel
-        in_shape = (len(channel_),) + tuple(b.stop - b.start for b in bb)
-        input_ = np.zeros(in_shape, dtype=ds_in.dtype)
-        for chan_id, chan in enumerate(channel_):
-            bb_inp = (slice(chan, chan + 1),) + bb
-            input_[chan_id] = ds_in[bb_inp].squeeze()
-        input_ = np.mean(input_, axis=0)
-
-    input_ = vu.normalize(input_)
-    if sigma > 0:
-        input_ = vu.apply_filter(input_, 'gaussianSmoothing', sigma)
-        input_ = vu.normalize(input_)
-
-    if threshold_mode == 'greater':
-        input_ = input_ > threshold
-    elif threshold_mode == 'less':
-        input_ = input_ < threshold
-    elif threshold_mode == 'equal':
-        input_ = input_ == threshold
-    else:
-        raise RuntimeError("Thresholding Mode %s not supported" % threshold_mode)
-
+    input_ = _load_input(ds_in, bb, channel)
+    input_ = _threshold_impl(input_, threshold, threshold_mode, sigma)
     input_[np.logical_not(in_mask)] = 0
     if np.sum(input_) == 0:
         fu.log_block_success(block_id)

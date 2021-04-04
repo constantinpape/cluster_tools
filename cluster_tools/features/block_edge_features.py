@@ -183,7 +183,8 @@ def _accumulate_block(block_id, blocking,
         fu.log("block %i has no edges" % block_id)
         fu.log_block_success(block_id)
         return
-    edges = edges.reshape((edges.size, 2))
+
+    edges = edges.reshape((edges.size // 2, 2))
     graph = ndist.Graph(edges)
 
     shape = ds_labels.shape
@@ -301,15 +302,22 @@ def block_edge_features(job_id, config_path):
     channel_agglomeration = config.get('channel_agglomeration', 'mean')
     assert channel_agglomeration in ('mean', 'max', 'min', None)
 
-    if filters is None:
-        n_feats = _accumulate(input_path, input_key,
-                              labels_path, labels_key,
-                              graph_path, subgraph_key,
-                              output_path, output_key,
-                              block_list, offsets)
+    # check if we accumulate with filters
+    with_filters = filters is not None
+
+    with vu.file_reader(input_path, 'r') as f:
+        ndim = f[input_key].ndim
+
+    if not with_filters and ndim == 4:
+        assert channel_agglomeration is not None
+        agglomerate_channels = True
     else:
+        agglomerate_channels = False
+
+    if with_filters:
         assert offsets is None, "Filters and offsets are not supported"
         assert sigmas is not None, "Need sigma values"
+        fu.log("Accumulate edge features with filters")
         n_feats = _accumulate_with_filters(input_path, input_key,
                                            labels_path, labels_key,
                                            graph_path, subgraph_key,
@@ -317,6 +325,25 @@ def block_edge_features(job_id, config_path):
                                            block_list, block_shape,
                                            filters, sigmas, halo,
                                            apply_in_2d, channel_agglomeration)
+    elif agglomerate_channels:
+        assert offsets is None, "Offsets are not supported if chanels are accumulated"
+        fu.log("Accumulate edge features with channel agglomeration")
+        filters = ['identity']
+        sigmas = [0]
+        n_feats = _accumulate_with_filters(input_path, input_key,
+                                           labels_path, labels_key,
+                                           graph_path, subgraph_key,
+                                           output_path, output_key,
+                                           block_list, block_shape,
+                                           filters, sigmas, halo,
+                                           apply_in_2d, channel_agglomeration)
+    else:
+        fu.log("Accumulate edge features")
+        n_feats = _accumulate(input_path, input_key,
+                              labels_path, labels_key,
+                              graph_path, subgraph_key,
+                              output_path, output_key,
+                              block_list, offsets)
 
     # we need to serialize the number of features for job 0
     if job_id == 0:
