@@ -362,12 +362,13 @@ class BaseClusterTask(luigi.Task):
         else:
             executable = deepcopy(shebang)
             shebang = "#! " + shebang
-        # TODO check if the executable is actually executable in a portable way
         if not os.path.exists(executable):
             raise RuntimeError("The python executable %s is not valid" % executable)
 
-        self._replace_shebang(trgt_file, shebang)
-        self._make_executable(trgt_file)
+        # not necessary on windows
+        if os.name != 'nt':
+            self._replace_shebang(trgt_file, shebang)
+            self._make_executable(trgt_file)
         self._write_log('copied python script from %s to %s' % (self.src_file, trgt_file))
 
     # https://stackoverflow.com/questions/39086/search-and-replace-a-line-in-a-file-in-python
