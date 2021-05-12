@@ -526,6 +526,17 @@ class LocalTask(BaseClusterTask):
         # write the job configs
         self._write_job_config(n_jobs, block_list, config, job_prefix, consecutive_blocks)
 
+    # the normal submission logic doesn't work on windows
+    def _submit_win(self, script_path, config_file, log_file, err_file):
+        with open(log_file, 'w') as f_out, open(err_file, 'w') as f_err:
+            assert os.path.exists(script_path), script_path
+            call(["python", script_path, config_file], stdout=f_out, stderr=f_err, shell=True)
+
+    def _submit_unix(self, script_path, config_file, log_file, err_file):
+        with open(log_file, 'w') as f_out, open(err_file, 'w') as f_err:
+            assert os.path.exists(script_path), script_path
+            call([script_path, config_file], stdout=f_out, stderr=f_err)
+
     def _submit(self, job_id, job_prefix):
         script_path = os.path.join(self.tmp_folder, self.task_name + '.py')
         assert os.path.exists(script_path), script_path
@@ -538,9 +549,10 @@ class LocalTask(BaseClusterTask):
                                 '%s_%i.log' % (job_name, job_id))
         err_file = os.path.join(self.tmp_folder, 'error_logs',
                                 '%s_%i.err' % (job_name, job_id))
-        with open(log_file, 'w') as f_out, open(err_file, 'w') as f_err:
-            assert os.path.exists(script_path), script_path
-            call([script_path, config_file], stdout=f_out, stderr=f_err)
+        if os.name == 'nt':
+            self._submit_win(script_path, config_file, log_file, err_file)
+        else:
+            self._submit_unix(script_path, config_file, log_file, err_file)
 
     def submit_jobs(self, n_jobs, job_prefix=None):
         assert n_jobs <= self.max_local_jobs,\
