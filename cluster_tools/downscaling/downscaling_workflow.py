@@ -127,8 +127,9 @@ class DownscalingWorkflow(WorkflowBase):
     @staticmethod
     def validate_halos(halos, n_scales):
         assert len(halos) == n_scales, "%i, %i" % (len(halos), n_scales)
-        # normalize halos to be correc input
-        halos = [[] if halo is None else list(halo) for halo in halos]
+        # normalize halos
+        halos = [[] if halo is None else (3 * [halo] if isinstance(halo, int) else list(halo))
+                 for halo in halos]
         # check halos for correctness
         assert all(isinstance(halo, list) for halo in halos)
         assert all(len(halo) == 3 for halo in halos if halo)

@@ -79,7 +79,7 @@ class WriteBase(luigi.Task):
         config = self.get_task_config()
         chunks = config.pop('chunks', None)
         if chunks is None:
-            chunks = tuple(min(bs // 2, sh) for bs, sh in zip(block_shape, shape))
+            chunks = tuple(min(bs // 2 if bs % 2 == 0 else bs, sh) for bs, sh in zip(block_shape, shape))
 
         # require output dataset
         with vu.file_reader(self.output_path) as f:
