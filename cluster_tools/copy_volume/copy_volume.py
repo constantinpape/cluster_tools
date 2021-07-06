@@ -86,12 +86,12 @@ class CopyVolumeBase(luigi.Task):
         task_config = self.get_task_config()
 
         ndim = len(shape)
-        assert ndim in (3, 4), "Copying is only supported for 3d and 4d inputs"
+        assert ndim in (2, 3, 4), "Copying is only supported for 3d and 4d inputs"
         # if we have a roi, we need to:
         # - scale the roi to the effective scale, if effective scale is given
         # - shrink the shape to the roi, if fit_to_roi is True
         if roi_begin is not None:
-            assert ndim == 3, "Don't support roi for 4d yet"
+            assert ndim != 4, "Don't support roi for 4d yet"
             assert roi_end is not None
             if self.effective_scale_factor:
                 roi_begin = [int(rb // sf)
@@ -306,10 +306,12 @@ def copy_volume(job_id, config_path):
             ds_in = LabelMultisetWrapper(ds_in)
         ds_out = f_out[output_key]
 
+        ndim = ds_in.ndim
         shape = list(ds_in.shape)
         if len(shape) == 4:
+            ndim = 3
             shape = shape[1:]
-        blocking = nt.blocking([0, 0, 0], shape, block_shape)
+        blocking = nt.blocking([0] * ndim, shape, block_shape)
         _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin,
                      reduce_function, n_threads, map_uniform_blocks_to_background,
                      value_list, offset, insert_mode)

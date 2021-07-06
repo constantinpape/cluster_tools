@@ -85,8 +85,10 @@ class DownscalingBase(luigi.Task):
         with vu.file_reader(self.input_path, 'r') as f:
             prev_shape = f[self.input_key].shape
             dtype = f[self.input_key].dtype
-        assert len(prev_shape) in (3, 4), "Only support 3d or 4d inputs"
         ndim = len(prev_shape)
+        assert ndim in (2, 3, 4), f"Only support 2d, 3d or 4d inputs. Got {ndim}d"
+        # we treat the first dimension as channel axis for 4d data
+        effective_ndim = 3 if ndim == 4 else ndim
 
         shape = self.downsample_shape(prev_shape)
         self._write_log('downscaling with factor %s from shape %s to %s' % (str(self.scale_factor),
@@ -112,12 +114,11 @@ class DownscalingBase(luigi.Task):
         if isinstance(scale_factor, int):
             pass
         elif all(sf == scale_factor[0] for sf in scale_factor):
-            assert len(scale_factor) == 3
+            assert len(scale_factor) == effective_ndim
             scale_factor = scale_factor[0]
         else:
             assert len(scale_factor) == 3
-            # for now, we only support downscaling in-plane inf the scale-factor
-            # is anisotropic
+            # for now, we only support downscaling in-plane if the scale-factor is anisotropic
             assert scale_factor[0] == 1
             assert scale_factor[1] == scale_factor[2]
 
@@ -128,7 +129,7 @@ class DownscalingBase(luigi.Task):
         else:
             chunks = tuple(chunks)
             # TODO verify chunks further
-            assert len(chunks) == 3, "Chunks must be 3d"
+            assert len(chunks) == effective_ndim, f"Chunks must be {effective_ndim}d"
         chunks = tuple(min(ch, sh) for sh, ch in zip(shape, chunks))
 
         if ndim == 4:
@@ -312,14 +313,16 @@ def _submit_blocks(ds_in, ds_out, block_shape, block_list,
                    library_kwargs, n_threads):
 
     # get the blocking
+    ndim = ds_out.ndim
     shape = ds_out.shape
     if len(shape) == 4:
+        ndim = 3
         shape = shape[1:]
-    blocking = nt.blocking([0, 0, 0], shape, block_shape)
+    blocking = nt.blocking([0]*ndim, shape, block_shape)
     if library == 'vigra':
         sampler = partial(_ds_vigra, **library_kwargs)
     elif library == 'skimage':
-        sk_scale = (scale_factor,) * 3 if isinstance(scale_factor, int) else tuple(scale_factor)
+        sk_scale = (scale_factor,) * ndim if isinstance(scale_factor, int) else tuple(scale_factor)
         ds_function = library_kwargs.get('function', 'mean')
         ds_function = getattr(np, ds_function)
         sampler = partial(_ds_skimage, block_size=sk_scale, func=ds_function)

@@ -5,7 +5,8 @@ from datetime import datetime
 import luigi
 from pybdv.metadata import (write_h5_metadata,
                             write_n5_metadata,
-                            write_xml_metadata)
+                            write_xml_metadata,
+                            _write_xml_metadata)
 from pybdv.util import get_key
 
 from ..cluster_tasks import WorkflowBase
@@ -41,7 +42,7 @@ class WriteDownscalingMetadata(luigi.Task):
 
     def _paintera_metadata(self):
         effective_scale = [1, 1, 1]
-        with file_reader(self.output_path) as f:
+        with file_reader(self.output_path, mode='a') as f:
             g = f[self.output_key_prefix]
 
             # need to reverse the scale factors to be compatible with java
@@ -89,11 +90,41 @@ class WriteDownscalingMetadata(luigi.Task):
         else:
             write_n5_metadata(self.output_path, scale_factors, resolution)
 
+    def _bdv_ome_zarr_metadata(self):
+        if self.output_path.endswith('.ome.zarr'):
+            xml_out_path = self.output_path.replace('.ome.zarr', '.xml')
+        else:
+            xml_out_path = os.path.splitext(self.output_path)[0] + ".xml"
+        unit = self.metadata_dict.get('unit', 'pixel')
+        resolution = self.metadata_dict.get('resolution', [1., 1., 1.])
+        setup_name = self.metadata_dict.get('setup_name', None)
+        with file_reader(self.output_path, mode='r') as f:
+            g = f if self.output_key_prefix == '' else f[self.output_key_prefix]
+            shape = g['s0'].shape
+        _write_xml_metadata(xml_out_path, self.output_path, unit, resolution,
+                            format_type='ome.zarr', shape=shape,
+                            setup_id=0, setup_name=setup_name, timepoint=0,
+                            affine=None, attributes={'channel': {'id': 0}},
+                            overwrite=False, overwrite_data=False, enforce_consistency=False)
+
+    def _ome_zarr_metadata(self):
+        # TODO use ome-zarr-py library instead
+        from elf.io.ngff import create_ngff_metadata
+        with file_reader(self.output_path, mode='a') as f:
+            g = f if self.output_key_prefix == '' else f[self.output_key_prefix]
+            ndim = g['s0'].ndim
+            axes_names = ['y', 'x'] if ndim == 2 else ['z', 'y', 'x']
+            create_ngff_metadata(g, 'data', axes_names)
+
     def run(self):
         if self.metadata_format == 'paintera':
             self._paintera_metadata()
         elif self.metadata_format in ('bdv', 'bdv.hdf5', 'bdv.n5'):
             self._bdv_metadata()
+        elif self.metadata_format == 'bdv.ome.zarr':
+            self._bdv_ome_zarr_metadata()
+        elif self.metadata_format == 'ome.zarr':
+            self._ome_zarr_metadata()
         else:
             raise RuntimeError("Invalid metadata format %s" % self.metadata_format)
         self._write_log('write metadata successfull')
@@ -117,22 +148,23 @@ class DownscalingWorkflow(WorkflowBase):
     skip_existing_levels = luigi.BoolParameter(default=False)
     scale_offset = luigi.IntParameter(default=0)
 
-    formats = ('bdv', 'bdv.hdf5', 'bdv.n5', 'paintera')
+    formats = ('bdv', 'bdv.hdf5', 'bdv.n5', 'bdv.ome.zarr', 'ome.zarr', 'paintera')
 
     @staticmethod
-    def validate_scale_factors(scale_factors):
+    def validate_scale_factors(scale_factors, metadata_format):
         assert all(isinstance(sf, (int, list, tuple)) for sf in scale_factors)
-        assert all(len(sf) == 3 for sf in scale_factors if isinstance(sf, (tuple, list)))
+        ndims = (2, 3) if metadata_format == 'ome.zarr' else (3,)
+        assert all(len(sf) in ndims for sf in scale_factors if isinstance(sf, (tuple, list)))
 
     @staticmethod
-    def validate_halos(halos, n_scales):
+    def validate_halos(halos, n_scales, ndim=3):
         assert len(halos) == n_scales, "%i, %i" % (len(halos), n_scales)
         # normalize halos
-        halos = [[] if halo is None else (3 * [halo] if isinstance(halo, int) else list(halo))
+        halos = [[] if halo is None else (ndim * [halo] if isinstance(halo, int) else list(halo))
                  for halo in halos]
         # check halos for correctness
         assert all(isinstance(halo, list) for halo in halos)
-        assert all(len(halo) == 3 for halo in halos if halo)
+        assert all(len(halo) == ndim for halo in halos if halo)
         return halos
 
     def _is_h5(self):
@@ -145,6 +177,11 @@ class DownscalingWorkflow(WorkflowBase):
         out_path = self.input_path if self.output_path == '' else self.output_path
         return os.path.splitext(out_path)[1].lower() in n5_exts
 
+    def _is_zarr(self):
+        zarr_exts = ('.zarr', '.zr')
+        out_path = self.input_path if self.output_path == '' else self.output_path
+        return os.path.splitext(out_path)[1].lower() in zarr_exts
+
     def validate_format(self):
         assert self.metadata_format in self.formats,\
                 "Invalid format: %s not in %s" % (self.metadata_format, str(self.formats))
@@ -154,18 +191,27 @@ class DownscalingWorkflow(WorkflowBase):
             assert self._is_n5(), "paintera format only supports n5 output"
         # for now, we only support a single 'setup' and a single
         # time-point for the bdv format
+        elif self.metadata_format == 'ome.zarr':
+            assert self._is_zarr(), "ome.zarr format only supports zarr output"
         else:
             msg = f"Must not give output_key_prefix for bdv data format, got {self.output_key_prefix}"
             assert self.output_key_prefix == '', msg
             if self.metadata_format in ('bdv', 'bdv.hdf5'):
                 assert self._is_h5(), "%s format only supports hdf5 output" % self.metadata_format
-            else:
+            elif self.metadata_format == 'bdv.n5':
                 assert self._is_n5(), "bdv.n5 format only supports n5 output"
+            elif self.metadata_format == 'bdv.ome.zarr':
+                assert self._is_zarr(), "bdv.ome.zarr only supports zarr output"
+            else:
+                raise RuntimeError  # this should never happen
 
     def get_scale_key(self, scale):
         if self.metadata_format == 'paintera':
             prefix = 's%i' % scale
             out_key = os.path.join(self.output_key_prefix, prefix)
+        elif self.metadata_format in ('bdv.ome.zarr', 'ome.zarr'):
+            prefix = 's%i' % scale
+            out_key = prefix if self.output_key_prefix == '' else os.path.join(self.output_key_prefix, prefix)
         else:
             is_h5 = self.metadata_format in ('bdv', 'bdv.hdf5')
             # TODO support multiple set-ups for multi-channel data
@@ -211,15 +257,20 @@ class DownscalingWorkflow(WorkflowBase):
         if copy_initial_ds:
             dep = self._copy_scale_zero(out_path, out_key, dep)
         else:
+            # make a link in the h5 file
             if self.metadata_format in ('bdv', 'bdv.hdf5'):
                 self._link_scale_zero_h5(out_key)
-            elif self.metadata_format in ('paintera', 'bdv.n5'):
+            # make a link on the file system
+            elif self.metadata_format in ('bdv.n5', 'bdv.ome.zarr', 'ome.zarr', 'paintera'):
                 self._link_scale_zero_n5(out_key)
+            else:
+                raise RuntimeError  # this should never happen
         return dep
 
     def requires(self):
-        self.validate_scale_factors(self.scale_factors)
-        halos = self.validate_halos(self.halos, len(self.scale_factors))
+        self.validate_scale_factors(self.scale_factors, self.metadata_format)
+        ndim = len(self.scale_factors[0])
+        halos = self.validate_halos(self.halos, len(self.scale_factors), ndim)
         self.validate_format()
 
         out_path = self.input_path if self.output_path == '' else self.output_path
@@ -228,7 +279,7 @@ class DownscalingWorkflow(WorkflowBase):
         dep = self.require_initial_scale(out_path, in_key, self.dependency)
 
         task = getattr(downscale_tasks, self._get_task_name('Downscaling'))
-        effective_scale = [1, 1, 1]
+        effective_scale = [1] * ndim
         for scale, (scale_factor, halo) in enumerate(zip(self.scale_factors, halos),
                                                      self.scale_offset + 1):
             out_key = self.get_scale_key(scale)
