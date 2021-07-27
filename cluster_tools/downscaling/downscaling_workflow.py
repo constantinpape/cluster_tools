@@ -106,15 +106,17 @@ class WriteDownscalingMetadata(luigi.Task):
                             setup_id=0, setup_name=setup_name, timepoint=0,
                             affine=None, attributes={'channel': {'id': 0}},
                             overwrite=False, overwrite_data=False, enforce_consistency=False)
+        self._ome_zarr_metadata()
 
     def _ome_zarr_metadata(self):
         # TODO use ome-zarr-py library instead
         from elf.io.ngff import create_ngff_metadata
+        setup_name = self.metadata_dict.get('setup_name', 'data')
         with file_reader(self.output_path, mode='a') as f:
             g = f if self.output_key_prefix == '' else f[self.output_key_prefix]
             ndim = g['s0'].ndim
             axes_names = ['y', 'x'] if ndim == 2 else ['z', 'y', 'x']
-            create_ngff_metadata(g, 'data', axes_names)
+            create_ngff_metadata(g, setup_name, axes_names)
 
     def run(self):
         if self.metadata_format == 'paintera':
