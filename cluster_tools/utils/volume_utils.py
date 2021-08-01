@@ -9,6 +9,11 @@ import vigra
 from elf.wrapper.resized_volume import ResizedVolume
 from scipy.ndimage.morphology import binary_erosion
 from nifty.tools import blocking
+from pybdv.metadata import (write_h5_metadata,
+                            write_n5_metadata,
+                            write_xml_metadata,
+                            _write_xml_metadata)
+from pybdv.util import get_key
 
 # use vigra filters as fallback if we don't have
 # fastfilters available
@@ -368,3 +373,128 @@ def force_dataset(f, key, **kwargs):
         del f[key]
         ds = f.create_dataset(key, **kwargs)
     return ds
+
+
+#
+# file format functionality
+#
+
+def get_formats():
+    formats = ("bdv", "bdv.hdf5", "bdv.n5", "bdv.ome.zarr", "ome.zarr", "paintera")
+    return formats
+
+
+def get_format_key(metadata_format, scale, key_prefix=""):
+    if metadata_format == "paintera":
+        prefix = "s%i" % scale
+        out_key = os.path.join(key_prefix, prefix)
+    elif metadata_format in ("bdv.ome.zarr", "ome.zarr"):
+        prefix = "s%i" % scale
+        out_key = prefix if key_prefix == "" else os.path.join(key_prefix, prefix)
+    else:
+        is_h5 = metadata_format in ("bdv", "bdv.hdf5")
+        # TODO support multiple set-ups for multi-channel data
+        out_key = get_key(is_h5, timepoint=0, setup_id=0, scale=scale)
+    return out_key
+
+
+def _copy_max_id(g, scale_offset):
+    level0 = "s%i" % scale_offset
+    attrs0 = g[level0].attrs
+    if "maxId" in attrs0:
+        g.attrs["maxId"] = attrs0["maxId"]
+
+
+def _paintera_metadata(path, prefix, metadata_dict, scale_factors, scale_offset):
+    effective_scale = [1, 1, 1]
+    with file_reader(path, mode="a") as f:
+        g = f[prefix]
+
+        # need to reverse the scale factors to be compatible with java
+        # write metadata for the scale datasets: effective downsampling
+        # facor compared to level 0
+        for scale, scale_factor in enumerate(scale_factors, 1):
+
+            scale_key = "s%i" % (scale + scale_offset,)
+            if isinstance(scale_factor, int):
+                effective_scale = [eff * scale_factor for eff in effective_scale]
+            else:
+                effective_scale = [eff * sf for sf, eff in zip(scale_factor,
+                                                               effective_scale)]
+            g[scale_key].attrs["downsamplingFactors"] = effective_scale[::-1]
+
+        # write attributes for the root multi-scale group
+        resolution = metadata_dict.get("resolution", 3 * [1.])
+        offsets = metadata_dict.get("offsets", 3 * [0.])
+
+        g.attrs["multiScale"] = True
+        g.attrs["resolution"] = resolution[::-1]
+        g.attrs["offset"] = offsets[::-1]
+
+        # copy maxId attribute if it exists
+        _copy_max_id(g, scale_offset)
+
+
+def _bdv_metadata(metadata_format, path, metadata_dict, scale_factors, scale_offset):
+    is_h5 = metadata_format in ("bdv", "bdv.hdf5")
+    xml_out_path = os.path.splitext(path)[0] + ".xml"
+
+    scale_factors = [[1, 1, 1]] + list(scale_factors[scale_offset:])
+
+    unit = metadata_dict.get("unit", "pixel")
+    resolution = metadata_dict.get("resolution", [1., 1., 1.])
+    setup_name = metadata_dict.get("setup_name", None)
+    write_xml_metadata(xml_out_path, path, unit, resolution, is_h5,
+                       setup_id=0, timepoint=0, setup_name=setup_name, affine=None,
+                       attributes={"channel": {"id": 0}}, overwrite=False,
+                       overwrite_data=False, enforce_consistency=False)
+
+    if is_h5:
+        write_h5_metadata(path, scale_factors)
+    else:
+        write_n5_metadata(path, scale_factors, resolution)
+
+
+def _ome_zarr_metadata(path, prefix, metadata_dict):
+    # TODO use ome-zarr-py library instead
+    from elf.io.ngff import create_ngff_metadata
+    setup_name = metadata_dict.get("setup_name", "data")
+    with file_reader(path, mode="a") as f:
+        g = f if prefix == "" else f[prefix]
+        ndim = g["s0"].ndim
+        axes_names = ["y", "x"] if ndim == 2 else ["z", "y", "x"]
+        create_ngff_metadata(g, setup_name, axes_names)
+
+
+def _bdv_ome_zarr_metadata(path, prefix, metadata_dict):
+    if path.endswith(".ome.zarr"):
+        xml_out_path = path.replace(".ome.zarr", ".xml")
+    else:
+        xml_out_path = os.path.splitext(path)[0] + ".xml"
+    unit = metadata_dict.get("unit", "pixel")
+    resolution = metadata_dict.get("resolution", [1., 1., 1.])
+    setup_name = metadata_dict.get("setup_name", None)
+    with file_reader(path, mode="r") as f:
+        g = f if prefix == "" else f[prefix]
+        shape = g["s0"].shape
+    _write_xml_metadata(xml_out_path, path, unit, resolution,
+                        format_type="ome.zarr", shape=shape,
+                        setup_id=0, setup_name=setup_name, timepoint=0,
+                        affine=None, attributes={"channel": {"id": 0}},
+                        overwrite=False, overwrite_data=False, enforce_consistency=False)
+    _ome_zarr_metadata(path, prefix, metadata_dict)
+
+
+def write_format_metadata(metadata_format, path, metadata_dict, scale_factors,
+                          scale_offset=0, prefix=""):
+    if metadata_format == "paintera":
+        assert prefix != ""
+        _paintera_metadata(path, prefix, metadata_dict, scale_factors, scale_offset)
+    elif metadata_format in ("bdv", "bdv.hdf5", "bdv.n5"):
+        _bdv_metadata(metadata_format, path, metadata_dict, scale_factors, scale_offset)
+    elif metadata_format == "bdv.ome.zarr":
+        _bdv_ome_zarr_metadata(path, prefix, metadata_dict)
+    elif metadata_format == "ome.zarr":
+        _ome_zarr_metadata(path, prefix, metadata_dict)
+    else:
+        raise RuntimeError("Invalid metadata format %s" % metadata_format)
