@@ -64,7 +64,7 @@ class InferenceBase(luigi.Task):
     def run_impl(self):
         # TODO support more frameworks
         # assert self.framework in ('pytorch', 'tensorflow', 'caffe', 'inferno')
-        assert self.framework in ('pytorch', 'inferno')
+        assert self.framework in ('pytorch', 'inferno', 'bioimageio')
 
         # get the global config and init configs
         (shebang, block_shape,
@@ -371,7 +371,7 @@ def inference(job_id, config_path):
 
     fu.log("Loading model from %s" % checkpoint_path)
 
-    prep_model = config.get('prep_model', None)
+    prep_model = config.get("prep_model", None)
     if prep_model is not None:
         prep_model = get_prep_model(prep_model)
 

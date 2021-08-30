@@ -29,17 +29,25 @@ except ImportError:
 
 
 #
-# Prediction classes
+# Prediction Base class
 #
 
-class PytorchPredicter:
+# TODO move commonly used things from pytorch predicter here
+class PredicterBase:
+    pass
+
+
+#
+# Pytorch based prediction classes
+#
+
+class PytorchPredicter(PredicterBase):
 
     @staticmethod
     def build_augmenter(augmentation_mode, augmentation_dim):
         return TestTimeAugmenter.default_tda(augmentation_dim, augmentation_mode)
 
-    def set_up(self, halo, gpu, use_best, prep_model,
-               mixed_precision, **augmentation_kwargs):
+    def set_up(self, halo, gpu, prep_model, mixed_precision, **augmentation_kwargs):
         self.model.eval()
         self.gpu = gpu
         self.model.cuda(self.gpu)
@@ -90,11 +98,11 @@ class PytorchPredicter:
 
         return model
 
-    def __init__(self, model_path, halo, gpu=0, use_best=True, prep_model=None,
-                 mixed_precision=False, **augmentation_kwargs):
+    def __init__(self, model_path, halo, gpu=0, prep_model=None,
+                 mixed_precision=False, use_best=True, **augmentation_kwargs):
         # load the model and prep it if specified
         self.model = self.load_model(model_path)
-        self.set_up(halo, gpu, use_best, prep_model, mixed_precision,
+        self.set_up(halo, gpu, prep_model, mixed_precision,
                     **augmentation_kwargs)
 
     def crop(self, out, halo):
@@ -162,26 +170,43 @@ class InfernoPredicter(PytorchPredicter):
         # TimeTrainingIters = None
 
         self.model = Trainer().load(from_directory=model_path, best=use_best).model
-        self.set_up(halo, gpu, use_best, prep_model, mixed_precision,
-                    **augmentation_kwargs)
+        self.set_up(halo, gpu, prep_model, mixed_precision, **augmentation_kwargs)
+
+
+#
+# Bioimageio prediction calss
+#
 
 
 # TODO
-class TensorflowPredicter:
+class BioimageioPredicter(PredicterBase):
+    pass
+
+
+#
+# Tensorflow based prediction classes
+#
+
+# TODO
+class TensorflowPredicter(PredicterBase):
     pass
 
 
 def get_predictor(framework):
-    if framework == 'pytorch':
+    if framework == "pytorch":
         assert torch is not None
         return PytorchPredicter
-    elif framework == 'inferno':
+    elif framework == "inferno":
         assert torch is not None
         assert Trainer is not None
         return InfernoPredicter
-    elif framework == 'tensorflow':
+    elif framework == "tensorflow":
         assert tensorflow is not None
+        raise NotImplementedError
         return TensorflowPredicter
+    elif framework == "bioimageio":
+        raise NotImplementedError
+        return BioimageioPredicter
     else:
         raise KeyError("Framework %s not supported" % framework)
 
