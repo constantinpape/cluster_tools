@@ -308,11 +308,12 @@ def block_edge_features(job_id, config_path):
     with vu.file_reader(input_path, 'r') as f:
         ndim = f[input_key].ndim
 
-    if not with_filters and ndim == 4:
+    has_channels = ndim == 4
+    if has_channels and offsets is not None:
+        agglomerate_channels = False
+    elif has_channels:
         assert channel_agglomeration is not None
         agglomerate_channels = True
-    else:
-        agglomerate_channels = False
 
     if with_filters:
         assert offsets is None, "Filters and offsets are not supported"
@@ -326,7 +327,6 @@ def block_edge_features(job_id, config_path):
                                            filters, sigmas, halo,
                                            apply_in_2d, channel_agglomeration)
     elif agglomerate_channels:
-        assert offsets is None, "Offsets are not supported if chanels are accumulated"
         fu.log("Accumulate edge features with channel agglomeration")
         filters = ['identity']
         sigmas = [0]
