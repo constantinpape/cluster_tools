@@ -13,7 +13,7 @@ import nifty.distributed as ndist
 
 try:
     from ..base import BaseTest
-except ValueError:
+except (ValueError, ImportError):
     sys.path.append('..')
     from base import BaseTest
 
