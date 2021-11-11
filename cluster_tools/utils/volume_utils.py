@@ -455,9 +455,42 @@ def _bdv_metadata(metadata_format, path, metadata_dict, scale_factors, scale_off
         write_n5_metadata(path, scale_factors, resolution)
 
 
+# TODO use ome-zarr-py instead and support different ngff versions
+def create_ngff_metadata(g, name, axes_names, type_=None, metadata=None):
+    """Create ome-ngff metadata for a multiscale dataset stored in zarr format.
+    """
+    valid_axes_names = {"t", "c", "z", "y", "x"}
+
+    # validate the individual datasets
+    ndim = g[list(g.keys())[0]].ndim
+    assert all(dset.ndim == ndim for dset in g.values())
+    assert len(axes_names) == ndim
+    assert len(set(axes_names) - valid_axes_names) == 0
+
+    ms_entry = {
+        "datasets": [
+            {"path": name} for name in g
+        ],
+        "axes": axes_names,
+        "name": name,
+        "version": "0.3"
+    }
+    if type_ is not None:
+        ms_entry["type"] = type_
+    if metadata is not None:
+        ms_entry["metadata"] = metadata
+
+    metadata = g.attrs.get("multiscales", [])
+    metadata.append(ms_entry)
+    g.attrs["multiscales"] = metadata
+
+    # write the array dimensions for compat with xarray:
+    # https://xarray.pydata.org/en/stable/internals/zarr-encoding-spec.html?highlight=zarr
+    for ds in g.values():
+        ds.attrs["_ARRAY_DIMENSIONS"] = axes_names
+
+
 def _ome_zarr_metadata(path, prefix, metadata_dict):
-    # TODO use ome-zarr-py library instead
-    from elf.io.ngff import create_ngff_metadata
     setup_name = metadata_dict.get("setup_name", "data")
     with file_reader(path, mode="a") as f:
         g = f if prefix == "" else f[prefix]
