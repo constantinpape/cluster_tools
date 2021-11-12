@@ -1,3 +1,5 @@
+[![Anaconda-Server Badge](https://anaconda.org/conda-forge/cluster_tools/badges/version.svg)](https://anaconda.org/conda-forge/cluster_tools)
+
 # Cluster Tools
 
 Workflows for distributed Bio Image Analysis and Segmentation.
