@@ -63,7 +63,9 @@ class BaseTest(unittest.TestCase):
     def setUp(self):
         os.makedirs(self.config_folder, exist_ok=True)
         config = BaseClusterTask.default_global_config()
-        config.update({"shebang": self.shebang, "block_shape": self.block_shape})
+        config.update({"block_shape": self.block_shape})
+        if self.shebang is not None:
+            config["shebang"] = self.shebang
         with open(os.path.join(self.config_folder, "global.config"), "w") as f:
             json.dump(config, f)
 
