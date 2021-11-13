@@ -2,13 +2,9 @@ name: cluster_env
 
 channels:
   - conda-forge
-  - cpape
 
 dependencies:
-  - scikit-image
-  - scikit-learn
-  - vigra
-  - h5py
+  - python-elf >=0.3.0
   - luigi
-  - elf >=0.2.4
   - pybdv >=0.5.0
+  - gdown
