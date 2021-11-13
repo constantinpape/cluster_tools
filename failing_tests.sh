@@ -1,7 +1,5 @@
-python test/watershed/test_watershed_with_mask.py TestWatershedWithMask.test_ws_pixel_pitch
+# python test/watershed/test_watershed_with_mask.py TestWatershedWithMask.test_ws_pixel_pitch
 exit 1
-python test/transformations/test_linear.py TestLinear.test_slice_trafo
-python test/transformations/test_linear.py TestLinear.test_global_trafo
 python test/retry/test_retry.py TestRetry.test_retry
 python test/relabel/test_relabel.py TestRelabel.test_relabel
 python test/node_labels/test_node_labels.py TestNodeLables.test_subresults

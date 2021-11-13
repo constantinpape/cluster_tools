@@ -153,13 +153,13 @@ def _transform_block(ds_in, ds_out, transformation, blocking, block_id, mask=Non
     block = blocking.getBlock(block_id)
 
     bb = vu.block_to_bb(block)
-    if mask is not None:
+    if mask is None:
+        bb_mask = None
+    else:
         bb_mask = mask[bb].astype('bool')
         if bb_mask.sum() == 0:
             fu.log_block_success(block_id)
             return
-    else:
-        bb_mask = None
 
     data = ds_in[bb]
     if len(transformation) == 2:
@@ -168,7 +168,8 @@ def _transform_block(ds_in, ds_out, transformation, blocking, block_id, mask=Non
         z_offset = block.begin[0]
         for z in range(data.shape[0]):
             trafo = transformation[z + z_offset]
-            data[z] = _transform_data(data[z], trafo['a'], trafo['b'], bb_mask[z])
+            mask_z = None if bb_mask is None else bb_mask[z]
+            data[z] = _transform_data(data[z], trafo['a'], trafo['b'], mask_z)
 
     ds_out[bb] = data
     fu.log_block_success(block_id)
@@ -200,7 +201,9 @@ def linear(job_id, config_path):
     mask_path = config['mask_path']
     mask_key = config['mask_key']
 
-    if mask_path != '':
+    if mask_path == '':
+        mask = None
+    else:
         assert mask_key != ''
         with vu.file_reader(input_path, 'r') as f:
             in_shape = f[input_key].shape
