@@ -20,7 +20,7 @@ class WatershedWorkflow(WorkflowBase):
     slice_agglomeration = luigi.BoolParameter(default=False)
     max_jobs_slice_agglomeration = luigi.IntParameter(default=8)
 
-    def get_agglomneration_task(self, dep):
+    def get_agglomeration_task(self, dep):
         if (self.slice_agglomeration and self.agglomeration):
             raise ValueError("Only one of agglomeration or slice agglomeration can be used.")
         if self.agglomeration:
@@ -67,7 +67,7 @@ class WatershedWorkflow(WorkflowBase):
                       output_key=self.output_key,
                       mask_path=self.mask_path,
                       mask_key=self.mask_key)
-        dep = self.get_agglomneration_task(dep)
+        dep = self.get_agglomeration_task(dep)
         dep = RelabelWorkflow(tmp_folder=self.tmp_folder,
                               max_jobs=self.max_jobs,
                               config_dir=self.config_dir,

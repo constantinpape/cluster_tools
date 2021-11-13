@@ -1,6 +1,5 @@
-python test/watershed/test_watershed.py TestWatershed.test_no_mask_3d
+python test/watershed/test_watershed_with_mask.py TestWatershedWithMask.test_ws_pixel_pitch
 exit 1
-python test/watershed/test_watershed.py TestWatershed.test_no_mask_2d
 python test/transformations/test_linear.py TestLinear.test_slice_trafo
 python test/transformations/test_linear.py TestLinear.test_global_trafo
 python test/retry/test_retry.py TestRetry.test_retry
