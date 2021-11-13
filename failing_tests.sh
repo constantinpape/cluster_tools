@@ -1,0 +1,17 @@
+python test/watershed/test_watershed.py TestWatershed.test_no_mask_3d
+exit 1
+python test/watershed/test_watershed.py TestWatershed.test_no_mask_2d
+python test/transformations/test_linear.py TestLinear.test_slice_trafo
+python test/transformations/test_linear.py TestLinear.test_global_trafo
+python test/retry/test_retry.py TestRetry.test_retry
+python test/relabel/test_relabel.py TestRelabel.test_relabel
+python test/node_labels/test_node_labels.py TestNodeLables.test_subresults
+python test/node_labels/test_node_labels.py TestNodeLables.test_overlaps
+python test/mutex_watershed/test_mws.py TestMws.test_mws_with_mask
+python test/label_multisets/test_label_multisets.py TestLabelMultisets.test_label_multisets
+python test/graph/test_graph.py TestGraph.test_graph_label_multiset
+python test/features/test_region_features.py TestRegionFeatures.test_region_features
+python test/features/test_edge_features.py TestEdgeFeatures.test_boundary_features
+python test/features/test_edge_features.py TestEdgeFeatures.test_affinity_features
+python test/skeletons/test_skeletons.py TestSkeletons.test_skeletons
+python test/mutex_watershed/test_mws.py TestMws.test_mws
