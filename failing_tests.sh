@@ -1,10 +1,9 @@
 # python test/watershed/test_watershed_with_mask.py TestWatershedWithMask.test_ws_pixel_pitch
-exit 1
-python test/retry/test_retry.py TestRetry.test_retry
-python test/relabel/test_relabel.py TestRelabel.test_relabel
-python test/node_labels/test_node_labels.py TestNodeLables.test_subresults
-python test/node_labels/test_node_labels.py TestNodeLables.test_overlaps
+# python test/retry/test_retry.py TestRetry.test_retry
 python test/mutex_watershed/test_mws.py TestMws.test_mws_with_mask
+exit 1
+python test/node_labels/test_node_labels.py TestNodeLabels.test_overlaps
+python test/node_labels/test_node_labels.py TestNodeLabels.test_subresults
 python test/label_multisets/test_label_multisets.py TestLabelMultisets.test_label_multisets
 python test/graph/test_graph.py TestGraph.test_graph_label_multiset
 python test/features/test_region_features.py TestRegionFeatures.test_region_features

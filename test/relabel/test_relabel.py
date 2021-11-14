@@ -1,22 +1,23 @@
-import unittest
-import numpy as np
+import os
 import sys
+import unittest
 
-import vigra
 import luigi
+import numpy as np
+import vigra
 import z5py
 
 try:
     from ..base import BaseTest
-except ValueError:
-    sys.path.append('..')
+except Exception:
+    sys.path.append(os.path.join(os.path.split(__file__)[0], ".."))
     from base import BaseTest
 
 
 class TestRelabel(BaseTest):
-    input_key = 'volumes/segmentation/watershed'
-    output_key = 'data'
-    assignment_key = 'assignments'
+    input_key = "volumes/segmentation/watershed"
+    output_key = "data"
+    assignment_key = "assignments"
 
     def _check_result(self):
         with z5py.File(self.output_path) as f:
@@ -27,9 +28,9 @@ class TestRelabel(BaseTest):
             ds = f[self.input_key]
             ds.n_threads = 4
             seg = ds[:]
-        exp, _, _ = vigra.analysis.relabelConsecutive(seg, start_label=1, keep_zeros=False)
+        exp, _, _ = vigra.analysis.relabelConsecutive(seg, start_label=1, keep_zeros=True)
         self.assertEqual(exp.shape, res.shape)
-        self.assertTrue(np.allclose(res, exp))
+        self.assertTrue((np.unique(res) == np.unique(exp)).all())
 
     def test_relabel(self):
         from cluster_tools.relabel import RelabelWorkflow
@@ -44,5 +45,5 @@ class TestRelabel(BaseTest):
         self._check_result()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

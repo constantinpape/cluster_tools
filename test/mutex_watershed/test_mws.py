@@ -6,23 +6,21 @@ import numpy as np
 
 import luigi
 import z5py
+import cluster_tools.utils.volume_utils as vu
 from sklearn.metrics import adjusted_rand_score
-try:
-    from elf.segmentation.mutex_watershed import mutex_watershed
-except ImportError:
-    mutex_watershed = None
+from elf.segmentation.mutex_watershed import mutex_watershed
 
 try:
     from ..base import BaseTest
-except ValueError:
-    sys.path.append('..')
+except Exception:
+    sys.path.append(os.path.join(os.path.split(__file__)[0], ".."))
     from base import BaseTest
 
 
 class TestMws(BaseTest):
-    input_key = 'volumes/affinities'
-    mask_key = 'volumes/mask'
-    output_key = 'data'
+    input_key = "volumes/affinities"
+    mask_key = "volumes/mask"
+    output_key = "data"
     offsets = [[-1, 0, 0], [0, -1, 0], [0, 0, -1],
                [-2, 0, 0], [0, -3, 0], [0, 0, -3],
                [-3, 0, 0], [0, -9, 0], [0, 0, -9],
@@ -30,19 +28,16 @@ class TestMws(BaseTest):
     strides = [4, 12, 12]
 
     def _check_result(self, with_mask=False):
+        # load affs and compare
         with z5py.File(self.input_path) as f:
-            shape = f[self.input_key].shape[1:]
-            affs = f[self.input_key][:3]
+            ds = f[self.input_key]
+            ds.n_threads = 4
+            affs = vu.normalize(ds[:])
+            shape = affs.shape[1:]
 
         with z5py.File(self.output_path) as f:
             res = f[self.output_key][:]
         self.assertEqual(res.shape, shape)
-
-        # load affs and compare
-        with z5py.File(self.input_path) as f:
-            ds = f[self.input_key]
-            ds.n_threads = 8
-            affs = ds[:]
 
         if with_mask:
             with z5py.File(self.input_path) as f:
@@ -59,17 +54,12 @@ class TestMws(BaseTest):
             score = adjusted_rand_score(exp.ravel(), res.ravel())
             self.assertLess(1. - score, .175)
 
-        # from cremi_tools.viewer.volumina import view
-        # view([affs.transpose((1, 2, 3, 0)), res, exp, mask.astype('uint32')],
-        #      ['affs', 'result', 'expected', 'mask'])
-
-    @unittest.skipUnless(mutex_watershed, "Needs affogato")
     def test_mws(self):
         from cluster_tools.mutex_watershed import MwsWorkflow
 
-        config = MwsWorkflow.get_config()['mws_blocks']
-        config['strides'] = self.strides
-        with open(os.path.join(self.config_folder, 'mws_blocks.config'), 'w') as f:
+        config = MwsWorkflow.get_config()["mws_blocks"]
+        config["strides"] = self.strides
+        with open(os.path.join(self.config_folder, "mws_blocks.config"), "w") as f:
             json.dump(config, f)
 
         task = MwsWorkflow(tmp_folder=self.tmp_folder, config_dir=self.config_folder,
@@ -81,13 +71,12 @@ class TestMws(BaseTest):
         self.assertTrue(ret)
         self._check_result(with_mask=False)
 
-    @unittest.skipUnless(mutex_watershed, "Needs affogato")
     def test_mws_with_mask(self):
         from cluster_tools.mutex_watershed import MwsWorkflow
 
-        config = MwsWorkflow.get_config()['mws_blocks']
-        config['strides'] = self.strides
-        with open(os.path.join(self.config_folder, 'mws_blocks.config'), 'w') as f:
+        config = MwsWorkflow.get_config()["mws_blocks"]
+        config["strides"] = self.strides
+        with open(os.path.join(self.config_folder, "mws_blocks.config"), "w") as f:
             json.dump(config, f)
 
         task = MwsWorkflow(tmp_folder=self.tmp_folder, config_dir=self.config_folder,
@@ -101,5 +90,5 @@ class TestMws(BaseTest):
         self._check_result(with_mask=True)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
