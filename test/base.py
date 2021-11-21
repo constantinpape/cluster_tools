@@ -29,7 +29,7 @@ def prepare_test():
         out_folder = os.path.split(INPUT_PATH)[0]
         out_path = os.path.join(out_folder, "tmp.zip")
         os.makedirs(out_folder, exist_ok=True)
-        url = "https://drive.google.com/u/0/uc?export=download&confirm=crb1&id=1E_Wpw9u8E4foYKk7wvx5RPSWvg_NCN7U"
+        url = "https://drive.google.com/u/0/uc?export=download&confirm=IB-b&id=1woId-_0SngJOHPRXUTyeVsRR2Y1VyHx7"
         gdown.download(url, out_path, quiet=False)
 
         # unzip it
