@@ -10,14 +10,14 @@ import elf.evaluation as val
 
 try:
     from ..base import BaseTest
-except ValueError:
-    sys.path.append('..')
+except Exception:
+    sys.path.append(os.path.join(os.path.split(__file__)[0], ".."))
     from base import BaseTest
 
 
 class TestEvaluation(BaseTest):
-    seg_key = 'volumes/segmentation/multicut'
-    gt_key = 'volumes/segmentation/groundtruth'
+    seg_key = "volumes/segmentation/multicut"
+    gt_key = "volumes/segmentation/groundtruth"
 
     def metrics(self):
         f = z5py.File(self.input_path)
@@ -49,7 +49,7 @@ class TestEvaluation(BaseTest):
 
     def test_eval(self):
         task = evaluation.EvaluationWorkflow
-        res_path = './tmp/res.json'
+        res_path = "./tmp/res.json"
         t = task(tmp_folder=self.tmp_folder, config_dir=self.config_folder,
                  target=self.target, max_jobs=self.max_jobs,
                  seg_path=self.input_path, seg_key=self.seg_key,
@@ -61,9 +61,9 @@ class TestEvaluation(BaseTest):
 
         with open(res_path) as f:
             results = json.load(f)
-        vis = results['vi-split']
-        vim = results['vi-merge']
-        ri = results['adapted-rand-error']
+        vis = results["vi-split"]
+        vim = results["vi-merge"]
+        ri = results["adapted-rand-error"]
 
         vis_exp, vim_exp, ri_exp = self.metrics()
 
@@ -73,7 +73,7 @@ class TestEvaluation(BaseTest):
 
     def test_object_vis(self):
         task = evaluation.ObjectViWorkflow
-        res_path = './tmp/res_objs.json'
+        res_path = "./tmp/res_objs.json"
         t = task(tmp_folder=self.tmp_folder, config_dir=self.config_folder,
                  target=self.target, max_jobs=self.max_jobs,
                  seg_path=self.input_path, seg_key=self.seg_key,
@@ -95,5 +95,5 @@ class TestEvaluation(BaseTest):
             self.assertAlmostEqual(score[1], score_exp[1])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

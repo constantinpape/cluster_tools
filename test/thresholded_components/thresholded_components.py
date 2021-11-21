@@ -13,15 +13,15 @@ import nifty.tools as nt
 
 try:
     from ..base import BaseTest
-except ValueError:
-    sys.path.append('..')
+except Exception:
+    sys.path.append(os.path.join(os.path.split(__file__)[0], ".."))
     from base import BaseTest
 
 
 class TestThresholdedComponents(BaseTest):
-    input_key = 'volumes/boundaries'
-    output_key = 'data'
-    assignment_key = 'assignments'
+    input_key = "volumes/boundaries"
+    output_key = "data"
+    assignment_key = "assignments"
 
     def _check_result(self, mode, check_for_equality=True, threshold=.5):
         with z5py.File(self.output_path) as f:
@@ -29,11 +29,11 @@ class TestThresholdedComponents(BaseTest):
         with z5py.File(self.input_path) as f:
             inp = f[self.input_key][:]
 
-        if mode == 'greater':
+        if mode == "greater":
             expected = label(inp > threshold)
-        elif mode == 'less':
+        elif mode == "less":
             expected = label(inp < threshold)
-        elif mode == 'equal':
+        elif mode == "equal":
             expected = label(inp == threshold)
         self.assertEqual(res.shape, expected.shape)
 
@@ -57,13 +57,13 @@ class TestThresholdedComponents(BaseTest):
         self._check_result(mode, threshold=threshold)
 
     def test_greater(self):
-        self._test_mode('greater')
+        self._test_mode("greater")
 
     def test_less(self):
-        self._test_mode('less')
+        self._test_mode("less")
 
     def test_equal(self):
-        self._test_mode('equal', threshold=0)
+        self._test_mode("equal", threshold=0)
 
     @unittest.skip("debugging test")
     def test_first_stage(self):
@@ -80,7 +80,7 @@ class TestThresholdedComponents(BaseTest):
                                     dependency=DummyTask())
         ret = luigi.build([task], local_scheduler=True)
         self.assertTrue(ret)
-        self._check_result('greater', check_for_equality=False)
+        self._check_result("greater", check_for_equality=False)
 
     @unittest.skip("debugging test")
     def test_second_stage(self):
@@ -96,7 +96,7 @@ class TestThresholdedComponents(BaseTest):
                                      output_key=self.output_key,
                                      threshold=.5,
                                      dependency=DummyTask())
-        offset_path = './tmp/offsets.json'
+        offset_path = "./tmp/offsets.json"
         with z5py.File(self.input_path) as f:
             shape = f[self.input_key].shape
         task = MergeOffsetsLocal(tmp_folder=self.tmp_folder,
@@ -113,8 +113,8 @@ class TestThresholdedComponents(BaseTest):
         # load offsets from file
         with open(offset_path) as f:
             offsets_dict = json.load(f)
-            offsets = offsets_dict['offsets']
-            max_offset = int(offsets_dict['n_labels']) - 1
+            offsets = offsets_dict["offsets"]
+            max_offset = int(offsets_dict["n_labels"]) - 1
 
         # load output segmentation
         with z5py.File(self.output_path) as f:
@@ -136,5 +136,5 @@ class TestThresholdedComponents(BaseTest):
             self.assertEqual(n_labels, n_offsets)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

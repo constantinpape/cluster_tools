@@ -13,16 +13,16 @@ import nifty.distributed as ndist
 
 try:
     from ..base import BaseTest
-except (ValueError, ImportError):
-    sys.path.append('..')
+except Exception:
+    sys.path.append(os.path.join(os.path.split(__file__)[0], ".."))
     from base import BaseTest
 
 
 class TestGraph(BaseTest):
-    input_key = 'volumes/segmentation/watershed'
-    label_multiset_key = 'volumes/segmentation/multicut_label_multiset/s0'
-    label_multiset_key_ref = 'volumes/segmentation/multicut'
-    output_key = 'graph'
+    input_key = "volumes/segmentation/watershed"
+    label_multiset_key = "volumes/segmentation/label_multiset/data/s0"
+    label_multiset_key_ref = "volumes/segmentation/multicut"
+    output_key = "graph"
 
     def check_subresults(self, seg_key):
         f = z5py.File(self.input_path)
@@ -100,7 +100,7 @@ class TestGraph(BaseTest):
             seg = seg[:]
             shape = seg.shape
         with z5py.File(self.output_path) as f:
-            shape_ = tuple(f[self.graph_key].attrs['shape'])
+            shape_ = tuple(f[self.graph_key].attrs["shape"])
         self.assertEqual(shape, shape_)
 
         # check graph
@@ -118,10 +118,9 @@ class TestGraph(BaseTest):
         from cluster_tools.graph import GraphWorkflow
         task = GraphWorkflow
 
-        task_config = GraphWorkflow.get_config()['initial_sub_graphs']
-        task_config['ignore_label'] = False
-        with open(os.path.join(self.config_folder, 'initial_sub_graphs.config'),
-                  'w') as f:
+        task_config = GraphWorkflow.get_config()["initial_sub_graphs"]
+        task_config["ignore_label"] = False
+        with open(os.path.join(self.config_folder, "initial_sub_graphs.config"), "w") as f:
             json.dump(task_config, f)
 
         ret = luigi.build([task(input_path=self.input_path,
@@ -141,10 +140,10 @@ class TestGraph(BaseTest):
         from cluster_tools.graph import GraphWorkflow
         task = GraphWorkflow
 
-        task_config = GraphWorkflow.get_config()['initial_sub_graphs']
-        task_config['ignore_label'] = False
-        with open(os.path.join(self.config_folder, 'initial_sub_graphs.config'),
-                  'w') as f:
+        task_config = GraphWorkflow.get_config()["initial_sub_graphs"]
+        task_config["ignore_label"] = False
+        with open(os.path.join(self.config_folder, "initial_sub_graphs.config"),
+                  "w") as f:
             json.dump(task_config, f)
 
         ret = luigi.build([task(input_path=self.input_path,
@@ -161,5 +160,5 @@ class TestGraph(BaseTest):
         self.check_result(self.label_multiset_key_ref)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

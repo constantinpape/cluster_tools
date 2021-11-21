@@ -1,3 +1,4 @@
+import os
 import sys
 import unittest
 
@@ -10,14 +11,14 @@ from elf.skeleton import skeletonize
 
 try:
     from ..base import BaseTest
-except ValueError:
-    sys.path.append('..')
+except Exception:
+    sys.path.append(os.path.join(os.path.split(__file__)[0], ".."))
     from base import BaseTest
 
 
 class TestSkeletons(BaseTest):
-    seg_key = 'volumes/segmentation/multicut'
-    out_key = 'skeletons'
+    seg_key = "volumes/segmentation/multicut"
+    out_key = "skeletons"
     resolution = (1, 1, 1)
     size_thresh = 1000
 
@@ -38,8 +39,8 @@ class TestSkeletons(BaseTest):
         from cluster_tools.skeletons import SkeletonWorkflow
         task = SkeletonWorkflow
 
-        conf = task.get_config()['skeletonize']
-        conf.update({'chunk_len': 50})
+        conf = task.get_config()["skeletonize"]
+        conf.update({"chunk_len": 50})
 
         t = task(tmp_folder=self.tmp_folder, config_dir=self.config_folder,
                  target=self.target, max_jobs=self.max_jobs,
@@ -70,5 +71,5 @@ class TestSkeletons(BaseTest):
             self.assertTrue(np.allclose(edges, edges_exp))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

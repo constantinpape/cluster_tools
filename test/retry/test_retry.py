@@ -9,10 +9,9 @@ import z5py
 
 try:
     from ..base import BaseTest
-except ValueError:
-    sys.path.append('..')
+except Exception:
+    sys.path.append(os.path.join(os.path.split(__file__)[0], ".."))
     from base import BaseTest
-
 
 try:
     from .failing_task import FailingTaskLocal
@@ -21,16 +20,16 @@ except ImportError:
 
 
 class TestRetry(BaseTest):
-    output_key = 'data'
+    output_key = "data"
     shape = (100, 1024, 1024)
 
     def setUp(self):
         super().setUp()
-        conf_path = os.path.join(self.config_folder, 'global.config')
+        conf_path = os.path.join(self.config_folder, "global.config")
         with open(conf_path) as f:
             global_config = json.load(f)
-        global_config['max_num_retries'] = 2
-        with open(conf_path, 'w') as f:
+        global_config["max_num_retries"] = 2
+        with open(conf_path, "w") as f:
             json.dump(global_config, f)
 
     def test_retry(self):
@@ -47,5 +46,5 @@ class TestRetry(BaseTest):
         self.assertTrue(np.allclose(data, 1))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
