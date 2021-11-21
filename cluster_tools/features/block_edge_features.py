@@ -308,6 +308,7 @@ def block_edge_features(job_id, config_path):
     with vu.file_reader(input_path, 'r') as f:
         ndim = f[input_key].ndim
 
+    fu.log(f"Offsets: {offsets}")
     has_channels = ndim == 4
     if has_channels and offsets is not None:
         agglomerate_channels = False

@@ -18,8 +18,9 @@ except Exception:
     from base import BaseTest
 
 
-class TestMws(BaseTest):
+class TestMwsWithMask(BaseTest):
     input_key = "volumes/affinities"
+    mask_key = "volumes/mask"
     output_key = "data"
     offsets = [[-1, 0, 0], [0, -1, 0], [0, 0, -1],
                [-2, 0, 0], [0, -3, 0], [0, 0, -3],
@@ -39,14 +40,20 @@ class TestMws(BaseTest):
             res = f[self.output_key][:]
         self.assertEqual(res.shape, shape)
 
-        exp = mutex_watershed(affs, self.offsets, self.strides)
+        with z5py.File(self.input_path, "r") as f:
+            mask = f[self.mask_key][:].astype("bool")
+        self.assertTrue(np.allclose(res[np.logical_not(mask)], 0))
+        exp = mutex_watershed(affs, self.offsets, self.strides, mask=mask)
         if size_filter > 0:
-            exp, _ = apply_size_filter(exp.astype("uint32"), np.max(affs[:3], axis=0), size_filter)
+            exp += 1
+            exp, _ = apply_size_filter(exp.astype("uint32"), np.max(affs[:3], axis=0), size_filter, [1])
+            exp[exp == 1] = 0
+        self.assertTrue(np.allclose(exp[np.logical_not(mask)], 0))
         score = adjusted_rand_score(exp.ravel(), res.ravel())
-        expected_score = 0.1
+        expected_score = 0.03
         self.assertLess(1. - score, expected_score)
 
-    def test_mws(self):
+    def test_mws_with_mask(self):
         from cluster_tools.mutex_watershed import MwsWorkflow
 
         config = MwsWorkflow.get_config()["mws_blocks"]
@@ -59,6 +66,7 @@ class TestMws(BaseTest):
                            max_jobs=self.max_jobs, target=self.target,
                            input_path=self.input_path, input_key=self.input_key,
                            output_path=self.output_path, output_key=self.output_key,
+                           mask_path=self.input_path, mask_key=self.mask_key,
                            offsets=self.offsets)
         ret = luigi.build([task], local_scheduler=True)
         self.assertTrue(ret)
