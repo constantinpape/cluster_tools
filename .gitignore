@@ -4,3 +4,4 @@ tmp*
 *.n5
 *.h5
 test_data/
+*.egg-info/
