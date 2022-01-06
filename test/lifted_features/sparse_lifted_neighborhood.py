@@ -12,7 +12,7 @@ import nifty.graph.opt.lifted_multicut as nlmc
 try:
     from ..base import BaseTest
 except Exception:
-    sys.path.append("..")
+    sys.path.append(os.path.join(os.path.split(__file__)[0], ".."))
     from base import BaseTest
 
 
