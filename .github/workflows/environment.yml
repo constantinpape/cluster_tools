@@ -1,0 +1,10 @@
+name: cluster_env
+
+channels:
+  - conda-forge
+
+dependencies:
+  - python-elf >=0.3.0
+  - luigi
+  - pybdv >=0.5.0
+  - gdown
