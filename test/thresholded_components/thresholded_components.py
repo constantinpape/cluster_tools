@@ -18,6 +18,8 @@ except Exception:
     from base import BaseTest
 
 
+# NOTE these tests are failing, probably because there is still something wrong with the
+# connected components implementation
 class TestThresholdedComponents(BaseTest):
     input_key = "volumes/boundaries"
     output_key = "data"

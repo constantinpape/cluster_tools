@@ -1,10 +1,8 @@
 import os
-import json
 import luigi
 
 from ..utils import volume_utils as vu
 from ..cluster_tasks import WorkflowBase
-from ..postprocess import FilterLabelsWorkflow
 from ..watershed import watershed_from_seeds as ws_tasks
 
 from .. import write as write_tasks
@@ -21,24 +19,24 @@ class ThresholdedComponentsWorkflow(WorkflowBase):
     output_key = luigi.Parameter()
     assignment_key = luigi.Parameter()
     threshold = luigi.FloatParameter()
-    threshold_mode = luigi.Parameter(default='greater')
-    mask_path = luigi.Parameter(default='')
-    mask_key = luigi.Parameter(default='')
+    threshold_mode = luigi.Parameter(default="greater")
+    mask_path = luigi.Parameter(default="")
+    mask_key = luigi.Parameter(default="")
     channel = luigi.Parameter(default=None)
 
     def requires(self):
         block_task = getattr(block_tasks,
-                             self._get_task_name('BlockComponents'))
+                             self._get_task_name("BlockComponents"))
         offset_task = getattr(offset_tasks,
-                              self._get_task_name('MergeOffsets'))
+                              self._get_task_name("MergeOffsets"))
         face_task = getattr(face_tasks,
-                            self._get_task_name('BlockFaces'))
+                            self._get_task_name("BlockFaces"))
         assignment_task = getattr(assignment_tasks,
-                                  self._get_task_name('MergeAssignments'))
+                                  self._get_task_name("MergeAssignments"))
         write_task = getattr(write_tasks,
-                             self._get_task_name('Write'))
+                             self._get_task_name("Write"))
 
-        with vu.file_reader(self.input_path, 'r') as f:
+        with vu.file_reader(self.input_path, "r") as f:
             ds = f[self.input_key]
             shape = list(ds.shape)
 
@@ -49,7 +47,7 @@ class ThresholdedComponentsWorkflow(WorkflowBase):
             shape = shape[1:]
 
         # temporary path for offsets
-        offset_path = os.path.join(self.tmp_folder, 'cc_offsets.json')
+        offset_path = os.path.join(self.tmp_folder, "cc_offsets.json")
 
         dep = block_task(tmp_folder=self.tmp_folder,
                          config_dir=self.config_dir,
@@ -84,22 +82,22 @@ class ThresholdedComponentsWorkflow(WorkflowBase):
                          input_path=self.output_path, input_key=self.output_key,
                          output_path=self.output_path, output_key=self.output_key,
                          assignment_path=self.output_path, assignment_key=self.assignment_key,
-                         identifier='thresholded_components', offset_path=offset_path,
+                         identifier="thresholded_components", offset_path=offset_path,
                          dependency=dep)
         return dep
 
     @staticmethod
     def get_config():
         configs = super(ThresholdedComponentsWorkflow, ThresholdedComponentsWorkflow).get_config()
-        configs.update({'block_components':
+        configs.update({"block_components":
                         block_tasks.BlockComponentsLocal.default_task_config(),
-                        'merge_offsets':
+                        "merge_offsets":
                         offset_tasks.MergeOffsetsLocal.default_task_config(),
-                        'block_faces':
+                        "block_faces":
                         face_tasks.BlockFacesLocal.default_task_config(),
-                        'merge_assignments':
+                        "merge_assignments":
                         assignment_tasks.MergeAssignmentsLocal.default_task_config(),
-                        'write':
+                        "write":
                         write_tasks.WriteLocal.default_task_config()})
         return configs
 
@@ -111,9 +109,9 @@ class ThresholdAndWatershedWorkflow(WorkflowBase):
     output_key = luigi.Parameter()
     assignment_key = luigi.Parameter()
     threshold = luigi.FloatParameter()
-    threshold_mode = luigi.Parameter(default='greater')
-    mask_path = luigi.Parameter(default='')
-    mask_key = luigi.Parameter(default='')
+    threshold_mode = luigi.Parameter(default="greater")
+    mask_path = luigi.Parameter(default="")
+    mask_key = luigi.Parameter(default="")
     channel = luigi.IntParameter(default=None)
 
     def requires(self):
@@ -126,7 +124,7 @@ class ThresholdAndWatershedWorkflow(WorkflowBase):
                                             mask_key=self.mask_key, channel=self.channel,
                                             dependency=self.dependency)
         ws_task = getattr(ws_tasks,
-                          self._get_task_name('WatershedFromSeeds'))
+                          self._get_task_name("WatershedFromSeeds"))
         dep = ws_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                       config_dir=self.config_dir, dependency=dep,
                       input_path=self.input_path, input_key=self.input_key,
@@ -138,7 +136,7 @@ class ThresholdAndWatershedWorkflow(WorkflowBase):
     @staticmethod
     def get_config():
         configs = super(ThresholdAndWatershedWorkflow, ThresholdAndWatershedWorkflow).get_config()
-        configs.update({'watershed_from_seeds':
+        configs.update({"watershed_from_seeds":
                         ws_tasks.WatershedFromSeedsLocal.default_task_config(),
                         **ThresholdedComponentsWorkflow.get_config()})
         return configs
