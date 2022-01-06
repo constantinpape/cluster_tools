@@ -76,7 +76,7 @@ class TestEdgeFeatures(BaseTest):
         # -> max
         self.assertTrue(np.allclose(features_nifty[:, 8], features[:, 8]))
 
-    # current issue: the min values don't agree, I don"t know why.
+    # current issue: the min values don't agree, I don't know why.
     @unittest.expectedFailure
     def test_boundary_features(self):
         from cluster_tools.features import EdgeFeaturesWorkflow

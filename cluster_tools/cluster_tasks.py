@@ -139,7 +139,7 @@ class BaseClusterTask(luigi.Task):
             retry = (self.n_retries < max_num_retries) and self.allow_retry
             # have at least 50 % of the jobs passed?
             # we use this as heuristic to determine if something is fundementally broken.
-            retry = retry and len(failed_jobs) / n_jobs < 0.5
+            retry = retry and len(failed_jobs) / n_jobs <= 0.5
 
             if retry:
                 failed_blocks = self.get_failed_blocks(n_jobs, success_list, job_prefix)
