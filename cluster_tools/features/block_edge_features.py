@@ -18,7 +18,7 @@ class BlockEdgeFeaturesBase(luigi.Task):
     """ Block edge feature base class
     """
 
-    task_name = 'block_edge_features'
+    task_name = "block_edge_features"
     src_file = os.path.abspath(__file__)
 
     # input and output volumes
@@ -37,8 +37,8 @@ class BlockEdgeFeaturesBase(luigi.Task):
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'offsets': None, 'filters': None, 'sigmas': None, 'halo': [0, 0, 0],
-                       'apply_in_2d': False, 'channel_agglomeration': 'mean'})
+        config.update({"offsets": None, "filters": None, "sigmas": None, "halo": [0, 0, 0],
+                       "apply_in_2d": False, "channel_agglomeration": "mean"})
         return config
 
     def clean_up_for_retry(self, block_list):
@@ -53,23 +53,23 @@ class BlockEdgeFeaturesBase(luigi.Task):
         # load the task config
         config = self.get_task_config()
 
-        subgraph_key = 's0/sub_graphs'
-        output_key = 's0/sub_features'
-        with vu.file_reader(self.graph_path, 'r') as f:
-            shape = tuple(f[subgraph_key].attrs['shape'])
+        subgraph_key = "s0/sub_graphs"
+        output_key = "s0/sub_features"
+        with vu.file_reader(self.graph_path, "r") as f:
+            shape = tuple(f[subgraph_key].attrs["shape"])
 
         # require the output dataset
         with vu.file_reader(self.output_path) as f:
-            f.require_dataset(output_key, shape=shape, dtype='float64',
-                              compression='gzip', chunks=tuple(block_shape))
+            f.require_dataset(output_key, shape=shape, dtype="float64",
+                              compression="gzip", chunks=tuple(block_shape))
 
         # update the config with input and output paths and keys
         # as well as block shape
-        config.update({'input_path': self.input_path, 'input_key': self.input_key,
-                       'labels_path': self.labels_path, 'labels_key': self.labels_key,
-                       'output_path': self.output_path, 'block_shape': block_shape,
-                       'graph_path': self.graph_path, 'subgraph_key': subgraph_key,
-                       'output_key': output_key})
+        config.update({"input_path": self.input_path, "input_key": self.input_key,
+                       "labels_path": self.labels_path, "labels_key": self.labels_key,
+                       "output_path": self.output_path, "block_shape": block_shape,
+                       "graph_path": self.graph_path, "subgraph_key": subgraph_key,
+                       "output_key": output_key})
 
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
@@ -117,14 +117,14 @@ def _accumulate(input_path, input_key,
                 block_list, offsets):
 
     fu.log("accumulate features without applying filters")
-    with vu.file_reader(input_path, 'r') as f:
+    with vu.file_reader(input_path, "r") as f:
         dtype = f[input_key].dtype
         input_dim = f[input_key].ndim
 
     if offsets is None:
         assert input_dim == 3, str(input_dim)
-        fu.log('accumulate boundary map for type %s' % str(dtype))
-        boundary_function = ndist.extractBlockFeaturesFromBoundaryMaps_uint8 if dtype == 'uint8' else \
+        fu.log("accumulate boundary map for type %s" % str(dtype))
+        boundary_function = ndist.extractBlockFeaturesFromBoundaryMaps_uint8 if dtype == "uint8" else \
             ndist.extractBlockFeaturesFromBoundaryMaps_float32
         boundary_function(graph_path, subgraph_key,
                           input_path, input_key,
@@ -134,8 +134,8 @@ def _accumulate(input_path, input_key,
                           increaseRoi=True)
     else:
         assert input_dim == 4, str(input_dim)
-        fu.log('accumulate affinity map for type %s' % str(dtype))
-        affinity_function = ndist.extractBlockFeaturesFromAffinityMaps_uint8 if dtype == 'uint8' else \
+        fu.log("accumulate affinity map for type %s" % str(dtype))
+        affinity_function = ndist.extractBlockFeaturesFromAffinityMaps_uint8 if dtype == "uint8" else \
             ndist.extractBlockFeaturesFromAffinityMaps_float32
         affinity_function(graph_path, subgraph_key,
                           input_path, input_key,
@@ -249,15 +249,15 @@ def _accumulate_with_filters(input_path, input_key,
 
     fu.log("accumulate features with applying filters:")
 
-    with vu.file_reader(input_path, 'r') as f,\
-            vu.file_reader(labels_path, 'r') as fl,\
-            vu.file_reader(graph_path, 'r') as fg,\
+    with vu.file_reader(input_path, "r") as f,\
+            vu.file_reader(labels_path, "r") as fl,\
+            vu.file_reader(graph_path, "r") as fg,\
             vu.file_reader(output_path) as fo:
 
         g = fg[subgraph_key]
-        shape = g.attrs['shape']
-        ignore_label = g.attrs['ignore_label']
-        ds_edges = g['edges']
+        shape = g.attrs["shape"]
+        ignore_label = g.attrs["ignore_label"]
+        ds_edges = g["edges"]
 
         ds_in = f[input_key]
         ds_labels = fl[labels_key]
@@ -279,40 +279,39 @@ def block_edge_features(job_id, config_path):
     fu.log("reading config from %s" % config_path)
 
     # get the config
-    with open(config_path, 'r') as f:
+    with open(config_path, "r") as f:
         config = json.load(f)
 
-    block_list = config['block_list']
-    input_path = config['input_path']
-    input_key = config['input_key']
-    labels_path = config['labels_path']
-    labels_key = config['labels_key']
-    output_path = config['output_path']
-    block_shape = config['block_shape']
-    graph_path = config['graph_path']
-    subgraph_key = config['subgraph_key']
-    output_key = config['output_key']
+    block_list = config["block_list"]
+    input_path = config["input_path"]
+    input_key = config["input_key"]
+    labels_path = config["labels_path"]
+    labels_key = config["labels_key"]
+    output_path = config["output_path"]
+    block_shape = config["block_shape"]
+    graph_path = config["graph_path"]
+    subgraph_key = config["subgraph_key"]
+    output_key = config["output_key"]
 
     # offsets for accumulation of affinity maps
-    offsets = config.get('offsets', None)
-    filters = config.get('filters', None)
-    sigmas = config.get('sigmas', None)
-    apply_in_2d = config.get('apply_in_2d', False)
-    halo = config.get('halo', [0, 0, 0])
-    channel_agglomeration = config.get('channel_agglomeration', 'mean')
-    assert channel_agglomeration in ('mean', 'max', 'min', None)
+    offsets = config.get("offsets", None)
+    filters = config.get("filters", None)
+    sigmas = config.get("sigmas", None)
+    apply_in_2d = config.get("apply_in_2d", False)
+    halo = config.get("halo", [0, 0, 0])
+    channel_agglomeration = config.get("channel_agglomeration", "mean")
+    assert channel_agglomeration in ("mean", "max", "min", None)
 
     # check if we accumulate with filters
     with_filters = filters is not None
 
-    with vu.file_reader(input_path, 'r') as f:
+    with vu.file_reader(input_path, "r") as f:
         ndim = f[input_key].ndim
 
     fu.log(f"Offsets: {offsets}")
     has_channels = ndim == 4
-    if has_channels and offsets is not None:
-        agglomerate_channels = False
-    elif has_channels:
+    agglomerate_channels = False
+    if has_channels and offsets is None:
         assert channel_agglomeration is not None
         agglomerate_channels = True
 
@@ -329,7 +328,7 @@ def block_edge_features(job_id, config_path):
                                            apply_in_2d, channel_agglomeration)
     elif agglomerate_channels:
         fu.log("Accumulate edge features with channel agglomeration")
-        filters = ['identity']
+        filters = ["identity"]
         sigmas = [0]
         n_feats = _accumulate_with_filters(input_path, input_key,
                                            labels_path, labels_key,
@@ -348,15 +347,15 @@ def block_edge_features(job_id, config_path):
 
     # we need to serialize the number of features for job 0
     if job_id == 0:
-        with vu.file_reader(output_path) as f:
+        with vu.file_reader(output_path, "a") as f:
             ds = f[output_key]
-            ds.attrs['n_features'] = n_feats
+            ds.attrs["n_features"] = n_feats
 
     fu.log_job_success(job_id)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     path = sys.argv[1]
     assert os.path.exists(path), path
-    job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
+    job_id = int(os.path.split(path)[1].split(".")[0].split("_")[-1])
     block_edge_features(job_id, path)
