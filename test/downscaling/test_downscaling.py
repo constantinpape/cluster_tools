@@ -1,3 +1,4 @@
+import os
 import sys
 import unittest
 
@@ -9,24 +10,24 @@ from elf.util import downscale_shape
 
 try:
     from ..base import BaseTest
-except ValueError:
-    sys.path.append('..')
+except Exception:
+    sys.path.append(os.path.join(os.path.split(__file__)[0], ".."))
     from base import BaseTest
 
 
 class TestDownscaling(BaseTest):
-    input_key = 'volumes/raw/s0'
-    output_key_prefix = 'data'
+    input_key = "volumes/raw/s0"
+    output_key_prefix = "data"
 
     def check_result_paintera(self, shape, scales):
         f = z5py.File(self.output_path)
         g = f[self.output_key_prefix]
-        self.assertTrue(g.attrs['multiScale'])
+        self.assertTrue(g.attrs["multiScale"])
 
         expected_shape = shape
         effective_scale = [1, 1, 1]
         for level, scale in enumerate(scales):
-            key = 's%i' % level
+            key = "s%i" % level
             ds = g[key]
             shape_level = ds.shape
             expected_shape = downscale_shape(expected_shape, scale)
@@ -37,15 +38,15 @@ class TestDownscaling(BaseTest):
                 self.assertEqual(effective_scale[::-1], ds.attrs["downsamplingFactors"])
 
     def check_result_bdv_hdf5(self, shape, scales):
-        output_path = './tmp/data.h5'
-        with h5py.File(output_path, 'r') as f:
+        output_path = "./tmp/data.h5"
+        with h5py.File(output_path, "r") as f:
 
-            bdv_scale_factors = f['s00/resolutions'][:]
+            bdv_scale_factors = f["s00/resolutions"][:]
 
             expected_shape = shape
             effective_scale = [1, 1, 1]
             for level, scale in enumerate(scales):
-                key = 't00000/s00/%i/cells' % level
+                key = "t00000/s00/%i/cells" % level
                 ds = f[key]
                 shape_level = ds.shape
                 expected_shape = downscale_shape(expected_shape, scale)
@@ -56,17 +57,17 @@ class TestDownscaling(BaseTest):
 
     def check_result_bdv_n5(self, shape, scales):
         f = z5py.File(self.output_path)
-        g = f['setup0']
-        bdv_scale_factors = g.attrs['downsamplingFactors']
-        bdv_dtype = np.dtype(g.attrs['dataType'])
-        g = g['timepoint0']
-        self.assertTrue(g.attrs['multiScale'])
-        self.assertIn('resolution', g.attrs)
+        g = f["setup0"]
+        bdv_scale_factors = g.attrs["downsamplingFactors"]
+        bdv_dtype = np.dtype(g.attrs["dataType"])
+        g = g["timepoint0"]
+        self.assertTrue(g.attrs["multiScale"])
+        self.assertIn("resolution", g.attrs)
 
         expected_shape = shape
         effective_scale = [1, 1, 1]
         for level, scale in enumerate(scales):
-            key = 's%i' % level
+            key = "s%i" % level
             ds = g[key]
             self.assertEqual(np.dtype(ds.dtype), bdv_dtype)
 
@@ -86,13 +87,13 @@ class TestDownscaling(BaseTest):
         scales = [[1, 2, 2], [1, 2, 2], [2, 2, 2]]
         halos = [[1, 4, 4], [1, 4, 4], [2, 4, 4]]
 
-        if metadata_format == 'paintera':
+        if metadata_format == "paintera":
             output_key_prefix = self.output_key_prefix
         else:
-            output_key_prefix = ''
+            output_key_prefix = ""
 
-        if metadata_format == 'bdv.hdf5':
-            output_path = './tmp/data.h5'
+        if metadata_format == "bdv.hdf5":
+            output_path = "./tmp/data.h5"
             max_jobs = 1
         else:
             output_path = self.output_path
@@ -110,23 +111,23 @@ class TestDownscaling(BaseTest):
         return scales
 
     def test_downscaling_paintera(self):
-        scales = self._downscale(metadata_format='paintera')
+        scales = self._downscale(metadata_format="paintera")
         shape = z5py.File(self.input_path)[self.input_key].shape
         scales = [[1, 1, 1]] + scales
         self.check_result_paintera(shape, scales)
 
     def test_downscaling_bdv_h5(self):
-        scales = self._downscale(metadata_format='bdv.hdf5')
+        scales = self._downscale(metadata_format="bdv.hdf5")
         shape = z5py.File(self.input_path)[self.input_key].shape
         scales = [[1, 1, 1]] + scales
         self.check_result_bdv_hdf5(shape, scales)
 
     def test_downscaling_bdv_n5(self):
-        scales = self._downscale(metadata_format='bdv.n5')
+        scales = self._downscale(metadata_format="bdv.n5")
         shape = z5py.File(self.input_path)[self.input_key].shape
         scales = [[1, 1, 1]] + scales
         self.check_result_bdv_n5(shape, scales)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

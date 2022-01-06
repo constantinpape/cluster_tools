@@ -13,8 +13,8 @@ from elf.evaluation import rand_index
 
 try:
     from ..base import BaseTest
-except ValueError:
-    sys.path.append('..')
+except Exception:
+    sys.path.append(os.path.join(os.path.split(__file__)[0], ".."))
     from base import BaseTest
 
 
@@ -22,7 +22,7 @@ class TestPostprocess(BaseTest):
     def test_size_filter_bg(self):
         from cluster_tools.postprocess import SizeFilterWorkflow
         task = SizeFilterWorkflow
-        output_key = 'filtered'
+        output_key = "filtered"
         thresh = 250
         t = task(tmp_folder=self.tmp_folder,
                  config_dir=self.config_folder,
@@ -46,7 +46,7 @@ class TestPostprocess(BaseTest):
 
     def make_assignments(self, g, path, key):
         n_nodes = g.numberOfNodes
-        assignments = np.random.randint(1, 100, n_nodes, dtype='uint64')
+        assignments = np.random.randint(1, 100, n_nodes, dtype="uint64")
         with z5py.File(path) as f:
             f.create_dataset(key, data=assignments, chunks=(int(1e5),))
         return assignments
@@ -64,14 +64,14 @@ class TestPostprocess(BaseTest):
         self.assertEqual(g.numberOfEdges, g1.numberOfEdges)
         self.assertTrue(np.allclose(g.uvIds(), g1.uvIds()))
 
-        assignment_key = 'initial_assignments'
+        assignment_key = "initial_assignments"
         assignments = self.make_assignments(g, self.output_path, assignment_key)
 
         # compute expected components
         expected = nifty.graph.connectedComponentsFromNodeLabels(g, assignments)
         vigra.analysis.relabelConsecutive(expected, out=expected)
 
-        out_key = 'connected_components'
+        out_key = "connected_components"
         t = task(tmp_folder=self.tmp_folder, config_dir=self.config_folder,
                  target=self.target, max_jobs=self.max_jobs,
                  problem_path=self.output_path, graph_key=self.graph_key,
@@ -98,24 +98,24 @@ class TestPostprocess(BaseTest):
                            [5, 6],
                            [6, 7],
                            [7, 8],
-                           [8, 9]], dtype='uint64')
+                           [8, 9]], dtype="uint64")
         node_labels = np.array([1, 1, 1, 2, 2, 2, 1, 1, 2, 2],
-                               dtype='uint64')
+                               dtype="uint64")
         expected_cc = np.array([1, 1, 1, 2, 2, 2, 3, 3, 4, 4],
-                               dtype='uint64')
+                               dtype="uint64")
         return uv_ids, node_labels, expected_cc
 
     def test_components_dist_toy(self):
         uv_ids, node_labels, expected_cc = self.toy_problem()
 
-        graph_path = os.path.join(self.tmp_folder, 'graph.n5')
+        graph_path = os.path.join(self.tmp_folder, "graph.n5")
         with z5py.File(graph_path) as f:
-            g = f.create_group('graph')
-            g.attrs['numberOfEdges'] = len(uv_ids)
-            g.create_dataset('edges', data=uv_ids, chunks=(int(1e5), 2),
-                             compression='raw')
+            g = f.create_group("graph")
+            g.attrs["numberOfEdges"] = len(uv_ids)
+            g.create_dataset("edges", data=uv_ids, chunks=(int(1e5), 2),
+                             compression="raw")
 
-        g = ndist.Graph(graph_path, 'graph')
+        g = ndist.Graph(graph_path, "graph")
         self.assertEqual(g.numberOfNodes, uv_ids.max() + 1)
         self.assertEqual(g.numberOfEdges, len(uv_ids))
 
@@ -140,5 +140,5 @@ class TestPostprocess(BaseTest):
         self.assertAlmostEqual(ri, 0.)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

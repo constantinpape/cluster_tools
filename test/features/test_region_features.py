@@ -11,15 +11,15 @@ from cluster_tools.utils.volume_utils import normalize
 
 try:
     from ..base import BaseTest
-except ValueError:
-    sys.path.append('..')
+except Exception:
+    sys.path.append(os.path.join(os.path.split(__file__)[0], ".."))
     from base import BaseTest
 
 
 class TestRegionFeatures(BaseTest):
-    input_key = 'volumes/raw/s0'
-    seg_key = 'volumes/segmentation/watershed'
-    output_key = 'features'
+    input_key = "volumes/raw/s0"
+    seg_key = "volumes/segmentation/watershed"
+    output_key = "features"
 
     def check_features(self, res, expected, feat_name, ids=None):
         expected_feats = expected[feat_name]
@@ -42,7 +42,7 @@ class TestRegionFeatures(BaseTest):
 
             seg = f[self.seg_key]
             seg.max_jobs = self.max_jobs
-            seg = seg[:].astype('uint32')
+            seg = seg[:].astype("uint32")
 
         expected = vigra.analysis.extractRegionFeatures(inp, seg, features=feature_names,
                                                         ignoreLabel=0)
@@ -50,9 +50,9 @@ class TestRegionFeatures(BaseTest):
             self.check_features(res[:, feat_id], expected, feat_name)
 
     def check_subresults(self):
-        f_feat = z5py.File(os.path.join(self.tmp_folder, 'region_features_tmp.n5'))
-        ds_feat = f_feat['block_feats']
-        feature_names = ds_feat.attrs['feature_names']
+        f_feat = z5py.File(os.path.join(self.tmp_folder, "region_features_tmp.n5"))
+        ds_feat = f_feat["block_feats"]
+        feature_names = ds_feat.attrs["feature_names"]
         n_cols = len(feature_names) + 1
 
         with z5py.File(self.input_path) as f:
@@ -62,7 +62,7 @@ class TestRegionFeatures(BaseTest):
 
             segmentation = f[self.seg_key]
             segmentation.max_jobs = self.max_jobs
-            segmentation = segmentation[:].astype('uint32')
+            segmentation = segmentation[:].astype("uint32")
         blocking = nt.blocking([0, 0, 0], data.shape, self.block_shape)
 
         n_blocks = blocking.numberOfBlocks
@@ -70,7 +70,7 @@ class TestRegionFeatures(BaseTest):
             block = blocking.getBlock(block_id)
             bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
             inp = data[bb]
-            seg = segmentation[bb].astype('uint32')
+            seg = segmentation[bb].astype("uint32")
 
             # load the sub-result
             chunk_id = tuple(beg // bs for beg, bs in zip(block.begin, self.block_shape))
@@ -80,7 +80,7 @@ class TestRegionFeatures(BaseTest):
                 continue
 
             # check that ids are correct
-            ids = res[::n_cols].astype('uint32')
+            ids = res[::n_cols].astype("uint32")
             expected_ids = np.unique(seg)
             self.assertEqual(ids.shape, expected_ids.shape)
             self.assertTrue(np.array_equal(ids, expected_ids))
@@ -112,5 +112,5 @@ class TestRegionFeatures(BaseTest):
         self.check_result(feature_names)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

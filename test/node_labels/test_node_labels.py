@@ -1,24 +1,24 @@
+import os
 import sys
 import unittest
 
-import numpy as np
 import luigi
-import z5py
-
+import numpy as np
 import nifty.ground_truth as ngt
 import nifty.distributed as ndist
 import nifty.tools as nt
+import z5py
 
 try:
     from ..base import BaseTest
-except ValueError:
-    sys.path.append('..')
+except Exception:
+    sys.path.append(os.path.join(os.path.split(__file__)[0], ".."))
     from base import BaseTest
 
 
 class TestNodeLabels(BaseTest):
-    input_key = 'volumes/segmentation/groundtruth'
-    output_key = 'labels'
+    input_key = "volumes/segmentation/groundtruth"
+    output_key = "labels"
 
     @staticmethod
     def compute_overlaps(seg_a, seg_b, max_overlap=True):
@@ -110,7 +110,7 @@ class TestNodeLabels(BaseTest):
         ret = luigi.build([task], local_scheduler=True)
         self.assertTrue(ret)
 
-        tmp_key = 'label_overlaps_'
+        tmp_key = "label_overlaps_"
         ws, inp = self.load_data()
 
         blocking = nt.blocking([0, 0, 0], ws.shape, self.block_shape)
@@ -152,5 +152,5 @@ class TestNodeLabels(BaseTest):
         self.check_overlaps(ids, overlaps, overlaps_exp)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

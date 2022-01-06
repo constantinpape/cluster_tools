@@ -1,19 +1,20 @@
+import os
 import sys
 import unittest
-import numpy as np
 
 import luigi
+import numpy as np
 import z5py
 
 try:
     from ..base import BaseTest
-except ValueError:
-    sys.path.append('..')
+except Exception:
+    sys.path.append(os.path.join(os.path.split(__file__)[0], ".."))
     from base import BaseTest
 
 
 class TestLiftedFeatureWorkflow(BaseTest):
-    labels_key = 'volumes/segmentation/groundtruth'
+    labels_key = "volumes/segmentation/groundtruth"
 
     def setUp(self):
         super().setUp()
@@ -21,8 +22,8 @@ class TestLiftedFeatureWorkflow(BaseTest):
 
     def check_result(self):
         with z5py.File(self.output_path) as f:
-            uv_ids = f['lifted_nh'][:]
-            costs = f['lifted_feats'][:]
+            uv_ids = f["lifted_nh"][:]
+            costs = f["lifted_feats"][:]
         self.assertEqual(len(uv_ids), len(costs))
         self.assertFalse((uv_ids == 0).all())
         self.assertFalse(np.allclose(costs, 0))
@@ -37,9 +38,9 @@ class TestLiftedFeatureWorkflow(BaseTest):
                                 graph_path=self.output_path,
                                 graph_key=self.graph_key,
                                 output_path=self.output_path,
-                                nh_out_key='lifted_nh',
-                                feat_out_key='lifted_feats',
-                                prefix='test',
+                                nh_out_key="lifted_nh",
+                                feat_out_key="lifted_feats",
+                                prefix="test",
                                 config_dir=self.config_folder,
                                 tmp_folder=self.tmp_folder,
                                 target=self.target,
@@ -49,5 +50,5 @@ class TestLiftedFeatureWorkflow(BaseTest):
         self.check_result()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

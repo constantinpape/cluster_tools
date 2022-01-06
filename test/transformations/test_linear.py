@@ -9,14 +9,14 @@ import z5py
 
 try:
     from ..base import BaseTest
-except ValueError:
-    sys.path.append('..')
+except Exception:
+    sys.path.append(os.path.join(os.path.split(__file__)[0], ".."))
     from base import BaseTest
 
 
 class TestLinear(BaseTest):
-    input_key = 'volumes/raw/s1'
-    output_key = 'transformed'
+    input_key = "volumes/raw/s1"
+    output_key = "transformed"
 
     def _check_result(self, trafo):
         f_in = z5py.File(self.input_path)
@@ -25,12 +25,12 @@ class TestLinear(BaseTest):
         exp = ds_in[:]
 
         if len(trafo) == 2:
-            a, b = trafo['a'], trafo['b']
+            a, b = trafo["a"], trafo["b"]
             exp = a * exp + b
         else:
             self.assertEqual(len(trafo), len(exp))
             for z in range(len(exp)):
-                a, b = trafo[z]['a'], trafo[z]['b']
+                a, b = trafo[z]["a"], trafo[z]["b"]
                 exp[z] = a * exp[z] + b
 
         f_out = z5py.File(self.output_path)
@@ -45,9 +45,9 @@ class TestLinear(BaseTest):
         from cluster_tools.transformations import LinearTransformationWorkflow
         task = LinearTransformationWorkflow
 
-        trafo_file = os.path.join(self.tmp_folder, 'trafo.json')
-        trafo = {'a': 2, 'b': 1}
-        with open(trafo_file, 'w') as f:
+        trafo_file = os.path.join(self.tmp_folder, "trafo.json")
+        trafo = {"a": 2, "b": 1}
+        with open(trafo_file, "w") as f:
             json.dump(trafo, f)
 
         ret = luigi.build([task(input_path=self.input_path,
@@ -69,10 +69,10 @@ class TestLinear(BaseTest):
 
         n_slices = z5py.File(self.input_path)[self.input_key].shape[0]
 
-        trafo_file = os.path.join(self.tmp_folder, 'trafo.json')
-        trafo = {z: {'a': np.random.rand(), 'b': np.random.rand()}
+        trafo_file = os.path.join(self.tmp_folder, "trafo.json")
+        trafo = {z: {"a": np.random.rand(), "b": np.random.rand()}
                  for z in range(n_slices)}
-        with open(trafo_file, 'w') as f:
+        with open(trafo_file, "w") as f:
             json.dump(trafo, f)
 
         ret = luigi.build([task(input_path=self.input_path,
@@ -89,5 +89,5 @@ class TestLinear(BaseTest):
         self._check_result(trafo)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

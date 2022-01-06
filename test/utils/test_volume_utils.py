@@ -6,7 +6,7 @@ import numpy as np
 
 
 class TestVolumeUtils(unittest.TestCase):
-    tmp_dir = './tmp'
+    tmp_dir = "./tmp"
 
     def setUp(self):
         os.makedirs(self.tmp_dir, exist_ok=True)
@@ -22,30 +22,30 @@ class TestVolumeUtils(unittest.TestCase):
 
         def _test_io(f):
             data = np.random.rand(100, 100)
-            ds = f.create_dataset('data', data=data, chunks=(10, 10))
+            ds = f.create_dataset("data", data=data, chunks=(10, 10))
             out = ds[:]
             self.assertEqual(out.shape, data.shape)
             self.assertTrue(np.allclose(out, data))
 
         # test n5
-        path = os.path.join(self.tmp_dir, 'a.n5')
+        path = os.path.join(self.tmp_dir, "a.n5")
         with file_reader(path) as f:
             _test_io(f)
 
         # test zr
-        path = os.path.join(self.tmp_dir, 'a.zr')
+        path = os.path.join(self.tmp_dir, "a.zr")
         with file_reader(path) as f:
             _test_io(f)
 
         # test h5
-        path = os.path.join(self.tmp_dir, 'a.h5')
+        path = os.path.join(self.tmp_dir, "a.h5")
         with file_reader(path) as f:
             _test_io(f)
 
     def test_blocks_in_volume(self):
         from cluster_tools.utils.volume_utils import blocks_in_volume, file_reader
 
-        p = os.path.join(self.tmp_dir, 'data.n5')
+        p = os.path.join(self.tmp_dir, "data.n5")
         f = file_reader(p)
 
         def check_block_list(blocking, block_list, ds, bb=np.s_[:]):
@@ -59,18 +59,18 @@ class TestVolumeUtils(unittest.TestCase):
             self.assertTrue((out > 0).all())
 
         # test vanilla
-        k = 'd1'
+        k = "d1"
         shape = (128,) * 3
         block_shape = (32,) * 3
-        ds = f.create_dataset(k, shape=shape, chunks=block_shape, dtype='uint8')
+        ds = f.create_dataset(k, shape=shape, chunks=block_shape, dtype="uint8")
         block_list, blocking = blocks_in_volume(shape, block_shape, return_blocking=True)
         check_block_list(blocking, block_list, ds)
 
         # test with roi
-        k = 'd2'
+        k = "d2"
         shape = (1023, 2049, 355)
         block_shape = (65, 93, 24)
-        ds = f.create_dataset(k, shape=shape, chunks=block_shape, dtype='uint32')
+        ds = f.create_dataset(k, shape=shape, chunks=block_shape, dtype="uint32")
         roi_begin = (104, 1039, 27)
         roi_end = (911, 1855, 134)
         block_list, blocking = blocks_in_volume(shape, block_shape, return_blocking=True,
@@ -83,10 +83,10 @@ class TestVolumeUtils(unittest.TestCase):
         max_shape = (1024, 1024, 1024)
         max_block_shape = (128, 128, 128)
         for ii in range(N):
-            k = 'd_random%i' % ii
+            k = "d_random%i" % ii
             shape = tuple(np.random.randint(1, ms) for ms in max_shape)
             block_shape = tuple(np.random.randint(10, ms) for ms in max_block_shape)
-            ds = f.create_dataset(k, shape=shape, chunks=block_shape, dtype='uint32')
+            ds = f.create_dataset(k, shape=shape, chunks=block_shape, dtype="uint32")
             roi_begin = tuple(np.random.randint(0, sh - 1) for sh in shape)
             roi_end = tuple(np.random.randint(rb, sh) for rb, sh in zip(roi_begin, shape))
             block_list, blocking = blocks_in_volume(shape, block_shape, return_blocking=True,
@@ -95,5 +95,5 @@ class TestVolumeUtils(unittest.TestCase):
             check_block_list(blocking, block_list, ds, bb)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

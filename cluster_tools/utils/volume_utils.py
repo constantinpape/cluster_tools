@@ -56,6 +56,7 @@ def blocks_in_volume(shape, block_shape,
 
     # if we have a roi load the blocks in roi
     if have_roi:
+        roi_begin = [0 if rb is None else rb for rb in roi_begin]
         roi_end = [sh if re is None else re for re, sh in zip(roi_end, shape)]
         block_list = blocking_.getBlockIdsOverlappingBoundingBox(list(roi_begin),
                                                                  list(roi_end))
@@ -178,6 +179,7 @@ def make_checkerboard_block_lists(blocking, roi_begin=None, roi_end=None):
         return _make_checkerboard_with_roi(blocking, roi_begin, roi_end)
 
 
+# FIXME this causes potential issues with h5 and full mask shape, pass the file handle instead
 def load_mask(mask_path, mask_key, shape):
     with file_reader(mask_path, 'r') as f_mask:
         mshape = f_mask[mask_key].shape

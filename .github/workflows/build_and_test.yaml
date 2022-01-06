@@ -1,0 +1,48 @@
+---
+name: test_cluster_tools
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+
+jobs:
+  test:
+    name: ${{ matrix.os }} ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest]
+        python-version: [3.8]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Setup miniconda
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          activate-environment: cluster_env
+          mamba-version: "*"
+          auto-update-conda: true
+          environment-file: environment.yml
+          python-version: ${{ matrix.python-version }}
+          auto-activate-base: false
+        env:
+          ACTIONS_ALLOW_UNSECURE_COMMANDS: true
+
+      - name: Install package
+        shell: bash -l {0}
+        run: pip install -e . --no-deps
+
+      - name: Prepare tests
+        shell: bash -l {0}
+        run: python test/base.py
+
+      - name: Run tests
+        shell: bash -l {0}
+        run: ./run_all_tests.sh

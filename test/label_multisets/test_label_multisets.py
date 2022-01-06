@@ -11,8 +11,8 @@ from elf.label_multiset import deserialize_multiset
 
 try:
     from ..base import BaseTest
-except ValueError:
-    sys.path.append('..')
+except Exception:
+    sys.path.append(os.path.join(os.path.split(__file__)[0], ".."))
     from base import BaseTest
 
 
@@ -26,14 +26,9 @@ class TestLabelMultisets(BaseTest):
                                -o sampleA_paintera.n5 -b 256,256,32
                                -s 2,2,1 2,2,1 2,2,1, 2,2,2 -m -1 -1 5 3
     """
-    input_key = 'volumes/segmentation/multicut'
-    output_key = 'data'
-
-    def setUp(self):
-        super().setUp()
-        self.expected_path = os.path.splitext(self.input_path)[0] + '_paintera.n5'
-        assert os.path.exists(self.expected_path)
-        self.expected_key = os.path.join(self.input_key, 'data')
+    input_key = "volumes/segmentation/multicut"
+    output_key = "data"
+    expected_key = "volumes/segmentation/label_multiset/data"
 
     def check_serialization(self, res, exp):
         self.assertEqual(res.shape, exp.shape)
@@ -87,7 +82,7 @@ class TestLabelMultisets(BaseTest):
     def check_empty(self, res, shape):
         res = deserialize_multiset(res, shape)
         self.assertEqual(res.n_entries, 1)
-        self.assertTrue(np.array_equal(res.ids, np.array([0], dtype='uint64')))
+        self.assertTrue(np.array_equal(res.ids, np.array([0], dtype="uint64")))
 
     def test_label_multisets(self):
         from cluster_tools.label_multisets import LabelMultisetWorkflow
@@ -103,10 +98,9 @@ class TestLabelMultisets(BaseTest):
         ret = luigi.build([t], local_scheduler=True)
         self.assertTrue(ret)
 
-        f = z5py.File(self.output_path)
+        f = z5py.File(self.output_path, "r")
+        f_exp = z5py.File(self.input_path, "r")
         g = f[self.output_key]
-
-        f_exp = z5py.File(self.expected_path)
         g_exp = f_exp[self.expected_key]
 
         # check all scales
@@ -115,7 +109,7 @@ class TestLabelMultisets(BaseTest):
             # We skip the test for s4 because it fails due to an inconsistency
             # in the implementations,
             # see https://github.com/saalfeldlab/imglib2-label-multisets/issues/14
-            if scale == 's4':
+            if scale == "s4":
                 continue
             self.assertTrue(scale in g_exp)
             ds = g[scale]
@@ -126,19 +120,19 @@ class TestLabelMultisets(BaseTest):
             # check the metadata
             attrs = ds.attrs
 
-            self.assertTrue(attrs['isLabelMultiset'])
+            self.assertTrue(attrs["isLabelMultiset"])
 
-            scale_factor = attrs.get('downsamplingFactors', None)
+            scale_factor = attrs.get("downsamplingFactors", None)
             attrs_exp = ds_exp.attrs
-            scale_factor_exp = attrs_exp.get('downsamplingFactors', None)
+            scale_factor_exp = attrs_exp.get("downsamplingFactors", None)
             self.assertEqual(scale_factor, scale_factor_exp)
 
-            restrict = attrs.get('maxNumEntries', -1)
-            restrict_exp = attrs_exp.get('maxNumEntries', -1)
+            restrict = attrs.get("maxNumEntries", -1)
+            restrict_exp = attrs_exp.get("maxNumEntries", -1)
             self.assertEqual(restrict, restrict_exp)
 
-            mid = attrs.get('maxId', None)
-            mid_exp = attrs_exp.get('maxId', None)
+            mid = attrs.get("maxId", None)
+            mid_exp = attrs_exp.get("maxId", None)
             self.assertEqual(mid, mid_exp)
 
             blocking = nt.blocking([0, 0, 0], ds.shape, ds.chunks)
@@ -159,5 +153,5 @@ class TestLabelMultisets(BaseTest):
                     self.check_chunk(out, out_exp, chunk_shape)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

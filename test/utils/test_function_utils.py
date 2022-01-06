@@ -4,7 +4,7 @@ from shutil import rmtree
 
 
 class TestFunctionUtils(unittest.TestCase):
-    tmp_dir = './tmp'
+    tmp_dir = "./tmp"
 
     def setUp(self):
         os.makedirs(self.tmp_dir, exist_ok=True)
@@ -17,16 +17,16 @@ class TestFunctionUtils(unittest.TestCase):
 
     def test_tail(self):
         from cluster_tools.utils.function_utils import tail
-        l1 = 'abcd'
-        l2 = '1234'
-        l3 = '5678'
-        l4 = 'wxyz'
+        l1 = "abcd"
+        l2 = "1234"
+        l3 = "5678"
+        l4 = "wxyz"
         lines = (l1, l2, l3, l4)
 
-        path = os.path.join(self.tmp_dir, 'out.txt')
-        with open(path, 'w') as f:
-            for l in lines:
-                f.write(l + '\n')
+        path = os.path.join(self.tmp_dir, "out.txt")
+        with open(path, "w") as f:
+            for ll in lines:
+                f.write(ll + "\n")
 
         n_lines = 3
         out_lines = tail(path, n_lines)
@@ -35,5 +35,5 @@ class TestFunctionUtils(unittest.TestCase):
             self.assertEqual(li, lo)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

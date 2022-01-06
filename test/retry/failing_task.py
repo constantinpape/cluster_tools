@@ -20,7 +20,7 @@ class FailingTaskBase(luigi.Task):
     """ FailingTask base class
     """
 
-    task_name = 'failing_task'
+    task_name = "failing_task"
     src_file = os.path.abspath(__file__)
 
     output_path = luigi.Parameter()
@@ -41,11 +41,10 @@ class FailingTaskBase(luigi.Task):
         # make outout and update the config
         shape = tuple(self.shape)
         with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, shape=shape, chunks=tuple(block_shape),
-                              dtype='uint8')
+            f.require_dataset(self.output_key, shape=shape, chunks=tuple(block_shape), dtype="uint8")
 
-        config.update({'output_path': self.output_path, 'output_key': self.output_key,
-                       'n_retries': self.n_retries, 'block_shape': block_shape})
+        config.update({"output_path": self.output_path, "output_key": self.output_key,
+                       "n_retries": self.n_retries, "block_shape": block_shape})
 
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end)
@@ -64,7 +63,7 @@ class FailingTaskBase(luigi.Task):
 
 
 class FailingTaskLocal(FailingTaskBase, LocalTask):
-    """ FailingTask on local machine
+    """FailingTask on local machine
     """
     pass
 
@@ -83,11 +82,11 @@ def failing_task(job_id, config_path):
     # get the config
     with open(config_path) as f:
         config = json.load(f)
-    output_path = config['output_path']
-    output_key = config['output_key']
-    block_shape = config['block_shape']
-    block_list = config['block_list']
-    n_retries = config['n_retries']
+    output_path = config["output_path"]
+    output_key = config["output_key"]
+    block_shape = config["block_shape"]
+    block_list = config["block_list"]
+    n_retries = config["n_retries"]
 
     shape = vu.get_shape(output_path, output_key)
     blocking = nt.blocking(roiBegin=[0, 0, 0],
@@ -101,8 +100,8 @@ def failing_task(job_id, config_path):
     fu.log_job_success(job_id)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     path = sys.argv[1]
     assert os.path.exists(path), path
-    job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
+    job_id = int(os.path.split(path)[1].split(".")[0].split("_")[-1])
     failing_task(job_id, path)
