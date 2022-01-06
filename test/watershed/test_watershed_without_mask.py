@@ -69,10 +69,6 @@ class TestWatershedWithoutMask(BaseTest):
         self.assertTrue(ret)
         self._check_result()
 
-    # for some reason this fails when run together with other watershed tests because the
-    # mask_path and mask_key parameter are not properly cleared.
-    # when run as standalone tests this is fine, so this seems to be a luigi issue
-    @unittest.expectedFailure
     def test_ws_2d(self):
         self._test_ws_2d(two_pass=False)
 
@@ -91,10 +87,6 @@ class TestWatershedWithoutMask(BaseTest):
         self.assertTrue(ret)
         self._check_result()
 
-    # for some reason this fails when run together with other watershed tests because the
-    # mask_path and mask_key parameter are not properly cleared.
-    # when run as standalone tests this is fine, so this seems to be a luigi issue
-    @unittest.expectedFailure
     def test_ws_3d(self):
         self._test_ws_3d(two_pass=False)
 

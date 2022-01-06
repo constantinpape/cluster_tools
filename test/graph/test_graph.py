@@ -142,8 +142,7 @@ class TestGraph(BaseTest):
 
         task_config = GraphWorkflow.get_config()["initial_sub_graphs"]
         task_config["ignore_label"] = False
-        with open(os.path.join(self.config_folder, "initial_sub_graphs.config"),
-                  "w") as f:
+        with open(os.path.join(self.config_folder, "initial_sub_graphs.config"), "w") as f:
             json.dump(task_config, f)
 
         ret = luigi.build([task(input_path=self.input_path,
