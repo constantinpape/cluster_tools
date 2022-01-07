@@ -18,7 +18,7 @@ class ThresholdBase(luigi.Task):
     """ Threshold base class
     """
 
-    task_name = 'threshold'
+    task_name = "threshold"
     src_file = os.path.abspath(__file__)
     allow_retry = False
 
@@ -27,18 +27,18 @@ class ThresholdBase(luigi.Task):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     threshold = luigi.FloatParameter()
-    threshold_mode = luigi.Parameter(default='greater')
+    threshold_mode = luigi.Parameter(default="greater")
     channel = luigi.Parameter(default=None)
     # task that is required before running this task
     dependency = luigi.TaskParameter(DummyTask())
 
-    threshold_modes = ('greater', 'less', 'equal')
+    threshold_modes = ("greater", "less", "equal")
 
     @staticmethod
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'sigma_prefilter': 0})
+        config.update({"sigma_prefilter": 0})
         return config
 
     def requires(self):
@@ -54,16 +54,16 @@ class ThresholdBase(luigi.Task):
 
         assert self.threshold_mode in self.threshold_modes
         config = self.get_task_config()
-        config.update({'input_path': self.input_path,
-                       'input_key': self.input_key,
-                       'output_path': self.output_path,
-                       'output_key': self.output_key,
-                       'block_shape': block_shape,
-                       'threshold': self.threshold,
-                       'threshold_mode': self.threshold_mode})
+        config.update({"input_path": self.input_path,
+                       "input_key": self.input_key,
+                       "output_path": self.output_path,
+                       "output_key": self.output_key,
+                       "block_shape": block_shape,
+                       "threshold": self.threshold,
+                       "threshold_mode": self.threshold_mode})
 
         # get chunks
-        chunks = config.pop('chunks', None)
+        chunks = config.pop("chunks", None)
         if chunks is None:
             chunks = tuple(bs // 2 for bs in block_shape)
 
@@ -82,15 +82,15 @@ class ThresholdBase(luigi.Task):
                 assert all(isinstance(chan, int) for chan in self.channel)
                 assert shape[0] > max(self.channel), "%i, %i" % (shape[0], max(self.channel))
             shape = shape[1:]
-            config.update({'channel': self.channel})
+            config.update({"channel": self.channel})
 
         # clip chunks
         chunks = tuple(min(ch, sh) for ch, sh in zip(chunks, shape))
 
         # make output dataset
-        compression = config.pop('compression', 'gzip')
+        compression = config.pop("compression", "gzip")
         with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key,  shape=shape, dtype='uint8',
+            f.require_dataset(self.output_key,  shape=shape, dtype="uint8",
                               compression=compression, chunks=chunks)
 
         block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end,
@@ -149,19 +149,19 @@ def _threshold_block(block_id, blocking,
 
     input_ = vu.normalize(input_)
     if sigma > 0:
-        input_ = vu.apply_filter(input_, 'gaussianSmoothing', sigma)
+        input_ = vu.apply_filter(input_, "gaussianSmoothing", sigma)
         input_ = vu.normalize(input_)
 
-    if threshold_mode == 'greater':
+    if threshold_mode == "greater":
         input_ = input_ > threshold
-    elif threshold_mode == 'less':
+    elif threshold_mode == "less":
         input_ = input_ < threshold
-    elif threshold_mode == 'equal':
+    elif threshold_mode == "equal":
         input_ = input_ == threshold
     else:
         raise RuntimeError("Thresholding Mode %s not supported" % threshold_mode)
 
-    ds_out[bb] = input_.astype('uint8')
+    ds_out[bb] = input_.astype("uint8")
     fu.log_block_success(block_id)
 
 
@@ -170,23 +170,23 @@ def threshold(job_id, config_path):
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
 
-    with open(config_path, 'r') as f:
+    with open(config_path, "r") as f:
         config = json.load(f)
-    input_path = config['input_path']
-    input_key = config['input_key']
-    output_path = config['output_path']
-    output_key = config['output_key']
-    block_list = config['block_list']
-    block_shape = config['block_shape']
-    threshold = config['threshold']
-    threshold_mode = config['threshold_mode']
+    input_path = config["input_path"]
+    input_key = config["input_key"]
+    output_path = config["output_path"]
+    output_key = config["output_key"]
+    block_list = config["block_list"]
+    block_shape = config["block_shape"]
+    threshold = config["threshold"]
+    threshold_mode = config["threshold_mode"]
 
-    sigma = config.get('sigma_prefilter', 0)
-    channel = config.get('channel', None)
+    sigma = config.get("sigma_prefilter", 0)
+    channel = config.get("channel", None)
 
     fu.log("Applying threshold %f with mode %s" % (threshold, threshold_mode))
 
-    with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
+    with vu.file_reader(input_path, "r") as f_in, vu.file_reader(output_path) as f_out:
 
         ds_in = f_in[input_key]
         ds_out = f_out[output_key]
@@ -205,8 +205,8 @@ def threshold(job_id, config_path):
     fu.log_job_success(job_id)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     path = sys.argv[1]
     assert os.path.exists(path), path
-    job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
+    job_id = int(os.path.split(path)[1].split(".")[0].split("_")[-1])
     threshold(job_id, path)
