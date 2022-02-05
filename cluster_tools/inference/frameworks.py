@@ -178,8 +178,11 @@ class InfernoPredicter(PytorchPredicter):
 
 class BioimageioPredicter(PredicterBase):
     def __init__(self, model_path, halo, gpu=0, **kwargs):
-        assert os.path.exists(model_path)
         model = bioimageio.core.load_resource_description(model_path)
+        assert len(model.inputs) == 1, f"Expect model with single input, got {len(model.inputs)}"
+        assert len(model.outputs) == 1, f"Expect model with single output, got {len(model.outputs)}"
+        assert tuple(model.inputs[0].axes) == tuple("bczyx"),\
+            f"Expect model with 3d input (bczyx), got {model.inputs[0].axes}"
         devices = [f"cuda:{gpu}"]
         self.model = bioimageio.core.create_prediction_pipeline(
             bioimageio_model=model, devices=devices
@@ -187,15 +190,21 @@ class BioimageioPredicter(PredicterBase):
         self.halo = halo
         self.lock = threading.Lock()
 
-    def __del__(self):
-        self.model.close()
+    # TODO how do we properly close the pred pipeline?
+    # def __del__(self):
+    #     self.model.close()
 
     def __call__(self, input_data):
-        input_ = DataArray(input_data, dims=self.dims)
+        assert input_data.ndim in (3, 4)
+        if input_data.ndim == 3:
+            input_data = input_data[None]
+        dims = tuple("bczyx")
+        input_ = DataArray(input_data[None], dims=dims)
         with self.lock:
             out = self.model(input_)
         assert len(out) == 1
-        out = out[0].values
+        out = out[0].values[0]
+        assert out.ndim == 4
         out = self.crop(out, self.halo)
         return out
 

@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import unittest
@@ -24,11 +25,23 @@ class TestInference(BaseTest):
 
     def _test_inference(self, ckpt, framework):
         from cluster_tools.inference import InferenceLocal
-        halo = [2, 4, 4]
+
+        # set block shape that fits into the network
+        block_shape = [14, 280, 280]
+        halo = [1, 4, 4]
+        conf_dir = self.config_folder
+        conf_path = os.path.join(conf_dir, "global.config")
+        with open(conf_path, "r") as f:
+            config = json.load(f)
+        config["block_shape"] = block_shape
+        with open(conf_path, "w") as f:
+            json.dump(config, f)
+
+        out_key = {self.output_key: [0, 1]}
         task = InferenceLocal(
-            tmp_folder=self.tmp_folder, config_dir=self.config_folder, max_jobs=1,
+            tmp_folder=self.tmp_folder, config_dir=conf_dir, max_jobs=1,
             input_path=self.input_path, input_key=self.input_key,
-            output_path=self.output_path, output_key=self.output_key,
+            output_path=self.output_path, output_key=out_key,
             checkpoint_path=ckpt,  halo=halo, framework=framework
         )
         ret = luigi.build([task], local_scheduler=True)
