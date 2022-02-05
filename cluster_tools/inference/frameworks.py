@@ -8,14 +8,15 @@ import numpy as np
 
 # try to load the frameworks
 try:
+    import bioimageio.core
+    from xarray import DataArray
+except ImportError:
+    bioimageio.core = None
+
+try:
     import torch
 except ImportError:
     torch = None
-
-try:
-    import tensorflow
-except ImportError:
-    tensorflow = None
 
 try:
     from inferno.trainers.basic import Trainer
@@ -32,9 +33,13 @@ except ImportError:
 # Prediction Base class
 #
 
-# TODO move commonly used things from pytorch predicter here
 class PredicterBase:
-    pass
+    def crop(self, out, halo):
+        shape = out.shape if out.ndim == 3 else out.shape[1:]
+        bb = tuple(slice(ha, sh - ha) for ha, sh in zip(halo, shape))
+        if out.ndim == 4:
+            bb = (slice(None),) + bb
+        return out[bb]
 
 
 #
@@ -69,7 +74,7 @@ class PytorchPredicter(PredicterBase):
         # build the test-time-augmenter if we have augmentation kwargs
         if augmentation_kwargs:
             assert TestTimeAugmenter is not None, "Need neurofire for test-time-augmentation"
-            self.offsets = augmentation_kwargs.pop('offsets', None)
+            self.offsets = augmentation_kwargs.pop("offsets", None)
             self.augmenter = self.build_augmenter(**augmentation_kwargs)
         else:
             self.augmenter = None
@@ -82,14 +87,14 @@ class PytorchPredicter(PredicterBase):
 
         # load model from a model state dict
         elif isinstance(model_path, dict):
-            module, model_name = model_path['class']
-            model_kwargs = model_path['kwargs']
+            module, model_name = model_path["class"]
+            model_kwargs = model_path["kwargs"]
             model_class = getattr(import_module(module), model_name)
             model = model_class(**model_kwargs)
 
-            state_path = model_path['checkpoint_path']
+            state_path = model_path["checkpoint_path"]
             assert os.path.exists(state_path), state_path
-            model_key = model_path.get('model_state_key', None)
+            model_key = model_path.get("model_state_key", None)
 
             state = torch.load(state_path)
             if model_key is not None:
@@ -104,13 +109,6 @@ class PytorchPredicter(PredicterBase):
         self.model = self.load_model(model_path)
         self.set_up(halo, gpu, prep_model, mixed_precision,
                     **augmentation_kwargs)
-
-    def crop(self, out, halo):
-        shape = out.shape if out.ndim == 3 else out.shape[1:]
-        bb = tuple(slice(ha, sh - ha) for ha, sh in zip(halo, shape))
-        if out.ndim == 4:
-            bb = (slice(None),) + bb
-        return out[bb]
 
     def apply_model(self, input_data):
         with self.lock, torch.no_grad(), self.autocast():
@@ -178,18 +176,28 @@ class InfernoPredicter(PytorchPredicter):
 #
 
 
-# TODO
 class BioimageioPredicter(PredicterBase):
-    pass
+    def __init__(self, model_path, halo, gpu=0, **kwargs):
+        assert os.path.exists(model_path)
+        model = bioimageio.core.load_resource_description(model_path)
+        devices = [f"cuda:{gpu}"]
+        self.model = bioimageio.core.create_prediction_pipeline(
+            bioimageio_model=model, devices=devices
+        )
+        self.halo = halo
+        self.lock = threading.Lock()
 
+    def __del__(self):
+        self.model.close()
 
-#
-# Tensorflow based prediction classes
-#
-
-# TODO
-class TensorflowPredicter(PredicterBase):
-    pass
+    def __call__(self, input_data):
+        input_ = DataArray(input_data, dims=self.dims)
+        with self.lock:
+            out = self.model(input_)
+        assert len(out) == 1
+        out = out[0].values
+        out = self.crop(out, self.halo)
+        return out
 
 
 def get_predictor(framework):
@@ -200,12 +208,8 @@ def get_predictor(framework):
         assert torch is not None
         assert Trainer is not None
         return InfernoPredicter
-    elif framework == "tensorflow":
-        assert tensorflow is not None
-        raise NotImplementedError
-        return TensorflowPredicter
     elif framework == "bioimageio":
-        raise NotImplementedError
+        assert bioimageio.core is not None
         return BioimageioPredicter
     else:
         raise KeyError("Framework %s not supported" % framework)
@@ -231,7 +235,7 @@ def normalize01(data, eps=1e-4):
     return (data - min_) / (max_ + eps)
 
 
-def cast(data, dtype='float32'):
+def cast(data, dtype="float32"):
     return data.astype(dtype, copy=False)
 
 
@@ -248,15 +252,11 @@ def preprocess_torch(data, mean=None, std=None,
     return data
 
 
-# TODO
-def preprocess_tf():
-    pass
-
-
 def get_preprocessor(framework, **kwargs):
-    if framework in ('inferno', 'pytorch'):
+    if framework in ("inferno", "pytorch"):
         return partial(preprocess_torch, **kwargs)
-    elif framework == 'tensorflow':
-        return partial(preprocess_tf, **kwargs)
+    # bioimageio has preprocessing build in, so we return a no-op here
+    elif framework == "bioimageio":
+        return lambda x: x
     else:
         raise KeyError("Framework %s not supported" % framework)
