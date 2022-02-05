@@ -22,7 +22,7 @@ class SolveLiftedGlobalBase(luigi.Task):
     """ SolveLiftedGlobal base class
     """
 
-    task_name = 'solve_lifted_global'
+    task_name = "solve_lifted_global"
     src_file = os.path.abspath(__file__)
     allow_retry = False
 
@@ -42,8 +42,8 @@ class SolveLiftedGlobalBase(luigi.Task):
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'agglomerator': 'kernighan-lin',
-                       'time_limit_solver': None})
+        config.update({"agglomerator": "kernighan-lin",
+                       "time_limit_solver": None})
         return config
 
     def run_impl(self):
@@ -56,12 +56,12 @@ class SolveLiftedGlobalBase(luigi.Task):
 
         # update the config with input and graph paths and keys
         # as well as block shape
-        config.update({'assignment_path': self.assignment_path, 'assignment_key': self.assignment_key,
-                       'scale': self.scale, 'problem_path': self.problem_path,
-                       'lifted_prefix': self.lifted_prefix})
+        config.update({"assignment_path": self.assignment_path, "assignment_key": self.assignment_key,
+                       "scale": self.scale, "problem_path": self.problem_path,
+                       "lifted_prefix": self.lifted_prefix})
 
         # prime and run the job
-        prefix = 's%i' % self.scale
+        prefix = "s%i" % self.scale
         self.prepare_jobs(1, None, config, prefix)
         self.submit_jobs(1, prefix)
 
@@ -72,7 +72,7 @@ class SolveLiftedGlobalBase(luigi.Task):
     # part of the luigi API
     def output(self):
         return luigi.LocalTarget(os.path.join(self.tmp_folder,
-                                              self.task_name + '_s%i.log' % self.scale))
+                                              self.task_name + "_s%i.log" % self.scale))
 
 
 class SolveLiftedGlobalLocal(SolveLiftedGlobalBase, LocalTask):
@@ -107,46 +107,46 @@ def solve_lifted_global(job_id, config_path):
     with open(config_path) as f:
         config = json.load(f)
     # path to the reduced problem
-    problem_path = config['problem_path']
+    problem_path = config["problem_path"]
     # path where the node labeling shall be written
-    assignment_path = config['assignment_path']
-    assignment_key = config['assignment_key']
+    assignment_path = config["assignment_path"]
+    assignment_key = config["assignment_key"]
 
-    lifted_prefix = config['lifted_prefix']
-    scale = config['scale']
-    agglomerator_key = config['agglomerator']
-    n_threads = config['threads_per_job']
-    time_limit = config.get('time_limit_solver', None)
+    lifted_prefix = config["lifted_prefix"]
+    scale = config["scale"]
+    agglomerator_key = config["agglomerator"]
+    n_threads = config["threads_per_job"]
+    time_limit = config.get("time_limit_solver", None)
 
     fu.log("using agglomerator %s" % agglomerator_key)
     solver = get_lifted_multicut_solver(agglomerator_key)
 
     with vu.file_reader(problem_path) as f:
-        group = f['s%i' % scale]
-        graph_group = group['graph'] if scale == 0 else group['graph_lmc']
-        ignore_label = graph_group.attrs['ignore_label']
+        group = f["s%i" % scale]
+        graph_group = group["graph"] if scale == 0 else group["graph_lmc"]
+        ignore_label = graph_group.attrs["ignore_label"]
 
-        ds = graph_group['edges']
+        ds = graph_group["edges"]
         ds.n_threads = n_threads
         uv_ids = ds[:]
         n_edges = len(uv_ids)
         n_nodes = int(uv_ids.max()) + 1
 
         if scale > 0:
-            ds = group['node_labeling_lmc']
+            ds = group["node_labeling_lmc"]
             ds.n_threads = n_threads
             initial_node_labeling = ds[:]
 
-        ds = group['costs'] if scale == 0 else group['costs_lmc']
+        ds = group["costs"] if scale == 0 else group["costs_lmc"]
         ds.n_threads = n_threads
         costs = ds[:]
-        assert len(costs) == n_edges, "%i, %i" (len(costs), n_edges)
+        assert len(costs) == n_edges, f"{len(costs)}, {n_edges}"
 
-        ds = group['lifted_nh_%s' % lifted_prefix]
+        ds = group["lifted_nh_%s" % lifted_prefix]
         ds.n_threads = n_threads
         lifted_uvs = ds[:]
 
-        ds = group['lifted_costs_%s' % lifted_prefix]
+        ds = group["lifted_costs_%s" % lifted_prefix]
         ds.n_threads = n_threads
         lifted_costs = ds[:]
 
@@ -180,19 +180,19 @@ def solve_lifted_global(job_id, config_path):
     node_shape = (n_nodes,)
     chunks = (min(n_nodes, 524288),)
     with vu.file_reader(assignment_path) as f:
-        ds = f.require_dataset(assignment_key, dtype='uint64',
+        ds = f.require_dataset(assignment_key, dtype="uint64",
                                shape=node_shape,
                                chunks=chunks,
-                               compression='gzip')
+                               compression="gzip")
         ds.n_threads = n_threads
         ds[:] = initial_node_labeling
 
-    fu.log('saving results to %s:%s' % (assignment_path, assignment_key))
+    fu.log("saving results to %s:%s" % (assignment_path, assignment_key))
     fu.log_job_success(job_id)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     path = sys.argv[1]
     assert os.path.exists(path), path
-    job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
+    job_id = int(os.path.split(path)[1].split(".")[0].split("_")[-1])
     solve_lifted_global(job_id, path)

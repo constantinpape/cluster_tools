@@ -27,7 +27,7 @@ class InferenceBase(luigi.Task):
     """ Inference base class
     """
 
-    task_name = 'inference'
+    task_name = "inference"
     src_file = os.path.abspath(__file__)
 
     # input volume, output volume and inference parameter
@@ -37,9 +37,9 @@ class InferenceBase(luigi.Task):
     output_key = luigi.DictParameter()
     checkpoint_path = luigi.Parameter()
     halo = luigi.ListParameter()
-    mask_path = luigi.Parameter(default='')
-    mask_key = luigi.Parameter(default='')
-    framework = luigi.Parameter(default='pytorch')
+    mask_path = luigi.Parameter(default="")
+    mask_key = luigi.Parameter(default="")
+    framework = luigi.Parameter(default="pytorch")
     #
     dependency = luigi.TaskParameter(default=DummyTask())
 
@@ -50,11 +50,11 @@ class InferenceBase(luigi.Task):
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'dtype': 'uint8', 'compression': 'gzip', 'chunks': None,
-                       'device_mapping': None, 'use_best': True, 'tda_config': {},
-                       'prep_model': None, "gpu_type": "2080Ti",
-                       'channel_accumulation': None, 'mixed_precision': False,
-                       'preprocess_kwargs': {}})
+        config.update({"dtype": "uint8", "compression": "gzip", "chunks": None,
+                       "device_mapping": None, "use_best": True, "tda_config": {},
+                       "prep_model": None, "gpu_type": "2080Ti",
+                       "channel_accumulation": None, "mixed_precision": False,
+                       "preprocess_kwargs": {}})
         return config
 
     def clean_up_for_retry(self, block_list):
@@ -62,9 +62,7 @@ class InferenceBase(luigi.Task):
         # TODO remove any output of failed blocks because it might be corrupted
 
     def run_impl(self):
-        # TODO support more frameworks
-        # assert self.framework in ('pytorch', 'tensorflow', 'caffe', 'inferno')
-        assert self.framework in ('pytorch', 'inferno', 'bioimageio')
+        assert self.framework in ("pytorch", "inferno", "bioimageio")
 
         # get the global config and init configs
         (shebang, block_shape,
@@ -74,10 +72,10 @@ class InferenceBase(luigi.Task):
 
         # load the task config
         config = self.get_task_config()
-        dtype = config.pop('dtype', 'uint8')
-        compression = config.pop('compression', 'gzip')
-        chunks = config.pop('chunks', None)
-        assert dtype in ('uint8', 'float32')
+        dtype = config.pop("dtype", "uint8")
+        compression = config.pop("compression", "gzip")
+        chunks = config.pop("chunks", None)
+        assert dtype in ("uint8", "float32")
 
         # get shapes and chunks
         shape = vu.get_shape(self.input_path, self.input_key)
@@ -91,7 +89,7 @@ class InferenceBase(luigi.Task):
         output_keys = list(out_key_dict.keys())
         channel_mapping = list(out_key_dict.values())
 
-        channel_accumulation = config.get('channel_accumulation', None)
+        channel_accumulation = config.get("channel_accumulation", None)
 
         # make output volumes
         with vu.file_reader(self.output_path) as f:
@@ -110,14 +108,14 @@ class InferenceBase(luigi.Task):
                                   chunks=out_chunks, dtype=dtype, compression=compression)
 
         # update the config
-        config.update({'input_path': self.input_path, 'input_key': self.input_key,
-                       'output_path': self.output_path, 'checkpoint_path': self.checkpoint_path,
-                       'block_shape': block_shape, 'halo': self.halo,
-                       'output_keys': output_keys, 'channel_mapping': channel_mapping,
-                       'framework': self.framework})
-        if self.mask_path != '':
-            assert self.mask_key != ''
-            config.update({'mask_path': self.mask_path, 'mask_key': self.mask_key})
+        config.update({"input_path": self.input_path, "input_key": self.input_key,
+                       "output_path": self.output_path, "checkpoint_path": self.checkpoint_path,
+                       "block_shape": block_shape, "halo": self.halo,
+                       "output_keys": output_keys, "channel_mapping": channel_mapping,
+                       "framework": self.framework})
+        if self.mask_path != "":
+            assert self.mask_key != ""
+            config.update({"mask_path": self.mask_path, "mask_key": self.mask_key})
 
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape, roi_begin, roi_end,
@@ -172,7 +170,7 @@ class InferenceLSF(InferenceBase, LSFTask):
 #
 
 
-def _load_input(ds, offset, block_shape, halo, padding_mode='reflect'):
+def _load_input(ds, offset, block_shape, halo, padding_mode="reflect"):
 
     shape = ds.shape
     starts = [off - ha for off, ha in zip(offset, halo)]
@@ -211,7 +209,7 @@ def _to_uint8(data, float_range=(0., 1.), safe_scale=True):
     else:
         mult = np.ceil(255./(float_range[1]-float_range[0]))
     add = 255 - mult*float_range[1]
-    return np.clip((data*mult+add).round(), 0, 255).astype('uint8')
+    return np.clip((data*mult+add).round(), 0, 255).astype("uint8")
 
 
 def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
@@ -235,7 +233,7 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
         # if we have a mask, check if this block is in mask
         if mask is not None:
             bb = vu.block_to_bb(block)
-            bb_mask = mask[bb].astype('bool')
+            bb_mask = mask[bb].astype("bool")
             if np.sum(bb_mask) == 0:
                 return block_id, None
 
@@ -303,7 +301,7 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
                 channel_output = channel_accumulation(channel_output, axis=0)
 
             # cast to uint8 if necessary
-            if dtype == 'uint8':
+            if dtype == "uint8":
                 channel_output = _to_uint8(channel_output)
 
             dso[out_bb] = channel_output
@@ -323,8 +321,8 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
                       write_output, log2)
         results.append(res)
 
-    success = dask.compute(*results, scheduler='threads', num_workers=n_threads)
-    fu.log('Finished prediction for %i blocks' % sum(success))
+    success = dask.compute(*results, scheduler="threads", num_workers=n_threads)
+    fu.log("Finished prediction for %i blocks" % sum(success))
 
 
 def inference(job_id, config_path):
@@ -335,18 +333,18 @@ def inference(job_id, config_path):
     # get the config
     with open(config_path) as f:
         config = json.load(f)
-    input_path = config['input_path']
-    input_key = config['input_key']
-    output_path = config['output_path']
-    checkpoint_path = config['checkpoint_path']
-    block_shape = config['block_shape']
-    block_list = config['block_list']
-    halo = config['halo']
-    framework = config['framework']
-    n_threads = config['threads_per_job']
-    use_best = config.get('use_best', True)
-    mixed_precision = config.get('mixed_precision', False)
-    channel_accumulation = config.get('channel_accumulation', None)
+    input_path = config["input_path"]
+    input_key = config["input_key"]
+    output_path = config["output_path"]
+    checkpoint_path = config["checkpoint_path"]
+    block_shape = config["block_shape"]
+    block_list = config["block_list"]
+    halo = config["halo"]
+    framework = config["framework"]
+    n_threads = config["threads_per_job"]
+    use_best = config.get("use_best", True)
+    mixed_precision = config.get("mixed_precision", False)
+    channel_accumulation = config.get("channel_accumulation", None)
     if channel_accumulation is not None:
         fu.log("Accumulating channels with %s" % channel_accumulation)
         channel_accumulation = getattr(np, channel_accumulation)
@@ -354,17 +352,17 @@ def inference(job_id, config_path):
     fu.log("run inference with framework %s, with %i threads" % (framework, n_threads))
     fu.log("input block size is %s and halo is %s" % (str(block_shape), str(halo)))
 
-    output_keys = config['output_keys']
-    channel_mapping = config['channel_mapping']
+    output_keys = config["output_keys"]
+    channel_mapping = config["channel_mapping"]
 
-    device_mapping = config.get('device_mapping', None)
+    device_mapping = config.get("device_mapping", None)
     if device_mapping is not None:
         device_id = device_mapping[str(job_id)]
-        os.environ['CUDA_VISIBLE_DEVICES'] = str(device_id)
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(device_id)
         fu.log("setting cuda visible devices to %i" % device_id)
     gpu = 0
 
-    tda_config = config.get('tda_config', {})
+    tda_config = config.get("tda_config", {})
     if tda_config:
         fu.log("Using test-time-data-augmentation with config:")
         fu.log(str(tda_config))
@@ -379,7 +377,7 @@ def inference(job_id, config_path):
                                        use_best=use_best, mixed_precision=mixed_precision,
                                        **tda_config)
     fu.log("Have model")
-    preprocess_kwargs = config.get('preprocess_kwargs', {})
+    preprocess_kwargs = config.get("preprocess_kwargs", {})
     preprocess = get_preprocessor(framework, **preprocess_kwargs)
 
     shape = vu.get_shape(input_path, input_key)
@@ -387,13 +385,13 @@ def inference(job_id, config_path):
                            roiEnd=list(shape),
                            blockShape=list(block_shape))
 
-    with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
+    with vu.file_reader(input_path, "r") as f_in, vu.file_reader(output_path, "a") as f_out:
 
         ds_in = f_in[input_key]
         ds_out = [f_out[key] for key in output_keys]
 
-        if 'mask_path' in config:
-            mask_path, mask_key = config['mask_path'], config['mask_key']
+        if "mask_path" in config:
+            mask_path, mask_key = config["mask_path"], config["mask_key"]
             fu.log("Load mask from %s:%s" % (mask_path, mask_key))
             mask = vu.load_mask(mask_path, mask_key, shape)
             fu.log("Have loaded mask")
@@ -405,8 +403,8 @@ def inference(job_id, config_path):
     fu.log_job_success(job_id)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     path = sys.argv[1]
     assert os.path.exists(path), path
-    job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
+    job_id = int(os.path.split(path)[1].split(".")[0].split("_")[-1])
     inference(job_id, path)
