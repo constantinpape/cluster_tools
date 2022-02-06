@@ -5,6 +5,10 @@ import luigi
 import numpy as np
 import cluster_tools.utils.volume_utils as vu
 
+try:
+    from ilastik.experimental.api import from_project_file
+except Exception:
+    from_project_file = None
 
 try:
     from ..base import BaseTest
@@ -13,13 +17,15 @@ except Exception:
     from base import BaseTest
 
 
+@unittest.skipIf(from_project_file is None, "Need ilastik api")
 class TestPixelClassification(BaseTest):
     input_key = "volumes/raw/s0"
     output_key = "ilastik_prediction"
+    mask_key = "volumes/mask"
     # TODO upload an ilastik project and use for proper tests
     pixel_classification_proj = "/home/pape/Work/my_projects/jils-project/ilastik_projects/jil/vol3_2D_pixelclass.ilp"
 
-    def _test_ilastik_prediction(self, out_channels, ilp):
+    def _test_ilastik_prediction(self, out_channels, ilp, mask_path="", mask_key=""):
         from cluster_tools.ilastik import IlastikPredictionWorkflow
         halo = [2, 2, 2]
         task = IlastikPredictionWorkflow(
@@ -27,7 +33,8 @@ class TestPixelClassification(BaseTest):
             target=self.target, max_jobs=self.max_jobs,
             input_path=self.input_path, input_key=self.input_key,
             output_path=self.output_path, output_key=self.output_key,
-            halo=halo, ilastik_project=ilp, out_channels=out_channels
+            halo=halo, ilastik_project=ilp, out_channels=out_channels,
+            mask_path=mask_path, mask_key=mask_key
         )
         ret = luigi.build([task], local_scheduler=True)
         self.assertTrue(ret)
@@ -50,11 +57,19 @@ class TestPixelClassification(BaseTest):
         self.assertEqual(pred.shape, exp_shape)
         self.assertFalse(np.allclose(pred, 0))
 
+        # TODO check if the mask is actually 0 once prediction masking is included in ilastik api
+        if mask_path != "":
+            pass
+
     def test_pixel_classification(self):
         self._test_ilastik_prediction(out_channels=None, ilp=self.pixel_classification_proj)
 
     def test_pixel_classification_out_channels(self):
         self._test_ilastik_prediction(out_channels=[0], ilp=self.pixel_classification_proj)
+
+    def test_pixel_classification_with_mask(self):
+        self._test_ilastik_prediction(out_channels=None, ilp=self.pixel_classification_proj,
+                                      mask_path=self.input_path, mask_key=self.mask_key)
 
 
 if __name__ == "__main__":
