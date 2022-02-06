@@ -18,6 +18,9 @@ class IlastikPredictionWorkflow(WorkflowBase):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
 
+    mask_path = luigi.Parameter(default="")
+    mask_key = luigi.Parameter(default="")
+
     ilastik_project = luigi.Parameter()
     halo = luigi.ListParameter()
     out_channels = luigi.ListParameter(default=None)
@@ -41,6 +44,8 @@ class IlastikPredictionWorkflow(WorkflowBase):
                            input_key=self.input_key,
                            output_path=self.output_path,
                            output_key=self.output_key,
+                           mask_path=self.mask_path,
+                           mask_key=self.mask_key,
                            ilastik_project=self.ilastik_project,
                            halo=self.halo, out_channels=self.out_channels)
         return dep

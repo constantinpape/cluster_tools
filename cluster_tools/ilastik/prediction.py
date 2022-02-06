@@ -39,6 +39,8 @@ class PredictionBase(luigi.Task):
     input_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
+    mask_path = luigi.Parameter(default="")
+    mask_key = luigi.Parameter(default="")
     ilastik_project = luigi.Parameter()
     halo = luigi.ListParameter()
     out_channels = luigi.ListParameter(default=None)
@@ -103,6 +105,9 @@ class PredictionBase(luigi.Task):
                        "output_path": self.output_path, "output_key": self.output_key,
                        "halo": self.halo, "ilastik_project": self.ilastik_project,
                        "out_channels": out_channels, "block_shape": block_shape})
+        if self.mask_path != "":
+            assert self.mask_key != ""
+            config.update({"mask_path": self.mask_path, "mask_key": self.mask_key})
 
         n_jobs = min(len(block_list), self.max_jobs)
         # prime and run the jobs
@@ -144,16 +149,25 @@ def _to_dtype(input_, dtype):
         raise NotImplementedError(dtype)
 
 
-def _predict_block(block_id, blocking, ilp, ds_in, ds_out, halo, out_channels):
+def _predict_block(block_id, blocking, ilp, ds_in, ds_out, ds_mask, halo, out_channels):
     fu.log("Start processing block %i" % block_id)
     block = blocking.getBlockWithHalo(block_id, halo)
-
     bb = vu.block_to_bb(block.outerBlock)
+
+    # check if there is any data to be processed, if we have a mask
+    if ds_mask is not None:
+        bb_mask = ds_mask[bb].astype("bool")
+        if np.sum(bb_mask) == 0:
+            fu.log_block_success(block_id)
+            return
+
     dims = ("z", "y", "x")
     if ds_in.ndim == 4:
         bb = (slice(None),) + bb
         dims = ("c",) + dims
     input_ = ds_in[bb]
+    # if we have a mask should set it as prediction mask in ilastik
+    # (currently not supported by ilastik)
     pred = ilp.predict(DataArray(input_, dims=dims)).values
 
     inner_bb = vu.block_to_bb(block.innerBlockLocal)
@@ -206,8 +220,17 @@ def prediction(job_id, config_path):
     with vu.file_reader(input_path, "r") as f_in, vu.file_reader(output_path, "a") as f_out:
         ds_in = f_in[input_key]
         ds_out = f_out[output_key]
+
+        if "mask_path" in config:
+            mask_path, mask_key = config["mask_path"], config["mask_key"]
+            fu.log("Load mask from %s:%s" % (mask_path, mask_key))
+            mask = vu.load_mask(mask_path, mask_key, shape)
+            fu.log("Have loaded mask")
+        else:
+            mask = None
+
         for block_id in block_list:
-            _predict_block(block_id, blocking, ilp, ds_in, ds_out, halo, out_channels)
+            _predict_block(block_id, blocking, ilp, ds_in, ds_out, mask, halo, out_channels)
 
     fu.log_job_success(job_id)
 
