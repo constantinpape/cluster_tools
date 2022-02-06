@@ -55,6 +55,18 @@ then
     exit 1
 fi
 
+python test/ilastik/test_pixel_classification.py
+if [[ $? != 0 ]]
+then
+    exit 1
+fi
+
+python test/inference/test_inference.py
+if [[ $? != 0 ]]
+then
+    exit 1
+fi
+
 python test/label_multisets/test_label_multisets.py
 if [[ $? != 0 ]]
 then
