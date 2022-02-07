@@ -8,8 +8,9 @@ import cluster_tools.utils.volume_utils as vu
 
 try:
     import bioimageio.core
+    have_bioimageio = True
 except ImportError:
-    bioimageio.core = None
+    have_bioimageio = False
 
 try:
     from ..base import BaseTest
@@ -57,7 +58,7 @@ class TestInference(BaseTest):
         self.assertEqual(pred.shape, exp_shape)
         self.assertFalse(np.allclose(pred, 0))
 
-    @unittest.skipIf(bioimageio.core is None, "Need bioimageio.core")
+    @unittest.skipUnless(have_bioimageio is None, "Need bioimageio.core")
     def test_bioimageio(self):
         self._test_inference(self.model_doi, "bioimageio")
 

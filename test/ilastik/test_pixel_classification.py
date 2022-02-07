@@ -22,8 +22,7 @@ class TestPixelClassification(BaseTest):
     input_key = "volumes/raw/s0"
     output_key = "ilastik_prediction"
     mask_key = "volumes/mask"
-    # TODO upload an ilastik project and use for proper tests
-    pixel_classification_proj = "/home/pape/Work/my_projects/jils-project/ilastik_projects/jil/vol3_2D_pixelclass.ilp"
+    pixel_classification_proj = os.path.join(os.path.split(__file__)[0], "../../test_data/cremi-test-project.ilp")
 
     def _test_ilastik_prediction(self, out_channels, ilp, mask_path="", mask_key=""):
         from cluster_tools.ilastik import IlastikPredictionWorkflow
