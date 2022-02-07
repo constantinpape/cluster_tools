@@ -149,6 +149,24 @@ def _to_dtype(input_, dtype):
         raise NotImplementedError(dtype)
 
 
+def _pad_if_necessary(data, shape):
+    if data.shape == shape:
+        return data, None
+    pad_width = []
+    crop = []
+    for dsh, sh in zip(data.shape, shape):
+        if dsh == sh:
+            pad_width.append((0, 0))
+            crop.append(slice(None))
+        else:
+            assert sh > dsh
+            pad_width.append((0, sh - dsh))
+            crop.append(slice(0, dsh))
+    data = np.pad(data, pad_width)
+    assert data.shape == shape
+    return data, tuple(crop)
+
+
 def _predict_block(block_id, blocking, ilp, ds_in, ds_out, ds_mask, halo, out_channels):
     fu.log("Start processing block %i" % block_id)
     block = blocking.getBlockWithHalo(block_id, halo)
@@ -166,9 +184,16 @@ def _predict_block(block_id, blocking, ilp, ds_in, ds_out, ds_mask, halo, out_ch
         bb = (slice(None),) + bb
         dims = ("c",) + dims
     input_ = ds_in[bb]
+
+    # we need to pad to the full size for border chunks, because otherwise some filters may not be valid
+    full_block_shape = tuple(sh + 2*ha for sh, ha in zip(blocking.blockShape, halo))
+    input_, crop = _pad_if_necessary(input_, full_block_shape)
+
     # if we have a mask should set it as prediction mask in ilastik
     # (currently not supported by ilastik)
     pred = ilp.predict(DataArray(input_, dims=dims)).values
+    if crop is not None:
+        pred = pred[crop]
 
     inner_bb = vu.block_to_bb(block.innerBlockLocal)
     inner_bb = inner_bb + (tuple(out_channels),)
