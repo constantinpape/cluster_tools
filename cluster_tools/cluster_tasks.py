@@ -201,7 +201,8 @@ class BaseClusterTask(luigi.Task):
         """
         # time-limit in minutes
         # mem_limit in GB
-        return {"threads_per_job": 1, "time_limit": 60, "mem_limit": 1., "qos": "normal", "slurm_requirements": []}
+        return {"threads_per_job": 1, "time_limit": 60, "mem_limit": 1., "qos": "normal",
+                "slurm_requirements": [], "slurm_extras": []}
 
     def get_global_config(self):
         """ Get the global configuration
@@ -410,8 +411,8 @@ class SlurmTask(BaseClusterTask):
 
     def _write_slurm_file(self, job_prefix=None):
         global_config = self.get_global_config()
-        groupname = global_config.get('groupname', None)
-        partition = global_config.get('partition', None)
+        groupname = global_config.get("groupname", None)
+        partition = global_config.get("partition", None)
         easybuild = global_config.get("easybuild", True)
 
         # read and parse the relevant task config
@@ -426,11 +427,12 @@ class SlurmTask(BaseClusterTask):
 
         # additional job requirements
         requirements = task_config.get("slurm_requirements", [])
+        extras = task_config.get("slurm_extras", [])
 
         # get file paths
-        trgt_file = os.path.join(self.tmp_folder, self.task_name + '.py')
-        config_tmpl = self._config_path('$1', job_prefix)
-        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name,
+        trgt_file = os.path.join(self.tmp_folder, self.task_name + ".py")
+        config_tmpl = self._config_path("$1", job_prefix)
+        job_name = self.task_name if job_prefix is None else "%s_%s" % (self.task_name,
                                                                         job_prefix)
         slurm_template = ("#!/bin/bash\n"
                           "#SBATCH -N 1\n"
@@ -446,6 +448,8 @@ class SlurmTask(BaseClusterTask):
             slurm_template += "#SBATCH -p %s\n" % partition
         for req in requirements:
             slurm_template += "#SBATCH -C %s\n" % req
+        for extra in extras:
+            slurm_template += f"{extra}\n"
 
         # slurm directives are done
         slurm_template += "\n"
@@ -455,8 +459,8 @@ class SlurmTask(BaseClusterTask):
             slurm_template += "module load GCC\n"
         slurm_template += ("%s %s") % (trgt_file, config_tmpl)
 
-        script_path = os.path.join(self.tmp_folder, 'slurm_%s.sh' % job_name)
-        with open(script_path, 'w') as f:
+        script_path = os.path.join(self.tmp_folder, "slurm_%s.sh" % job_name)
+        with open(script_path, "w") as f:
             f.write(slurm_template)
 
     def prepare_jobs(self, n_jobs, block_list, config,
@@ -467,16 +471,16 @@ class SlurmTask(BaseClusterTask):
         self._write_slurm_file(job_prefix)
 
     def submit_jobs(self, n_jobs, job_prefix=None):
-        job_name = self.task_name if job_prefix is None else '%s_%s' % (self.task_name,
+        job_name = self.task_name if job_prefix is None else "%s_%s" % (self.task_name,
                                                                         job_prefix)
-        script_path = os.path.join(self.tmp_folder, 'slurm_%s.sh' % job_name)
+        script_path = os.path.join(self.tmp_folder, "slurm_%s.sh" % job_name)
         self.slurm_ids = []
         for job_id in range(n_jobs):
-            out_file = os.path.join(self.tmp_folder, 'logs', '%s_%i.log' % (job_name, job_id))
-            err_file = os.path.join(self.tmp_folder, 'error_logs', '%s_%i.err' % (job_name,
+            out_file = os.path.join(self.tmp_folder, "logs", "%s_%i.log" % (job_name, job_id))
+            err_file = os.path.join(self.tmp_folder, "error_logs", "%s_%i.err" % (job_name,
                                                                                   job_id))
-            command = ['sbatch', '-o', out_file, '-e', err_file, '-J',
-                       '%s_%i' % (job_name, job_id), script_path, str(job_id)]
+            command = ["sbatch", "-o", out_file, "-e", err_file, "-J",
+                       "%s_%i" % (job_name, job_id), script_path, str(job_id)]
             # call(command)
             outp = check_output(command).decode().rstrip()
             # get the slurm job-id
@@ -493,16 +497,16 @@ class SlurmTask(BaseClusterTask):
             time.sleep(wait_time)
 
             try:
-                outp = check_output(['squeue -u $USER | grep $USER'], shell=True).decode()
+                outp = check_output(["squeue -u $USER | grep $USER"], shell=True).decode()
             except CalledProcessError as e:
                 # handle error for empty queue
                 outp = e.output.decode().rstrip()
-                if outp == '':
+                if outp == "":
                     break
                 else:
                     raise e
 
-            outp = [out for out in outp.split('\n') if out != '']
+            outp = [out for out in outp.split("\n") if out != ""]
             # check how many jobs there are in total, if none, stop waiting
             n_running = len(outp)
             if n_running == 0:
