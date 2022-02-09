@@ -12,13 +12,13 @@ class RelabelWorkflow(WorkflowBase):
     input_key = luigi.Parameter()
     assignment_path = luigi.Parameter()
     assignment_key = luigi.Parameter()
-    output_path = luigi.Parameter(default='')
-    output_key = luigi.Parameter(default='')
+    output_path = luigi.Parameter(default="")
+    output_key = luigi.Parameter(default="")
     prefix = luigi.Parameter(default=None)
 
     def requires(self):
         unique_task = getattr(unique_tasks,
-                              self._get_task_name('FindUniques'))
+                              self._get_task_name("FindUniques"))
         dep = unique_task(tmp_folder=self.tmp_folder,
                           max_jobs=self.max_jobs,
                           config_dir=self.config_dir,
@@ -31,8 +31,7 @@ class RelabelWorkflow(WorkflowBase):
         # because it is only used internally for this task
         # but it could also be exposed if this is useful
         # at some point
-        labeling_task = getattr(labeling_tasks,
-                                self._get_task_name('FindLabeling'))
+        labeling_task = getattr(labeling_tasks, self._get_task_name("FindLabeling"))
         dep = labeling_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                             config_dir=self.config_dir, dependency=dep,
                             input_path=self.input_path, input_key=self.input_key,
@@ -41,17 +40,16 @@ class RelabelWorkflow(WorkflowBase):
                             prefix=self.prefix)
 
         # check if we relabel in-place (default) or to a new output file
-        if self.output_path == '':
+        if self.output_path == "":
             out_path = self.input_path
             out_key = self.input_key
         else:
-            assert self.output_key != ''
+            assert self.output_key != ""
             out_path = self.output_path
             out_key = self.output_key
 
-        write_task = getattr(write_tasks,
-                             self._get_task_name('Write'))
-        write_id = 'relabel' if self.prefix is None else f'relabel_{self.prefix}'
+        write_task = getattr(write_tasks, self._get_task_name("Write"))
+        write_id = "relabel" if self.prefix is None else f"relabel_{self.prefix}"
         dep = write_task(tmp_folder=self.tmp_folder,
                          max_jobs=self.max_jobs,
                          config_dir=self.config_dir,
@@ -68,11 +66,11 @@ class RelabelWorkflow(WorkflowBase):
     @staticmethod
     def get_config():
         configs = super(RelabelWorkflow, RelabelWorkflow).get_config()
-        configs.update({'find_uniques':
+        configs.update({"find_uniques":
                         unique_tasks.FindUniquesLocal.default_task_config(),
-                        'find_labeling':
+                        "find_labeling":
                         labeling_tasks.FindLabelingLocal.default_task_config(),
-                        'write':
+                        "write":
                         write_tasks.WriteLocal.default_task_config()})
         return configs
 
@@ -85,7 +83,7 @@ class UniqueWorkflow(WorkflowBase):
 
     def requires(self):
         unique_task = getattr(unique_tasks,
-                              self._get_task_name('FindUniques'))
+                              self._get_task_name("FindUniques"))
         dep = unique_task(tmp_folder=self.tmp_folder,
                           max_jobs=self.max_jobs,
                           config_dir=self.config_dir,
@@ -94,7 +92,7 @@ class UniqueWorkflow(WorkflowBase):
                           dependency=self.dependency)
 
         merge_task = getattr(merge_tasks,
-                             self._get_task_name('MergeUniques'))
+                             self._get_task_name("MergeUniques"))
         dep = merge_task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                          config_dir=self.config_dir, dependency=dep,
                          input_path=self.input_path, input_key=self.input_key,
@@ -104,8 +102,8 @@ class UniqueWorkflow(WorkflowBase):
     @staticmethod
     def get_config():
         configs = super(UniqueWorkflow, UniqueWorkflow).get_config()
-        configs.update({'find_uniques':
+        configs.update({"find_uniques":
                         unique_tasks.FindUniquesLocal.default_task_config(),
-                        'merge_uniques':
+                        "merge_uniques":
                         merge_tasks.MergeUniquesLocal.default_task_config()})
         return configs

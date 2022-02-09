@@ -30,7 +30,7 @@ class WriteBase(luigi.Task):
     """
     Write node assignments for all blocks
     """
-    task_name = 'write'
+    task_name = "write"
     src_file = os.path.abspath(__file__)
 
     # path and key to input and output datasets
@@ -49,7 +49,7 @@ class WriteBase(luigi.Task):
     # we may have different write tasks,
     # so we need an identifier to keep them apart
     identifier = luigi.Parameter()
-    offset_path = luigi.Parameter(default='')
+    offset_path = luigi.Parameter(default="")
 
     def requires(self):
         return self.dependency
@@ -58,7 +58,7 @@ class WriteBase(luigi.Task):
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'chunks': None, 'allow_empty_assignments': False})
+        config.update({"chunks": None, "allow_empty_assignments": False})
         return config
 
     def clean_up_for_retry(self, block_list, prefix):
@@ -77,7 +77,7 @@ class WriteBase(luigi.Task):
             shape = ds.shape
 
         config = self.get_task_config()
-        chunks = config.pop('chunks', None)
+        chunks = config.pop("chunks", None)
         if chunks is None:
             chunks = tuple(min(bs // 2 if bs % 2 == 0 else bs, sh) for bs, sh in zip(block_shape, shape))
 
@@ -88,24 +88,24 @@ class WriteBase(luigi.Task):
             assert all(bs % ch == 0 for bs, ch in zip(block_shape, chunks)), "%s, %s" % (str(block_shape),
                                                                                          str(chunks))
             f.require_dataset(self.output_key, shape=shape, chunks=chunks,
-                              compression='gzip', dtype='uint64')
+                              compression="gzip", dtype="uint64")
 
         # check if input and output datasets are identical
         in_place = (self.input_path == self.output_path) and (self.input_key == self.output_key)
 
         if self.assignment_key is None:
-            assert os.path.splitext(self.assignment_path)[-1] == '.pkl',\
+            assert os.path.splitext(self.assignment_path)[-1] == ".pkl",\
                 "Assignments need to be pickled map if no key is given"
 
         # update the config with input and output paths and keys
         # as well as block shape
-        config.update({'input_path': self.input_path, 'input_key': self.input_key, 'block_shape': block_shape,
-                       'assignment_path': self.assignment_path, 'assignment_key': self.assignment_key})
-        if self.offset_path != '':
-            config.update({'offset_path': self.offset_path})
+        config.update({"input_path": self.input_path, "input_key": self.input_key, "block_shape": block_shape,
+                       "assignment_path": self.assignment_path, "assignment_key": self.assignment_key})
+        if self.offset_path != "":
+            config.update({"offset_path": self.offset_path})
         # we only add output path and key if we do not write in place
         if not in_place:
-            config.update({'output_path': self.output_path, 'output_key': self.output_key})
+            config.update({"output_path": self.output_path, "output_key": self.output_key})
 
         # get block list and jobs
         if self.n_retries == 0:
@@ -114,7 +114,7 @@ class WriteBase(luigi.Task):
         else:
             block_list = self.block_list
             self.clean_up_for_retry(block_list, self.identifier)
-        self._write_log('scheduling %i blocks to be processed' % len(block_list))
+        self._write_log("scheduling %i blocks to be processed" % len(block_list))
 
         n_jobs = min(len(block_list), self.max_jobs)
 
@@ -127,8 +127,7 @@ class WriteBase(luigi.Task):
         self.check_jobs(n_jobs, self.identifier)
 
     def output(self):
-        return luigi.LocalTarget(os.path.join(self.tmp_folder, '%s_%s.log' % (self.task_name,
-                                                                              self.identifier)))
+        return luigi.LocalTarget(os.path.join(self.tmp_folder, f"{self.task_name}_{self.identifier}.log"))
 
 
 class WriteLocal(WriteBase, LocalTask):
@@ -190,7 +189,7 @@ def _write_block_with_offsets(ds_in, ds_out, blocking, block_id,
     bb = vu.block_to_bb(block)
     seg = ds_in[bb]
 
-    # check if this block is empty and don't write if it is
+    # check if this block is empty and don"t write if it is
     mask = seg != 0
     if np.sum(mask) == 0:
         fu.log_block_success(block_id)
@@ -209,8 +208,8 @@ def _write_with_offsets(ds_in, ds_out, blocking, block_list,
     fu.log("loading offsets from %s" % offset_path)
     with open(offset_path) as f:
         offset_config = json.load(f)
-        offsets = offset_config['offsets']
-        empty_blocks = offset_config['empty_blocks']
+        offsets = offset_config["offsets"]
+        empty_blocks = offset_config["empty_blocks"]
 
     with futures.ThreadPoolExecutor(n_threads) as tp:
         tasks = [tp.submit(_write_block_with_offsets, ds_in, ds_out,
@@ -226,7 +225,7 @@ def _write_block(ds_in, ds_out, blocking, block_id, node_labels,
     block = blocking.getBlock(block_id)
     bb = vu.block_to_bb(block)
     seg = ds_in[bb]
-    # check if this block is empty and don't write if it is
+    # check if this block is empty and don"t write if it is
     if np.sum(seg != 0) == 0:
         fu.log_block_success(block_id)
         return
@@ -249,12 +248,12 @@ def _write(ds_in, ds_out, blocking, block_list,
 def _load_assignments(path, key, n_threads):
     # if we have no key, this is a pickle file
     if key is None:
-        assert os.path.split(path)[1].split('.')[-1] == 'pkl'
-        with open(path, 'rb') as f:
+        assert os.path.split(path)[1].split(".")[-1] == "pkl"
+        with open(path, "rb") as f:
             node_labels = pickle.load(f)
         assert isinstance(node_labels, dict)
     else:
-        with vu.file_reader(path, 'r') as f:
+        with vu.file_reader(path, "r") as f:
             ds = f[key]
             assert ds.ndim in (1, 2)
             ds.n_threads = n_threads
@@ -263,7 +262,7 @@ def _load_assignments(path, key, n_threads):
             # this can happen if we only have a single label.
             # for some reason z5 returns this as int, not as array
             if isinstance(node_labels, int):
-                node_labels = np.array([node_labels], dtype='uint64')
+                node_labels = np.array([node_labels], dtype="uint64")
 
             # if we have 2d node_labels, these correspond to an assignment table
             # and we turn them into a dict for efficient downstream processing
@@ -286,45 +285,45 @@ def _write_maxlabel(output_path, output_key, node_labels):
     else:
         raise AttributeError("Invalide type %s" % type(node_labels))
     with vu.file_reader(output_path) as f:
-        f[output_key].attrs['maxId'] = max_id
+        f[output_key].attrs["maxId"] = max_id
 
 
 def write(job_id, config_path):
     fu.log("start processing job %i" % job_id)
     fu.log("loading config from %s" % config_path)
-    with open(config_path, 'r') as f:
+    with open(config_path, "r") as f:
         config = json.load(f)
 
     # read I/O config
-    input_path = config['input_path']
-    input_key = config['input_key']
+    input_path = config["input_path"]
+    input_key = config["input_key"]
 
     # check if we write in-place
-    if 'output_path' in config:
-        output_path = config['output_path']
-        output_key = config['output_key']
+    if "output_path" in config:
+        output_path = config["output_path"]
+        output_key = config["output_key"]
         in_place = False
     else:
         in_place = True
 
-    block_shape = config['block_shape']
-    block_list = config['block_list']
-    n_threads = config.get('threads_per_job', 1)
-    allow_empty_assignments = config.get('allow_empty_assignments', False)
+    block_shape = config["block_shape"]
+    block_list = config["block_list"]
+    n_threads = config.get("threads_per_job", 1)
+    allow_empty_assignments = config.get("allow_empty_assignments", False)
 
     # read node assignments
-    assignment_path = config['assignment_path']
-    assignment_key = config.get('assignment_key', None)
+    assignment_path = config["assignment_path"]
+    assignment_key = config.get("assignment_key", None)
     fu.log("loading node labels from %s" % assignment_path)
     node_labels = _load_assignments(assignment_path, assignment_key, n_threads)
 
-    offset_path = config.get('offset_path', None)
+    offset_path = config.get("offset_path", None)
 
     # if we write in-place, we only need to open one file and one dataset
     if in_place:
         with vu.file_reader(input_path) as f:
             ds_in = f[input_key]
-            if ds_in.attrs.get('isLabelMultiset', False):
+            if ds_in.attrs.get("isLabelMultiset", False):
                 raise RuntimeError("Cannot write inplace for label multiset")
             ds_out = ds_in
 
@@ -348,7 +347,7 @@ def write(job_id, config_path):
         if input_path == output_path:
             with vu.file_reader(input_path) as f:
                 ds_in = f[input_key]
-                if ds_in.attrs.get('isLabelMultiset', False):
+                if ds_in.attrs.get("isLabelMultiset", False):
                     ds_in = LabelMultisetWrapper(ds_in)
                 ds_out = f[output_key]
 
@@ -363,9 +362,9 @@ def write(job_id, config_path):
                                         n_threads, node_labels, offset_path,
                                         allow_empty_assignments)
         else:
-            with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
+            with vu.file_reader(input_path, "r") as f_in, vu.file_reader(output_path) as f_out:
                 ds_in = f_in[input_key]
-                if ds_in.attrs.get('isLabelMultiset', False):
+                if ds_in.attrs.get("isLabelMultiset", False):
                     ds_in = LabelMultisetWrapper(ds_in)
                 ds_out = f_out[output_key]
 
@@ -387,8 +386,8 @@ def write(job_id, config_path):
     fu.log_job_success(job_id)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     path = sys.argv[1]
     assert os.path.exists(path), path
-    job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
+    job_id = int(os.path.split(path)[1].split(".")[0].split("_")[-1])
     write(job_id, path)

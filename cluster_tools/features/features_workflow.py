@@ -19,13 +19,13 @@ class EdgeFeaturesWorkflow(WorkflowBase):
     graph_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
-    max_jobs_merge = luigi.IntParameter(default=1)
+    max_jobs_merge = luigi.IntParameter(default=None)
 
     # for now we only support n5 / zarr input labels
     @staticmethod
     def _check_input(path):
-        ending = path.split('.')[-1]
-        assert ending.lower() in ('zr', 'zarr', 'n5'),\
+        ending = path.split(".")[-1]
+        assert ending.lower() in ("zr", "zarr", "n5"),\
             "Only support n5 and zarr files, not %s" % ending
 
     def requires(self):
@@ -33,7 +33,7 @@ class EdgeFeaturesWorkflow(WorkflowBase):
         self._check_input(self.labels_path)
 
         feat_task = getattr(feat_tasks,
-                            self._get_task_name('BlockEdgeFeatures'))
+                            self._get_task_name("BlockEdgeFeatures"))
         dep = feat_task(tmp_folder=self.tmp_folder,
                         max_jobs=self.max_jobs,
                         config_dir=self.config_dir,
@@ -45,9 +45,10 @@ class EdgeFeaturesWorkflow(WorkflowBase):
                         output_path=self.output_path,
                         dependency=self.dependency)
         merge_task = getattr(merge_tasks,
-                             self._get_task_name('MergeEdgeFeatures'))
+                             self._get_task_name("MergeEdgeFeatures"))
+        max_jobs_merge = self.max_jobs if self.max_jobs_merge is None else self.max_jobs_merge
         dep = merge_task(tmp_folder=self.tmp_folder,
-                         max_jobs=self.max_jobs_merge,
+                         max_jobs=max_jobs_merge,
                          config_dir=self.config_dir,
                          graph_path=self.graph_path,
                          graph_key=self.graph_key,
@@ -59,8 +60,8 @@ class EdgeFeaturesWorkflow(WorkflowBase):
     @staticmethod
     def get_config():
         configs = super(EdgeFeaturesWorkflow, EdgeFeaturesWorkflow).get_config()
-        configs.update({'block_edge_features': feat_tasks.BlockEdgeFeaturesLocal.default_task_config(),
-                        'merge_edge_features': merge_tasks.MergeEdgeFeaturesLocal.default_task_config()})
+        configs.update({"block_edge_features": feat_tasks.BlockEdgeFeaturesLocal.default_task_config(),
+                        "merge_edge_features": merge_tasks.MergeEdgeFeaturesLocal.default_task_config()})
         return configs
 
 
@@ -71,20 +72,20 @@ class RegionFeaturesWorkflow(WorkflowBase):
     labels_key = luigi.Parameter()
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
-    prefix = luigi.Parameter(default='')
+    prefix = luigi.Parameter(default="")
     # it may be advisable to use less jobs for merging the features
     # because this is very I/O bound
     max_jobs_merge = luigi.IntParameter(default=None)
     channel = luigi.IntParameter(default=None)
 
     def read_number_of_labels(self):
-        with vu.file_reader(self.labels_path, 'r') as f:
-            n_labels = f[self.labels_key].attrs['maxId'] + 1
+        with vu.file_reader(self.labels_path, "r") as f:
+            n_labels = f[self.labels_key].attrs["maxId"] + 1
         return int(n_labels)
 
     def requires(self):
         feat_task = getattr(reg_tasks,
-                            self._get_task_name('RegionFeatures'))
+                            self._get_task_name("RegionFeatures"))
         dep = feat_task(tmp_folder=self.tmp_folder,
                         max_jobs=self.max_jobs,
                         config_dir=self.config_dir,
@@ -96,7 +97,7 @@ class RegionFeaturesWorkflow(WorkflowBase):
                         dependency=self.dependency,
                         prefix=self.prefix)
         merge_task = getattr(merge_reg_tasks,
-                             self._get_task_name('MergeRegionFeatures'))
+                             self._get_task_name("MergeRegionFeatures"))
         n_labels = self.read_number_of_labels()
         max_jobs_merge = self.max_jobs if self.max_jobs_merge is None else self.max_jobs_merge
         dep = merge_task(tmp_folder=self.tmp_folder,
@@ -112,6 +113,6 @@ class RegionFeaturesWorkflow(WorkflowBase):
     @staticmethod
     def get_config():
         configs = super(RegionFeaturesWorkflow, RegionFeaturesWorkflow).get_config()
-        configs.update({'region_features': reg_tasks.RegionFeaturesLocal.default_task_config(),
-                        'merge_region_features': merge_reg_tasks.MergeRegionFeaturesLocal.default_task_config()})
+        configs.update({"region_features": reg_tasks.RegionFeaturesLocal.default_task_config(),
+                        "merge_region_features": merge_reg_tasks.MergeRegionFeaturesLocal.default_task_config()})
         return configs

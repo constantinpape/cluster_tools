@@ -36,7 +36,7 @@ class ProblemWorkflow(WorkflowBase):
     rf_path = luigi.Parameter(default='')
     node_label_dict = luigi.DictParameter(default={})
 
-    max_jobs_merge = luigi.IntParameter(default=1)
+    max_jobs_merge = luigi.IntParameter(default=None)
     # do we compte costs
     compute_costs = luigi.BoolParameter(default=True)
     # do we run sanity checks ?
@@ -70,6 +70,7 @@ class ProblemWorkflow(WorkflowBase):
                                          graph_path=self.problem_path,
                                          subgraph_key=subgraph_key,
                                          dependency=dep)
+        max_jobs_merge = self.max_jobs if self.max_jobs_merge is None else self.max_jobs_merge
         dep = EdgeFeaturesWorkflow(tmp_folder=self.tmp_folder,
                                    max_jobs=self.max_jobs,
                                    config_dir=self.config_dir,
@@ -83,7 +84,7 @@ class ProblemWorkflow(WorkflowBase):
                                    graph_key=self.graph_key,
                                    output_path=self.problem_path,
                                    output_key=self.features_key,
-                                   max_jobs_merge=self.max_jobs_merge)
+                                   max_jobs_merge=max_jobs_merge)
         if self.compute_costs:
             dep = EdgeCostsWorkflow(tmp_folder=self.tmp_folder,
                                     max_jobs=self.max_jobs,
@@ -130,7 +131,7 @@ class SegmentationWorkflowBase(WorkflowBase):
     node_label_dict = luigi.DictParameter(default={})
 
     # number of jobs used for merge tasks
-    max_jobs_merge = luigi.IntParameter(default=1)
+    max_jobs_merge = luigi.IntParameter(default=None)
     # skip watershed (watershed volume must already be preset)
     skip_ws = luigi.BoolParameter(default=False)
     # run agglomeration immediately after watersheds
