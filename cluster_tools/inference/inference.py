@@ -52,7 +52,7 @@ class InferenceBase(luigi.Task):
         config = LocalTask.default_task_config()
         config.update({"dtype": "uint8", "compression": "gzip", "chunks": None,
                        "device_mapping": None, "use_best": True, "tda_config": {},
-                       "prep_model": None, "gpu_type": "2080Ti",
+                       "prep_model": None, "gpu_type": "gpu=2080Ti",
                        "channel_accumulation": None, "mixed_precision": False,
                        "preprocess_kwargs": {}})
         return config
@@ -148,7 +148,7 @@ class InferenceSlurm(InferenceBase, SlurmTask):
     def default_task_config():
         conf = InferenceBase.default_task_config()
         slurm_requirements = conf.get("slurm_requirements", [])
-        slurm_requirements.append(conf.get("gpu_type", "2080Ti"))
+        slurm_requirements.append(conf.get("gpu_type", "gpu=2080Ti"))
         conf.update({"slurm_requirements": slurm_requirements})
         return conf
 
@@ -321,6 +321,7 @@ def _run_inference(blocking, block_list, halo, ds_in, ds_out, mask,
                       write_output, log2)
         results.append(res)
 
+    fu.log(f"Starting inference with {n_threads} threads")
     success = dask.compute(*results, scheduler="threads", num_workers=n_threads)
     fu.log("Finished prediction for %i blocks" % sum(success))
 

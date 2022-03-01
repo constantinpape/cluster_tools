@@ -2,14 +2,12 @@ import os
 import luigi
 import uuid
 
-import cluster_tools.utils.volume_utils as vu
 from ..graph import GraphWorkflow
 from ..cluster_tasks import WorkflowBase
 from ..features import EdgeFeaturesWorkflow
 from .. import copy_volume as copy_tasks
 
-from . import prediction as predict_tasks
-from . import merge_predictions as merge_tasks
+from . import prediction as prediction_tasks
 from .carving import WriteCarving
 
 
@@ -20,53 +18,44 @@ class IlastikPredictionWorkflow(WorkflowBase):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
 
-    ilastik_folder = luigi.Parameter()
+    mask_path = luigi.Parameter(default="")
+    mask_key = luigi.Parameter(default="")
+
     ilastik_project = luigi.Parameter()
     halo = luigi.ListParameter()
-    n_channels = luigi.IntParameter()
+    out_channels = luigi.ListParameter(default=None)
+
+    # TODO if we had everything on conda-forge this wasn't necessary
+    @staticmethod
+    def have_ilastik_api():
+        try:
+            from ilastik.experimental.api import from_project_file
+        except Exception:
+            from_project_file = None
+        return from_project_file is not None
 
     def requires(self):
-        is_h5 = vu.is_h5(self.output_path)
-        out_key = None if is_h5 else self.output_key
-        predict_task = getattr(predict_tasks,
-                               self._get_task_name('Prediction'))
+        assert self.have_ilastik_api(), "Need ilastik api"
+        predict_task = getattr(prediction_tasks, self._get_task_name("Prediction"))
         dep = predict_task(tmp_folder=self.tmp_folder,
                            max_jobs=self.max_jobs,
                            config_dir=self.config_dir,
                            input_path=self.input_path,
                            input_key=self.input_key,
                            output_path=self.output_path,
-                           output_key=out_key,
-                           ilastik_folder=self.ilastik_folder,
+                           output_key=self.output_key,
+                           mask_path=self.mask_path,
+                           mask_key=self.mask_key,
                            ilastik_project=self.ilastik_project,
-                           halo=self.halo, n_channels=self.n_channels)
-        # we only need to merge the predictions seperately if the
-        # output file is hdf5
-        if is_h5:
-            output_prefix = os.path.splitext(self.output_path)[0]
-            merge_task = getattr(merge_tasks,
-                                 self._get_task_name('MergePredictions'))
-            dep = merge_task(tmp_folder=self.tmp_folder,
-                             max_jobs=self.max_jobs,
-                             config_dir=self.config_dir,
-                             dependency=dep,
-                             input_path=self.input_path,
-                             input_key=self.input_key,
-                             tmp_prefix=output_prefix,
-                             output_path=self.output_path,
-                             output_key=self.output_key,
-                             halo=self.halo,
-                             n_channels=self.n_channels)
-
+                           halo=self.halo, out_channels=self.out_channels)
         return dep
 
     @staticmethod
     def get_config():
         configs = super(IlastikPredictionWorkflow, IlastikPredictionWorkflow).get_config()
-        configs.update({'prediction':
-                        predict_tasks.PredictionLocal.default_task_config(),
-                        'merge_predictions':
-                        merge_tasks.MergePredictionsLocal.default_task_config()})
+        configs.update({
+            "prediction": prediction_tasks.PredictionLocal.default_task_config()
+        })
         return configs
 
 
@@ -81,9 +70,9 @@ class IlastikCarvingWorkflow(WorkflowBase):
     copy_inputs = luigi.BoolParameter(default=False)
 
     def requires(self):
-        tmp_path = os.path.join(self.tmp_folder, 'exp_data.n5')
-        graph_key = 'graph'
-        feat_key = 'feats'
+        tmp_path = os.path.join(self.tmp_folder, "exp_data.n5")
+        graph_key = "graph"
+        feat_key = "feats"
         # TODO make param ?
         max_jobs_merge = 1
         dep = GraphWorkflow(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
@@ -108,29 +97,29 @@ class IlastikCarvingWorkflow(WorkflowBase):
                            dependency=dep)
         # TODO
         # we need to transpose the data before copying
-        # that's why return here for now, to do the transposing outside of
+        # that"s why return here for now, to do the transposing outside of
         # cluster_tools, but should implement it here as well
         return dep
 
-        copy_task = getattr(copy_tasks, self._get_task_name('CopyVolume'))
+        copy_task = getattr(copy_tasks, self._get_task_name("CopyVolume"))
         # copy the watershed segmentation to ilastik file
-        ilastik_seg_key = 'preprocessing/graph/labels'
-        ilastik_seg_dtype = 'uint32'  # TODO is uint32 correct ?
+        ilastik_seg_key = "preprocessing/graph/labels"
+        ilastik_seg_dtype = "uint32"
         dep = copy_task(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
                         max_jobs=1, dependency=dep,
                         input_path=self.watershed_path, input_key=self.watershed_key,
                         output_path=self.output_path, output_key=ilastik_seg_key,
-                        dtype=ilastik_seg_dtype, prefix='watershed')
+                        dtype=ilastik_seg_dtype, prefix="watershed")
 
         # copy the input map to ilastik file
         if self.copy_inputs:
-            ilastik_inp_key = 'Input Data/local_data/%s' % uid
-            ilastik_inp_dtype = 'float32'  # is float32 correct ?
+            ilastik_inp_key = "Input Data/local_data/%s" % uid
+            ilastik_inp_dtype = "float32"  # is float32 correct ?
             dep = copy_task(tmp_folder=self.tmp_folder, config_dir=self.config_dir,
                             max_jobs=1, dependency=dep,
                             input_path=self.input_path, input_key=self.input_key,
                             output_path=self.output_path, output_key=ilastik_inp_key,
-                            dtype=ilastik_inp_dtype, prefix='inputs')
+                            dtype=ilastik_inp_dtype, prefix="inputs")
         return dep
 
     @staticmethod
