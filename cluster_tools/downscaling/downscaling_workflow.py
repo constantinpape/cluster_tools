@@ -105,8 +105,6 @@ class DownscalingWorkflow(WorkflowBase):
                 assert self._is_h5(), "%s format only supports hdf5 output" % self.metadata_format
             elif self.metadata_format == "bdv.n5":
                 assert self._is_n5(), "bdv.n5 format only supports n5 output"
-            elif self.metadata_format == "bdv.ome.zarr":
-                assert self._is_zarr(), "bdv.ome.zarr only supports zarr output"
             else:
                 raise RuntimeError  # this should never happen
 
@@ -153,7 +151,7 @@ class DownscalingWorkflow(WorkflowBase):
             if self.metadata_format in ("bdv", "bdv.hdf5"):
                 self._link_scale_zero_h5(out_key)
             # make a link on the file system
-            elif self.metadata_format in ("bdv.n5", "bdv.ome.zarr", "ome.zarr", "paintera"):
+            elif self.metadata_format in ("bdv.n5", "ome.zarr", "paintera"):
                 self._link_scale_zero_n5(out_key)
             else:
                 raise RuntimeError  # this should never happen

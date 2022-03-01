@@ -11,9 +11,8 @@ from scipy.ndimage.morphology import binary_erosion
 from nifty.tools import blocking
 from pybdv.metadata import (write_h5_metadata,
                             write_n5_metadata,
-                            write_xml_metadata,
-                            _write_xml_metadata)
-from pybdv.util import get_key
+                            write_xml_metadata)
+from pybdv.util import get_key, relative_to_absolute_scale_factors
 
 # use vigra filters as fallback if we don't have
 # fastfilters available
@@ -21,6 +20,14 @@ try:
     import fastfilters as ff
 except ImportError:
     import vigra.filters as ff
+
+AXES_TYPE_DICT = {
+    "x": "space",
+    "y": "space",
+    "z": "space",
+    "t": "time",
+    "c": "channel"
+}
 
 
 def file_reader(path, mode='a'):
@@ -382,7 +389,7 @@ def force_dataset(f, key, **kwargs):
 #
 
 def get_formats():
-    formats = ("bdv", "bdv.hdf5", "bdv.n5", "bdv.ome.zarr", "ome.zarr", "paintera")
+    formats = ("bdv", "bdv.hdf5", "bdv.n5", "ome.zarr", "paintera")
     return formats
 
 
@@ -390,7 +397,7 @@ def get_format_key(metadata_format, scale, key_prefix=""):
     if metadata_format == "paintera":
         prefix = "s%i" % scale
         out_key = os.path.join(key_prefix, prefix)
-    elif metadata_format in ("bdv.ome.zarr", "ome.zarr"):
+    elif metadata_format == "ome.zarr":
         prefix = "s%i" % scale
         out_key = prefix if key_prefix == "" else os.path.join(key_prefix, prefix)
     else:
@@ -457,67 +464,58 @@ def _bdv_metadata(metadata_format, path, metadata_dict, scale_factors, scale_off
         write_n5_metadata(path, scale_factors, resolution)
 
 
-# TODO use ome-zarr-py instead and support different ngff versions
-def create_ngff_metadata(g, name, axes_names, type_=None, metadata=None):
-    """Create ome-ngff metadata for a multiscale dataset stored in zarr format.
-    """
-    valid_axes_names = {"t", "c", "z", "y", "x"}
+def create_ngff_metadata(g, name, axes_names, scales=None, units=None):
 
-    # validate the individual datasets
-    ndim = g[list(g.keys())[0]].ndim
-    assert all(dset.ndim == ndim for dset in g.values())
-    assert len(axes_names) == ndim
-    assert len(set(axes_names) - valid_axes_names) == 0
+    # axes metadata
+    axes = [
+        {"name": name, "type": AXES_TYPE_DICT[name]} for name in axes_names
+    ]
+    if units is not None:
+        assert len(units) == len(axes_names)
+        for ax, unit in zip(axes, units):
+            if unit is not None:
+                ax["unit"] = unit
+
+    # dataset metadata including transformations
+    n_scales = len(g)
+    if scales is None:
+        scales = [[1.0] * len(axes_names)] * n_scales
+    assert len(scales) == n_scales
+    assert all(len(scale) == len(axes_names) for scale in scales)
+
+    # NOTE we might need a half pixel offset for proper scale alignment here (via a translation)
+    transforms = [[{"type": "scale", "scale": scale}] for scale in scales]
+    datasets = [
+        {"path": nn, "coordinateTransformations": trafo} for nn, trafo in zip(g, transforms)
+    ]
 
     ms_entry = {
-        "datasets": [
-            {"path": name} for name in g
-        ],
-        "axes": axes_names,
+        "axes": axes,
+        "datasets": datasets,
         "name": name,
-        "version": "0.3"
+        "version": "0.4"
     }
-    if type_ is not None:
-        ms_entry["type"] = type_
-    if metadata is not None:
-        ms_entry["metadata"] = metadata
 
     metadata = g.attrs.get("multiscales", [])
     metadata.append(ms_entry)
     g.attrs["multiscales"] = metadata
 
-    # write the array dimensions for compat with xarray:
-    # https://xarray.pydata.org/en/stable/internals/zarr-encoding-spec.html?highlight=zarr
-    for ds in g.values():
-        ds.attrs["_ARRAY_DIMENSIONS"] = axes_names
 
+def _ome_zarr_metadata(path, prefix, metadata_dict, scale_factors, scale_offset):
+    setup_name = metadata_dict.get("setup_name", None)
+    setup_name = "data" if setup_name is None else setup_name
+    unit = metadata_dict.get("unit", "pixel")
+    scale_factors = [[1, 1, 1]] + list(scale_factors[scale_offset:])
+    scale_factors = relative_to_absolute_scale_factors(scale_factors)
 
-def _ome_zarr_metadata(path, prefix, metadata_dict):
-    setup_name = metadata_dict.get("setup_name", "data")
     with file_reader(path, mode="a") as f:
         g = f if prefix == "" else f[prefix]
         ndim = g["s0"].ndim
         axes_names = ["y", "x"] if ndim == 2 else ["z", "y", "x"]
-        create_ngff_metadata(g, setup_name, axes_names)
-
-
-def _bdv_ome_zarr_metadata(path, prefix, metadata_dict):
-    if path.endswith(".ome.zarr"):
-        xml_out_path = path.replace(".ome.zarr", ".xml")
-    else:
-        xml_out_path = os.path.splitext(path)[0] + ".xml"
-    unit = metadata_dict.get("unit", "pixel")
-    resolution = metadata_dict.get("resolution", [1., 1., 1.])
-    setup_name = metadata_dict.get("setup_name", None)
-    with file_reader(path, mode="r") as f:
-        g = f if prefix == "" else f[prefix]
-        shape = g["s0"].shape
-    _write_xml_metadata(xml_out_path, path, unit, resolution,
-                        format_type="ome.zarr", shape=shape,
-                        setup_id=0, setup_name=setup_name, timepoint=0,
-                        affine=None, attributes={"channel": {"id": 0}},
-                        overwrite=False, overwrite_data=False, enforce_consistency=False)
-    _ome_zarr_metadata(path, prefix, metadata_dict)
+        resolution = metadata_dict.get("resolution", [1.] * ndim)
+        scales = [[sc * res for sc, res in zip(scale, resolution)] for scale in scale_factors]
+        units = ndim * [unit]
+        create_ngff_metadata(g, setup_name, axes_names, units=units, scales=scales)
 
 
 def write_format_metadata(metadata_format, path, metadata_dict, scale_factors,
@@ -527,9 +525,7 @@ def write_format_metadata(metadata_format, path, metadata_dict, scale_factors,
         _paintera_metadata(path, prefix, metadata_dict, scale_factors, scale_offset)
     elif metadata_format in ("bdv", "bdv.hdf5", "bdv.n5"):
         _bdv_metadata(metadata_format, path, metadata_dict, scale_factors, scale_offset)
-    elif metadata_format == "bdv.ome.zarr":
-        _bdv_ome_zarr_metadata(path, prefix, metadata_dict)
     elif metadata_format == "ome.zarr":
-        _ome_zarr_metadata(path, prefix, metadata_dict)
+        _ome_zarr_metadata(path, prefix, metadata_dict, scale_factors, scale_offset)
     else:
         raise RuntimeError("Invalid metadata format %s" % metadata_format)
