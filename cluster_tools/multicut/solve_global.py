@@ -166,7 +166,7 @@ def solve_global(job_id, config_path):
 
     # make sure zero is mapped to 0 if we have an ignore label
     if ignore_label and initial_node_labeling[0] != 0:
-        new_max_label = int(node_labeling.max() + 1)
+        new_max_label = int(initial_node_labeling.max() + 1)
         initial_node_labeling[initial_node_labeling == 0] = new_max_label
         initial_node_labeling[0] = 0
 
