@@ -80,6 +80,22 @@ class TestDownscaling(BaseTest):
                 self.assertEqual(effective_scale[::-1], bdv_scale_factors[level])
                 self.assertEqual(effective_scale[::-1], ds.attrs["downsamplingFactors"])
 
+    def check_result_ome_zarr(self, shape, scales):
+        f = z5py.File("./tmp/data.ome.zarr")
+        multiscales = f.attrs["multiscales"]
+        self.assertEqual(len(multiscales), 1)
+        multiscales = multiscales[0]
+        datasets = multiscales["datasets"]
+        expected_shape = shape
+        for level, scale in enumerate(scales):
+            key = datasets[level]["path"]
+            ds = f[key]
+            shape_level = ds.shape
+            expected_shape = downscale_shape(expected_shape, scale)
+            self.assertEqual(shape_level, expected_shape)
+            data = ds[:]
+            self.assertFalse(np.allclose(data, 0))
+
     def _downscale(self, metadata_format):
         from cluster_tools.downscaling import DownscalingWorkflow
         task = DownscalingWorkflow
@@ -92,12 +108,14 @@ class TestDownscaling(BaseTest):
         else:
             output_key_prefix = ""
 
+        max_jobs = self.max_jobs
         if metadata_format == "bdv.hdf5":
             output_path = "./tmp/data.h5"
             max_jobs = 1
+        elif metadata_format == "ome.zarr":
+            output_path = "./tmp/data.ome.zarr"
         else:
             output_path = self.output_path
-            max_jobs = self.max_jobs
 
         t = task(input_path=self.input_path, input_key=self.input_key,
                  output_path=output_path, output_key_prefix=output_key_prefix,
@@ -127,6 +145,12 @@ class TestDownscaling(BaseTest):
         shape = z5py.File(self.input_path)[self.input_key].shape
         scales = [[1, 1, 1]] + scales
         self.check_result_bdv_n5(shape, scales)
+
+    def test_downscaling_ome_zarr(self):
+        scales = self._downscale(metadata_format="ome.zarr")
+        shape = z5py.File(self.input_path)[self.input_key].shape
+        scales = [[1, 1, 1]] + scales
+        self.check_result_ome_zarr(shape, scales)
 
 
 if __name__ == "__main__":
