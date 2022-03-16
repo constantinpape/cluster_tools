@@ -131,11 +131,12 @@ class DownscalingWorkflow(WorkflowBase):
     def _copy_scale_zero(self, out_path, out_key, dep):
         task = getattr(copy_tasks, self._get_task_name("CopyVolume"))
         prefix = "initial_scale"
+        dimension_separator = "/" if self.metadata_format == "ome.zarr" else None
         dep = task(tmp_folder=self.tmp_folder, max_jobs=self.max_jobs,
                    config_dir=self.config_dir,
                    input_path=self.input_path, input_key=self.input_key,
                    output_path=out_path, output_key=out_key,
-                   prefix=prefix, dependency=dep)
+                   prefix=prefix, dependency=dep, dimension_separator=dimension_separator)
         return dep
 
     def require_initial_scale(self, out_path, out_key, dep):
@@ -168,6 +169,7 @@ class DownscalingWorkflow(WorkflowBase):
         # require the initial scale dataset
         dep = self.require_initial_scale(out_path, in_key, self.dependency)
 
+        dimension_separator = "/" if self.metadata_format == "ome.zarr" else None
         task = getattr(downscale_tasks, self._get_task_name("Downscaling"))
         effective_scale = [1] * ndim
         for scale, (scale_factor, halo) in enumerate(zip(self.scale_factors, halos),
@@ -191,7 +193,7 @@ class DownscalingWorkflow(WorkflowBase):
                        output_path=out_path, output_key=out_key,
                        scale_factor=scale_factor, scale_prefix="s%i" % scale,
                        effective_scale_factor=effective_scale,
-                       halo=halo, dependency=dep)
+                       halo=halo, dimension_separator=dimension_separator, dependency=dep)
             in_key = out_key
 
         # task to write the metadata
