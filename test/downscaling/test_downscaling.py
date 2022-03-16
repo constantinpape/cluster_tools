@@ -36,6 +36,8 @@ class TestDownscaling(BaseTest):
             effective_scale = [sc * eff for sc, eff in zip(scale, effective_scale)]
             if level > 0:
                 self.assertEqual(effective_scale[::-1], ds.attrs["downsamplingFactors"])
+            data = ds[:]
+            self.assertFalse(np.allclose(data, 0))
 
     def check_result_bdv_hdf5(self, shape, scales):
         output_path = "./tmp/data.h5"
@@ -54,6 +56,8 @@ class TestDownscaling(BaseTest):
 
                 effective_scale = [sc * eff for sc, eff in zip(scale, effective_scale)]
                 self.assertEqual(effective_scale[::-1], bdv_scale_factors[level].tolist())
+            data = ds[:]
+            self.assertFalse(np.allclose(data, 0))
 
     def check_result_bdv_n5(self, shape, scales):
         f = z5py.File(self.output_path)
@@ -79,6 +83,8 @@ class TestDownscaling(BaseTest):
             if level > 0:
                 self.assertEqual(effective_scale[::-1], bdv_scale_factors[level])
                 self.assertEqual(effective_scale[::-1], ds.attrs["downsamplingFactors"])
+            data = ds[:]
+            self.assertFalse(np.allclose(data, 0))
 
     def check_result_ome_zarr(self, shape, scales):
         f = z5py.File("./tmp/data.ome.zarr")
