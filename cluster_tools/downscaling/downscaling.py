@@ -33,7 +33,7 @@ class DownscalingBase(luigi.Task):
     """ downscaling base class
     """
 
-    task_name = 'downscaling'
+    task_name = "downscaling"
     src_file = os.path.abspath(__file__)
 
     # input and output volumes
@@ -48,11 +48,12 @@ class DownscalingBase(luigi.Task):
     scale_prefix = luigi.Parameter()
     halo = luigi.ListParameter(default=[])
     effective_scale_factor = luigi.ListParameter(default=[])
+    dimension_separator = luigi.Parameter(default=None)
     dependency = luigi.TaskParameter(default=DummyTask())
 
-    interpolatable_types = ('float32', 'float64',
-                            'uint8', 'int8',
-                            'uint16', 'int16')
+    interpolatable_types = ("float32", "float64",
+                            "uint8", "int8",
+                            "uint16", "int16")
 
     def requires(self):
         return self.dependency
@@ -61,8 +62,8 @@ class DownscalingBase(luigi.Task):
     def default_task_config():
         # we use this to get also get the common default config
         config = LocalTask.default_task_config()
-        config.update({'library': 'vigra', 'chunks': None, 'compression': 'gzip',
-                       'library_kwargs': None})
+        config.update({"library": "vigra", "chunks": None, "compression": "gzip",
+                       "library_kwargs": None})
         return config
 
     def clean_up_for_retry(self, block_list):
@@ -82,7 +83,7 @@ class DownscalingBase(luigi.Task):
         self.init(shebang)
 
         # get shape, dtype and make block config
-        with vu.file_reader(self.input_path, 'r') as f:
+        with vu.file_reader(self.input_path, mode="r") as f:
             prev_shape = f[self.input_key].shape
             dtype = f[self.input_key].dtype
         ndim = len(prev_shape)
@@ -91,20 +92,20 @@ class DownscalingBase(luigi.Task):
         effective_ndim = 3 if ndim == 4 else ndim
 
         shape = self.downsample_shape(prev_shape)
-        self._write_log('downscaling with factor %s from shape %s to %s' % (str(self.scale_factor),
+        self._write_log("downscaling with factor %s from shape %s to %s" % (str(self.scale_factor),
                                                                             str(prev_shape), str(shape)))
 
         # load the downscaling config
         task_config = self.get_task_config()
 
         # make sure that we have order 0 downscaling if our datatype is not interpolatable
-        library = task_config.get('library', 'vigra')
-        assert library in ('vigra', 'skimage'), "Downscaling is only supported with vigra or skimage"
+        library = task_config.get("library", "vigra")
+        assert library in ("vigra", "skimage"), "Downscaling is only supported with vigra or skimage"
         if dtype not in self.interpolatable_types:
-            assert library == 'vigra', "datatype %s is not interpolatable, set library to vigra" % dtype
-            opts = task_config.get('library_kwargs', {})
+            assert library == "vigra", "datatype %s is not interpolatable, set library to vigra" % dtype
+            opts = task_config.get("library_kwargs", {})
             opts = {} if opts is None else opts
-            order = opts.get('order', None)
+            order = opts.get("order", None)
             assert order == 0,\
                 "datatype %s is not interpolatable, set 'library_kwargs' = {'order': 0} to downscale it" % dtype
 
@@ -123,7 +124,7 @@ class DownscalingBase(luigi.Task):
             assert scale_factor[1] == scale_factor[2]
 
         # read the output chunks
-        chunks = task_config.pop('chunks', None)
+        chunks = task_config.pop("chunks", None)
         if chunks is None:
             chunks = tuple(bs // 2 for bs in block_shape)
         else:
@@ -139,18 +140,19 @@ class DownscalingBase(luigi.Task):
             out_shape = shape
             out_chunks = chunks
 
-        compression = task_config.pop('compression', 'gzip')
+        compression = task_config.pop("compression", "gzip")
         # require output dataset
-        with vu.file_reader(self.output_path) as f:
+        file_kwargs = {} if self.dimension_separator is None else dict(dimension_separator=self.dimension_separator)
+        with vu.file_reader(self.output_path, mode="a", **file_kwargs) as f:
             f.require_dataset(self.output_key, shape=out_shape, chunks=out_chunks,
                               compression=compression, dtype=dtype)
 
         # update the config with input and output paths and keys
         # as well as block shape
-        task_config.update({'input_path': self.input_path, 'input_key': self.input_key,
-                            'output_path': self.output_path, 'output_key': self.output_key,
-                            'block_shape': block_shape, 'scale_factor': scale_factor,
-                            'halo': self.halo if self.halo else None})
+        task_config.update({"input_path": self.input_path, "input_key": self.input_key,
+                            "output_path": self.output_path, "output_key": self.output_key,
+                            "block_shape": block_shape, "scale_factor": scale_factor,
+                            "halo": self.halo if self.halo else None})
 
         # if we have a roi, we need to re-sample it
         if roi_begin is not None:
@@ -188,7 +190,7 @@ class DownscalingBase(luigi.Task):
 
     def output(self):
         return luigi.LocalTarget(os.path.join(self.tmp_folder,
-                                              self.task_name + '_%s.log' % self.scale_prefix))
+                                              self.task_name + "_%s.log" % self.scale_prefix))
 
 
 class DownscalingLocal(DownscalingBase, LocalTask):
@@ -272,8 +274,8 @@ def _ds_block(blocking, block_id, ds_in, ds_out, scale_factor, halo, sampler):
         return
 
     dtype = x.dtype
-    if np.dtype(dtype) != np.dtype('float32'):
-        x = x.astype('float32')
+    if np.dtype(dtype) != np.dtype("float32"):
+        x = x.astype("float32")
 
     if ndim == 4:
         n_channels = x.shape[0]
@@ -295,7 +297,7 @@ def _ds_block(blocking, block_id, ds_in, ds_out, scale_factor, halo, sampler):
 # wrap vigra.sampling.resize
 def _ds_vigra(inp, output_shape, sample_2d, **vigra_kwargs):
     if sample_2d:
-        out = np.zeros(output_shape, dtype='float32')
+        out = np.zeros(output_shape, dtype="float32")
         for z in range(output_shape[0]):
             out[z] = vigra.sampling.resize(inp[z], shape=output_shape[1:], **vigra_kwargs)
         return out
@@ -319,11 +321,11 @@ def _submit_blocks(ds_in, ds_out, block_shape, block_list,
         ndim = 3
         shape = shape[1:]
     blocking = nt.blocking([0]*ndim, shape, block_shape)
-    if library == 'vigra':
+    if library == "vigra":
         sampler = partial(_ds_vigra, **library_kwargs)
-    elif library == 'skimage':
+    elif library == "skimage":
         sk_scale = (scale_factor,) * ndim if isinstance(scale_factor, int) else tuple(scale_factor)
-        ds_function = library_kwargs.get('function', 'mean')
+        ds_function = library_kwargs.get("function", "mean")
         ds_function = getattr(np, ds_function)
         sampler = partial(_ds_skimage, block_size=sk_scale, func=ds_function)
     else:
@@ -343,40 +345,40 @@ def _submit_blocks(ds_in, ds_out, block_shape, block_list,
 def downscaling(job_id, config_path):
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
-    with open(config_path, 'r') as f:
+    with open(config_path, "r") as f:
         config = json.load(f)
 
     # read the input cofig
-    input_path = config['input_path']
-    input_key = config['input_key']
+    input_path = config["input_path"]
+    input_key = config["input_key"]
 
-    block_shape = list(config['block_shape'])
-    block_list = config['block_list']
+    block_shape = list(config["block_shape"])
+    block_list = config["block_list"]
 
     # read the output config
-    output_path = config['output_path']
-    output_key = config['output_key']
+    output_path = config["output_path"]
+    output_key = config["output_key"]
 
-    scale_factor = config['scale_factor']
-    library = config.get('library', 'vigra')
-    library_kwargs = config.get('library_kwargs', None)
+    scale_factor = config["scale_factor"]
+    library = config.get("library", "vigra")
+    library_kwargs = config.get("library_kwargs", None)
     if library_kwargs is None:
         library_kwargs = {}
-    halo = config.get('halo', None)
-    n_threads = config.get('threads_per_job', 1)
+    halo = config.get("halo", None)
+    n_threads = config.get("threads_per_job", 1)
 
     # submit blocks
     # check if in and out - file are the same
     # because hdf5 does not like opening files twice
     if input_path == output_path:
-        with vu.file_reader(output_path) as f:
+        with vu.file_reader(output_path, mode="a") as f:
             ds_in = f[input_key]
             ds_out = f[output_key]
             _submit_blocks(ds_in, ds_out, block_shape, block_list, scale_factor, halo,
                            library, library_kwargs, n_threads)
 
     else:
-        with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
+        with vu.file_reader(input_path, mode="r") as f_in, vu.file_reader(output_path, mode="a") as f_out:
             ds_in = f_in[input_key]
             ds_out = f_out[output_key]
             _submit_blocks(ds_in, ds_out, block_shape, block_list, scale_factor, halo,
@@ -386,8 +388,8 @@ def downscaling(job_id, config_path):
     fu.log_job_success(job_id)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     path = sys.argv[1]
     assert os.path.exists(path), path
-    job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
+    job_id = int(os.path.split(path)[1].split(".")[0].split("_")[-1])
     downscaling(job_id, path)

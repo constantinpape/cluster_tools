@@ -30,12 +30,12 @@ AXES_TYPE_DICT = {
 }
 
 
-def file_reader(path, mode='a'):
-    return elf.io.open_file(path, mode=mode)
+def file_reader(path, mode="a", **kwargs):
+    return elf.io.open_file(path, mode=mode, **kwargs)
 
 
 def get_shape(path, key):
-    with file_reader(path, 'r') as f:
+    with file_reader(path, "r") as f:
         shape = f[key].shape
     return shape
 
@@ -43,7 +43,7 @@ def get_shape(path, key):
 def blocks_in_volume(shape, block_shape,
                      roi_begin=None, roi_end=None,
                      block_list_path=None, return_blocking=False):
-    assert len(shape) == len(block_shape), '%i; %i' % (len(shape), len(block_shape))
+    assert len(shape) == len(block_shape), "%i; %i" % (len(shape), len(block_shape))
     assert (roi_begin is None) == (roi_end is None)
     have_roi = roi_begin is not None
     have_path = block_list_path is not None
@@ -91,7 +91,7 @@ def block_to_bb(block):
 
 
 def apply_filter(input_, filter_name, sigma, apply_in_2d=False):
-    if filter_name == 'identity':
+    if filter_name == "identity":
         return input_
     # apply 3d filter with anisotropic sigma - only supported in vigra
     if isinstance(sigma, (tuple, list)):
@@ -111,7 +111,7 @@ def apply_filter(input_, filter_name, sigma, apply_in_2d=False):
 
 # TODO enable channel-wise normalisation
 def normalize(input_, min_val=None, max_val=None):
-    input_ = input_.astype('float32')
+    input_ = input_.astype("float32")
     min_val = input_.min() if min_val is None else min_val
     input_ -= min_val
     max_val = input_.max() if max_val is None else max_val
@@ -188,14 +188,14 @@ def make_checkerboard_block_lists(blocking, roi_begin=None, roi_end=None):
 
 # FIXME this causes potential issues with h5 and full mask shape, pass the file handle instead
 def load_mask(mask_path, mask_key, shape):
-    with file_reader(mask_path, 'r') as f_mask:
+    with file_reader(mask_path, "r") as f_mask:
         mshape = f_mask[mask_key].shape
     # check if th mask is at full - shape, otherwise interpolate
     if tuple(mshape) == tuple(shape):
-        mask = file_reader(mask_path, 'r')[mask_key]
+        mask = file_reader(mask_path, "r")[mask_key]
     else:
-        with file_reader(mask_path, 'r') as f_mask:
-            mask = f_mask[mask_key][:].astype('bool')
+        with file_reader(mask_path, "r") as f_mask:
+            mask = f_mask[mask_key][:].astype("bool")
         mask = ResizedVolume(mask, shape=shape, order=0)
     return mask
 
@@ -288,7 +288,7 @@ def preserving_erosion(mask, erode_by):
 def fit_seeds(objs, obj_ids, bg_id, erode_by, max_erode):
     background = objs == 0
     seeds = bg_id * binary_erosion(background, iterations=max_erode)
-    seeds = seeds.astype('uint32')
+    seeds = seeds.astype("uint32")
     # insert seeds for the objects
     for obj_id in obj_ids:
         obj_mask = objs == obj_id
@@ -304,17 +304,17 @@ def fit_seeds(objs, obj_ids, bg_id, erode_by, max_erode):
 def fit_to_hmap_2d(objs, hmap, erode_by, max_erode, obj_ids, bg_id):
 
     # make the seeds by binary erosion of background and foreground
-    seeds = np.zeros_like(hmap, dtype='uint32')
+    seeds = np.zeros_like(hmap, dtype="uint32")
     for z in range(seeds.shape[0]):
         seeds[z] = fit_seeds(objs[z], obj_ids, bg_id, erode_by, max_erode)
 
     # apply dt before watershed
     hmap = normalize(hmap)
     threshold = .3
-    threshd = (hmap > threshold).astype('uint32')
+    threshd = (hmap > threshold).astype("uint32")
 
     # 2d
-    dt = np.zeros_like(hmap, dtype='float32')
+    dt = np.zeros_like(hmap, dtype="float32")
     for z in range(dt.shape[0]):
         dt[z] = vigra.filters.distanceTransform(threshd[z])
 
@@ -324,7 +324,7 @@ def fit_to_hmap_2d(objs, hmap, erode_by, max_erode, obj_ids, bg_id):
     hmap = alpha * hmap + (1. - alpha) * dt
 
     # 2d
-    objs_new = np.zeros_like(objs, dtype='uint32')
+    objs_new = np.zeros_like(objs, dtype="uint32")
     for z in range(objs_new.shape[0]):
         objs_new[z] = vigra.analysis.watershedsNew(hmap[z], seeds=seeds[z])[0]
 
@@ -337,7 +337,7 @@ def fit_to_hmap_3d(objs, hmap, erode_by, max_erode, obj_ids, bg_id):
     # apply dt before watershed
     hmap = normalize(hmap)
     threshold = .3
-    threshd = (hmap > threshold).astype('uint32')
+    threshd = (hmap > threshold).astype("uint32")
     dt = vigra.filters.distanceTransform(threshd)
 
     # normalize distances and add up with hmap
@@ -486,8 +486,9 @@ def create_ngff_metadata(g, name, axes_names, scales=None, units=None):
     # NOTE we might need a half pixel offset for proper scale alignment here (via a translation)
     transforms = [[{"type": "scale", "scale": scale}] for scale in scales]
     datasets = [
-        {"path": nn, "coordinateTransformations": trafo} for nn, trafo in zip(g, transforms)
+        {"path": f"s{level}", "coordinateTransformations": trafo} for level, trafo in enumerate(transforms)
     ]
+    assert all(ds["path"] in g for ds in datasets)
 
     ms_entry = {
         "axes": axes,
