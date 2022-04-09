@@ -46,7 +46,7 @@ class CopyVolumeBase(luigi.Task):
     output_key = luigi.Parameter()
     prefix = luigi.Parameter()
     dtype = luigi.Parameter(default=None)
-    int2uint = luigi.BoolParameter(default=False)
+    int_to_uint = luigi.BoolParameter(default=False)
     fit_to_roi = luigi.BoolParameter(default=False)
     effective_scale_factor = luigi.ListParameter(default=[])
     dimension_separator = luigi.Parameter(default=None)
@@ -84,7 +84,7 @@ class CopyVolumeBase(luigi.Task):
             is_label_multiset = ds.attrs.get("isLabelMultiset", False)
             if is_label_multiset:
                 ds_dtype = "uint64"
-            elif self.int2uint and np.issubdtype(ds.dtype, np.signedinteger):
+            elif self.int_to_uint and np.issubdtype(ds.dtype, np.signedinteger):
                 ds_dtype = "u"+ds.dtype
             else:
                 ds_dtype = ds.dtype
@@ -211,7 +211,7 @@ def cast_type(data, dtype):
 
 
 def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin, reduce_function, n_threads,
-                 map_uniform_blocks_to_background, value_list, offset, insert_mode,int2uint):
+                 map_uniform_blocks_to_background, value_list, offset, insert_mode):
 
     dtype = ds_out.dtype
 
@@ -310,9 +310,6 @@ def copy_volume(job_id, config_path):
     # check if we are in insert mode
     insert_mode = config.get("insert_mode", False)
 
-    # check if signed ints are to be made unsigned
-    int2uint = config["int2uint"]
-
     map_uniform_blocks_to_background = config.get("map_uniform_blocks_to_background", False)
     n_threads = config.get("threads_per_job", 1)
 
@@ -331,7 +328,7 @@ def copy_volume(job_id, config_path):
         blocking = nt.blocking([0] * ndim, shape, block_shape)
         _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin,
                      reduce_function, n_threads, map_uniform_blocks_to_background,
-                     value_list, offset, insert_mode,int2uint)
+                     value_list, offset, insert_mode)
 
         # copy the attributes with job 0
         if job_id == 0 and hasattr(ds_in, "attrs") and hasattr(ds_out, "attrs"):
