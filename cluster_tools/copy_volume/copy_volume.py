@@ -203,7 +203,7 @@ def cast_type(data, dtype):
         return data.astype("uint8")
     # check negative values for signed int
     elif np.issubdtype(data.dtype, np.integer) and not np.issubdtype(np.dtype(dtype), np.signedinteger):
-        return (data-np.iinfo(data.dtype).min).astype(dtype)
+        return (data-np.iinfo(data.dtype).min-1).astype(dtype)
     else:
         return data.astype(dtype)
 
