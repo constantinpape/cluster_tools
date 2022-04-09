@@ -46,6 +46,7 @@ class CopyVolumeBase(luigi.Task):
     output_key = luigi.Parameter()
     prefix = luigi.Parameter()
     dtype = luigi.Parameter(default=None)
+    int2uint = luigi.BoolParameter(default=False)
     fit_to_roi = luigi.BoolParameter(default=False)
     effective_scale_factor = luigi.ListParameter(default=[])
     dimension_separator = luigi.Parameter(default=None)
@@ -81,7 +82,12 @@ class CopyVolumeBase(luigi.Task):
             # if this is a label multi-set, the dtypes needs to be changed
             # to be uint64
             is_label_multiset = ds.attrs.get("isLabelMultiset", False)
-            ds_dtype = "uint64" if is_label_multiset else ds.dtype
+            if is_label_multiset:
+                ds_dtype = "uint64"
+            elif self.int2uint and np.issubdtype(ds.dtype, np.signedinteger):
+                ds_dtype = "u"+ds.dtype
+            else:
+                ds_dtype = ds.dtype
 
         # load the config
         task_config = self.get_task_config()
@@ -195,12 +201,18 @@ def cast_type(data, dtype):
         data = vu.normalize(data)
         data *= 255
         return data.astype("uint8")
+    # check negative values for signed int
+    elif np.issubdtype(data.dtype, np.integer) and not np.issubdtype(np.dtype(dtype), np.signedinteger):
+        return (data-np.iinfo(data.dtype).min).astype(dtype)
     else:
         return data.astype(dtype)
 
 
+
+
 def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin, reduce_function, n_threads,
-                 map_uniform_blocks_to_background, value_list, offset, insert_mode):
+                 map_uniform_blocks_to_background, value_list, offset, insert_mode,int2uint):
+
     dtype = ds_out.dtype
 
     def _copy_block(block_id):
@@ -298,6 +310,9 @@ def copy_volume(job_id, config_path):
     # check if we are in insert mode
     insert_mode = config.get("insert_mode", False)
 
+    # check if signed ints are to be made unsigned
+    int2uint = config["int2uint"]
+
     map_uniform_blocks_to_background = config.get("map_uniform_blocks_to_background", False)
     n_threads = config.get("threads_per_job", 1)
 
@@ -316,7 +331,7 @@ def copy_volume(job_id, config_path):
         blocking = nt.blocking([0] * ndim, shape, block_shape)
         _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin,
                      reduce_function, n_threads, map_uniform_blocks_to_background,
-                     value_list, offset, insert_mode)
+                     value_list, offset, insert_mode,int2uint)
 
         # copy the attributes with job 0
         if job_id == 0 and hasattr(ds_in, "attrs") and hasattr(ds_out, "attrs"):
