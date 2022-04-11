@@ -82,12 +82,7 @@ class CopyVolumeBase(luigi.Task):
             # if this is a label multi-set, the dtypes needs to be changed
             # to be uint64
             is_label_multiset = ds.attrs.get("isLabelMultiset", False)
-            if is_label_multiset:
-                ds_dtype = "uint64"
-            elif self.int_to_uint and np.issubdtype(ds.dtype, np.signedinteger):
-                ds_dtype = "u"+ds.dtype
-            else:
-                ds_dtype = ds.dtype
+            ds_dtype = "uint64" if is_label_multiset else ds.dtype
 
         # load the config
         task_config = self.get_task_config()
@@ -120,7 +115,14 @@ class CopyVolumeBase(luigi.Task):
             out_shape = out_shape[1:]
 
         compression = task_config.pop("compression", "gzip")
-        dtype = str(ds_dtype) if self.dtype is None else self.dtype
+
+        if self.dtype is None:
+            dtype = str(ds_dtype)
+        elif self.int_to_uint and np.issubdtype(ds.dtype, np.signedinteger):
+            dtype = "u" + ds.dtype
+        else:
+            dtype = self.dtype
+
         dtype = DTYPE_MAPPING.get(dtype, dtype)
 
         chunks = task_config.pop("chunks", None)
@@ -202,12 +204,10 @@ def cast_type(data, dtype):
         data *= 255
         return data.astype("uint8")
     # check negative values for signed int
-    elif np.issubdtype(data.dtype, np.signedinteger) and not np.issubdtype(np.dtype(dtype), np.signedinteger):
+    elif self.int_to_uint:
         return (data-np.iinfo(data.dtype).min-1).astype(dtype)
     else:
         return data.astype(dtype)
-
-
 
 
 def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin, reduce_function, n_threads,

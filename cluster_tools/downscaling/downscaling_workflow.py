@@ -138,7 +138,7 @@ class DownscalingWorkflow(WorkflowBase):
                    config_dir=self.config_dir,
                    input_path=self.input_path, input_key=self.input_key,
                    output_path=out_path, output_key=out_key,
-                   int_to_uint=int_to_uint, dtype=dtype
+                   int_to_uint=int_to_uint, dtype=dtype,
                    prefix=prefix, dependency=dep, dimension_separator=dimension_separator)
         return dep
 
