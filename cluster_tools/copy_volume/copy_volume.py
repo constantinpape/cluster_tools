@@ -118,7 +118,7 @@ class CopyVolumeBase(luigi.Task):
 
         dtype = str(ds_dtype) if self.dtype is None else self.dtype
 
-        dtype = DTYPE_MAPPING.get(self.dtype, self.dtype)
+        dtype = DTYPE_MAPPING.get(dtype, dtype)
 
         if self.int_to_uint:
             assert np.issubdtype(ds.dtype, np.signedinteger)
