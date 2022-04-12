@@ -20,7 +20,28 @@ then
 fi
 
 
-python test/downscaling/test_downscaling.py
+# need to run test separately due to some failed cleanup
+python test/downscaling/test_downscaling.py TestDownscaling.test_downscaling_paintera
+if [[ $? != 0 ]]
+then
+    exit 1
+fi
+python test/downscaling/test_downscaling.py TestDownscaling.test_downscaling_bdv_h5
+if [[ $? != 0 ]]
+then
+    exit 1
+fi
+python test/downscaling/test_downscaling.py TestDownscaling.test_downscaling_bdv_n5
+if [[ $? != 0 ]]
+then
+    exit 1
+fi
+python test/downscaling/test_downscaling.py TestDownscaling.test_downscaling_ome_zarr
+if [[ $? != 0 ]]
+then
+    exit 1
+fi
+python test/downscaling/test_downscaling.py TestDownscaling.test_downscaling_int_to_uint
 if [[ $? != 0 ]]
 then
     exit 1

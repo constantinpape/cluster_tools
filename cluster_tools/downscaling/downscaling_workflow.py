@@ -44,6 +44,8 @@ class DownscalingWorkflow(WorkflowBase):
     input_key = luigi.Parameter()
     scale_factors = luigi.ListParameter()
     halos = luigi.ListParameter()
+    dtype = luigi.Parameter(default=None)
+    int_to_uint = luigi.BoolParameter(default=False)
     metadata_format = luigi.Parameter(default="paintera")
     metadata_dict = luigi.DictParameter(default={})
     # the output path is optional, if not given, we take the same as input path
@@ -128,7 +130,7 @@ class DownscalingWorkflow(WorkflowBase):
         with vu.file_reader(self.input_path) as f:
             return key in f
 
-    def _copy_scale_zero(self, out_path, out_key, dep):
+    def _copy_scale_zero(self, out_path, out_key, dep, dtype, int_to_uint):
         task = getattr(copy_tasks, self._get_task_name("CopyVolume"))
         prefix = "initial_scale"
         dimension_separator = "/" if self.metadata_format == "ome.zarr" else None
@@ -136,17 +138,18 @@ class DownscalingWorkflow(WorkflowBase):
                    config_dir=self.config_dir,
                    input_path=self.input_path, input_key=self.input_key,
                    output_path=out_path, output_key=out_key,
+                   int_to_uint=int_to_uint, dtype=dtype,
                    prefix=prefix, dependency=dep, dimension_separator=dimension_separator)
         return dep
 
-    def require_initial_scale(self, out_path, out_key, dep):
+    def require_initial_scale(self, out_path, out_key, dep, dtype, int_to_uint):
         """ Link or copy the initial dataset to self.output_key_prefix.
         We copy if input_path != output_path or force_copy is set.
         """
         copy_initial_ds = True if self.force_copy else out_path != self.input_path
 
         if copy_initial_ds:
-            dep = self._copy_scale_zero(out_path, out_key, dep)
+            dep = self._copy_scale_zero(out_path, out_key, dep, dtype, int_to_uint)
         else:
             # make a link in the h5 file
             if self.metadata_format in ("bdv", "bdv.hdf5"):
@@ -167,7 +170,7 @@ class DownscalingWorkflow(WorkflowBase):
         out_path = self.input_path if self.output_path == "" else self.output_path
         in_key = vu.get_format_key(self.metadata_format, self.scale_offset, self.output_key_prefix)
         # require the initial scale dataset
-        dep = self.require_initial_scale(out_path, in_key, self.dependency)
+        dep = self.require_initial_scale(out_path, in_key, self.dependency, self.dtype, self.int_to_uint)
 
         dimension_separator = "/" if self.metadata_format == "ome.zarr" else None
         task = getattr(downscale_tasks, self._get_task_name("Downscaling"))
