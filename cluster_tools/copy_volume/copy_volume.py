@@ -116,15 +116,13 @@ class CopyVolumeBase(luigi.Task):
 
         compression = task_config.pop("compression", "gzip")
 
-        dtype = DTYPE_MAPPING.get(dtype, dtype)
+        dtype = str(ds_dtype) if self.dtype is None else self.dtype
 
-        if self.dtype is None:
-            dtype = str(ds_dtype)
-        elif self.int_to_uint:
+        dtype = DTYPE_MAPPING.get(self.dtype, self.dtype)
+
+        if self.int_to_uint:
             assert np.issubdtype(ds.dtype, np.signedinteger)
             dtype = "u" + ds.dtype
-        else:
-            dtype = self.dtype
 
         chunks = task_config.pop("chunks", None)
         chunks = tuple(block_shape) if chunks is None else chunks
