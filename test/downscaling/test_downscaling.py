@@ -59,7 +59,7 @@ class TestDownscaling(BaseTest):
             data = ds[:]
             self.assertFalse(np.allclose(data, 0))
 
-    def check_result_bdv_n5(self, shape, scales):
+    def check_result_bdv_n5(self, shape, scales, int_to_uint=False):
         f = z5py.File(self.output_path)
         g = f["setup0"]
         bdv_scale_factors = g.attrs["downsamplingFactors"]
@@ -85,6 +85,22 @@ class TestDownscaling(BaseTest):
                 self.assertEqual(effective_scale[::-1], ds.attrs["downsamplingFactors"])
             data = ds[:]
             self.assertFalse(np.allclose(data, 0))
+            if int_to_uint:
+                self.assertEqual(np.dtype("int8"), data.dtype)
+                self.assertGreater((data < 0).sum(), 0)
+            else:
+                self.assertEqual(np.dtype("uint8"), data.dtype)
+
+    def create_signed_data(self):
+        signed_path = self.output_path
+        signed_key = "signed_data"
+        with z5py.File(self.input_path, "r") as f:
+            data = f[self.input_key][:]
+            assert np.dtype(data.dtype) == np.dtype("uint8")
+            data = (data.astype("int16") - 127).astype("int8")
+        with z5py.File(self.output_path, "a") as f:
+            f.create_dataset(signed_key, data=data, chunks=tuple(self.block_shape), dtype="int8")
+        return signed_path, signed_key
 
     def check_result_ome_zarr(self, shape, scales):
         f = z5py.File("./tmp/data.ome.zarr")
@@ -102,12 +118,17 @@ class TestDownscaling(BaseTest):
             data = ds[:]
             self.assertFalse(np.allclose(data, 0))
 
-    def _downscale(self, metadata_format):
+    def _downscale(self, metadata_format, int_to_uint=False):
         from cluster_tools.downscaling import DownscalingWorkflow
         task = DownscalingWorkflow
 
         scales = [[1, 2, 2], [1, 2, 2], [2, 2, 2]]
         halos = [[1, 4, 4], [1, 4, 4], [2, 4, 4]]
+
+        if int_to_uint:
+            input_path, input_key = self.create_signed_data()
+        else:
+            input_path, input_key = self.input_path, self.input_key
 
         if metadata_format == "paintera":
             output_key_prefix = self.output_key_prefix
@@ -123,12 +144,13 @@ class TestDownscaling(BaseTest):
         else:
             output_path = self.output_path
 
-        t = task(input_path=self.input_path, input_key=self.input_key,
+        t = task(input_path=input_path, input_key=input_key,
                  output_path=output_path, output_key_prefix=output_key_prefix,
                  scale_factors=scales, halos=halos,
                  config_dir=self.config_folder, tmp_folder=self.tmp_folder,
                  target=self.target, max_jobs=max_jobs,
-                 metadata_format=metadata_format)
+                 metadata_format=metadata_format,
+                 int_to_uint=int_to_uint)
 
         ret = luigi.build([t], local_scheduler=True)
         self.assertTrue(ret)
@@ -157,6 +179,12 @@ class TestDownscaling(BaseTest):
         shape = z5py.File(self.input_path)[self.input_key].shape
         scales = [[1, 1, 1]] + scales
         self.check_result_ome_zarr(shape, scales)
+
+    def test_downscaling_int_to_uint(self):
+        scales = self._downscale(metadata_format="bdv.n5", int_to_uint=True)
+        shape = z5py.File(self.input_path)[self.input_key].shape
+        scales = [[1, 1, 1]] + scales
+        self.check_result_bdv_n5(shape, scales, int_to_uint=True)
 
 
 if __name__ == "__main__":

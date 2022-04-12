@@ -15,7 +15,9 @@ import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 from cluster_tools.utils.task_utils import DummyTask
 
-# TODO this should maybe be go to z5py, but first check if it actually works
+# this is needed to deal with some other representations of numpy data types
+# it would be better to handle this in a more reliable and programatic way,
+# but I am currently not aware of any easily available functionality for this
 DTYPE_MAPPING = {
     ">u2": "uint16",
     ">u4": "uint32",
@@ -69,6 +71,9 @@ class CopyVolumeBase(luigi.Task):
         # TODO remove any output of failed blocks because it might be corrupted
 
     def run_impl(self):
+        assert not (self.int_to_uint and self.dtype is not None),\
+            "Setting int_to_uint and passing dtype is not supported."
+
         # get the global config and init configs
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
@@ -117,19 +122,16 @@ class CopyVolumeBase(luigi.Task):
         compression = task_config.pop("compression", "gzip")
 
         dtype = str(ds_dtype) if self.dtype is None else self.dtype
-
         dtype = DTYPE_MAPPING.get(dtype, dtype)
-
         if self.int_to_uint:
-            assert np.issubdtype(ds.dtype, np.signedinteger)
+            assert np.issubdtype(dtype, np.signedinteger), f"Expect a signed integer type, got {dtype}"
             dtype = "u" + dtype
 
         chunks = task_config.pop("chunks", None)
         chunks = tuple(block_shape) if chunks is None else chunks
         if len(chunks) == 3 and ndim == 4:
             chunks = (ds_chunks[0],) + chunks
-        assert all(bs % ch == 0 for bs, ch in zip(block_shape,
-                                                  chunks[1:] if ndim == 4 else chunks))
+        assert all(bs % ch == 0 for bs, ch in zip(block_shape, chunks[1:] if ndim == 4 else chunks))
 
         # require output dataset
         file_kwargs = {} if self.dimension_separator is None else dict(dimension_separator=self.dimension_separator)
@@ -142,7 +144,7 @@ class CopyVolumeBase(luigi.Task):
         # as well as block shape
         task_config.update({"input_path": self.input_path, "input_key": self.input_key,
                             "output_path": self.output_path, "output_key": self.output_key,
-                            "block_shape": block_shape, "dtype": dtype})
+                            "block_shape": block_shape, "dtype": dtype, "int_to_uint": self.int_to_uint})
 
         if len(shape) == 4:
             shape = shape[1:]
@@ -194,7 +196,7 @@ class CopyVolumeLSF(CopyVolumeBase, LSFTask):
 #
 
 
-def cast_type(data, dtype):
+def cast_type(data, dtype, int_to_uint):
     if np.dtype(data.dtype) == np.dtype(dtype):
         return data
     # special casting for uint8
@@ -203,14 +205,14 @@ def cast_type(data, dtype):
         data *= 255
         return data.astype("uint8")
     # check negative values for signed int
-    elif self.int_to_uint:
-        return (data-np.iinfo(data.dtype).min-1).astype(dtype)
+    elif int_to_uint:
+        return (data-np.iinfo(data.dtype).min).astype(dtype)
     else:
         return data.astype(dtype)
 
 
 def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin, reduce_function, n_threads,
-                 map_uniform_blocks_to_background, value_list, offset, insert_mode):
+                 map_uniform_blocks_to_background, value_list, offset, insert_mode, int_to_uint):
 
     dtype = ds_out.dtype
 
@@ -264,7 +266,7 @@ def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin, reduce_function
             insert_mask = data == 0
             data[insert_mask] = prev_data[insert_mask]
 
-        ds_out[bb] = cast_type(data, dtype)
+        ds_out[bb] = cast_type(data, dtype, int_to_uint)
         fu.log_block_success(block_id)
 
     if n_threads > 1:
@@ -308,6 +310,7 @@ def copy_volume(job_id, config_path):
 
     # check if we are in insert mode
     insert_mode = config.get("insert_mode", False)
+    int_to_uint = config.get("int_to_uint", False)
 
     map_uniform_blocks_to_background = config.get("map_uniform_blocks_to_background", False)
     n_threads = config.get("threads_per_job", 1)
@@ -327,7 +330,7 @@ def copy_volume(job_id, config_path):
         blocking = nt.blocking([0] * ndim, shape, block_shape)
         _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin,
                      reduce_function, n_threads, map_uniform_blocks_to_background,
-                     value_list, offset, insert_mode)
+                     value_list, offset, insert_mode, int_to_uint)
 
         # copy the attributes with job 0
         if job_id == 0 and hasattr(ds_in, "attrs") and hasattr(ds_out, "attrs"):
