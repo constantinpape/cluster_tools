@@ -3,6 +3,7 @@
 import os
 import sys
 import json
+import warnings
 from concurrent import futures
 
 import numpy as np
@@ -197,16 +198,20 @@ class CopyVolumeLSF(CopyVolumeBase, LSFTask):
 
 
 def cast_type(data, dtype, int_to_uint):
-    if np.dtype(data.dtype) == np.dtype(dtype):
+    data_dtype = data.dtype
+    if np.dtype(data_dtype) == np.dtype(dtype):
         return data
-    # special casting for uint8
-    elif np.dtype(dtype) == "uint8":
-        data = vu.normalize(data)
-        data *= 255
-        return data.astype("uint8")
     # check negative values for signed int
     elif int_to_uint:
         return (data-np.iinfo(data.dtype).min).astype(dtype)
+    # special casting for uint8
+    elif np.issubdtype(data_dtype, np.floating) and np.dtype(dtype) == "uint8":
+        # FIXME this needs to be done based on the global min max values, but these need to be computed
+        # externally and then passed to this task!
+        warnings.warn("Conversion from float to uint8 based on local normalization, this may lead to artifacts!")
+        data = vu.normalize(data)
+        data *= 255
+        return data.astype("uint8")
     else:
         return data.astype(dtype)
 
