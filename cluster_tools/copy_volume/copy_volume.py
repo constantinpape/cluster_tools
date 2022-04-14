@@ -125,7 +125,7 @@ class CopyVolumeBase(luigi.Task):
         dtype = DTYPE_MAPPING.get(dtype, dtype)
         if self.int_to_uint:
             assert np.issubdtype(dtype, np.signedinteger), f"Expect a signed integer type, got {dtype}"
-            dtype = "u" + dtype
+            dtype = "u" + str(dtype)
 
         chunks = task_config.pop("chunks", None)
         chunks = tuple(block_shape) if chunks is None else chunks
