@@ -1,9 +1,7 @@
 from datetime import datetime
-from subprocess import check_output
 
 
-# TODO log-levels
-# stdout is always piped to file, sowe can use it as logging
+# stdout is always piped to file, so we can use it as logging
 def log(msg):
     print("%s: %s" % (str(datetime.now()), msg))
 
@@ -16,7 +14,13 @@ def log_job_success(job_id):
     print("%s: processed job %i" % (str(datetime.now()), job_id))
 
 
-# woot, there is no native tail in python ???
+# pythonic implementation of
+# tail -<n_lines> <path>
 def tail(path, n_lines):
-    line_str = '-%i' % n_lines
-    return check_output(['tail', line_str, path]).decode().split('\n')[:-1]
+    out = []
+    with open(path, "r") as f:
+        for i, line in enumerate(reversed(list(f)), 1):
+            out.append(line.rstrip())
+            if i == n_lines:
+                break
+    return out[::-1]
