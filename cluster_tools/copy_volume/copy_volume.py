@@ -341,7 +341,11 @@ def copy_volume(job_id, config_path):
         if job_id == 0 and hasattr(ds_in, "attrs") and hasattr(ds_out, "attrs"):
             attrs_in = ds_in.attrs
             for k, v in attrs_in.items():
-                ds_out.attrs[k] = v
+                try:
+                    ds_out.attrs[k] = v
+                # skup type errors for objects that can't be json encoded
+                except TypeError:
+                    pass
 
     # log success
     fu.log_job_success(job_id)
