@@ -115,7 +115,8 @@ def write_source(source, output_file,
                  scale_factors, chunks,
                  metadata_format, downscaling_mode):
     sampler = get_downsampler(downscaling_mode)
-    with vu.file_reader(output_file, "a") as f:
+    kwargs = {"dimension_separator": "/"} if metadata_format == "ome.zarr" else {}
+    with vu.file_reader(output_file, "a", **kwargs) as f:
         key = vu.get_format_key(metadata_format, scale=0)
         f.require_dataset(key, data=source, compression="gzip", chunks=tuple(chunks),
                           shape=source.shape, dtype=source.dtype)
