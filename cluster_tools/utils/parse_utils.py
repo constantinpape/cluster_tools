@@ -82,7 +82,7 @@ def parse_job(log_file, job_id):
     # if the file does not exist, this throws a `CalledProcessError`
     # if it does exist, but is empty, it throws a `IndexError`
     # in both cases, the job was unsuccessfull and we return False
-    except (IndexError, CalledProcessError):
+    except (IndexError, CalledProcessError, UnicodeDecodeError):
         return False
 
     # get rid of the datetime prefix and check

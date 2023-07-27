@@ -1,11 +1,12 @@
 #! /usr/bin/python
 
+# IMPORTANT do threadctl import first (before numpy imports)
+from threadpoolctl import threadpool_limits
+
 import os
 import sys
 import json
 
-from elf.util import set_numpy_threads
-set_numpy_threads(1)
 import numpy as np
 
 import luigi
@@ -137,6 +138,7 @@ def relabel_sequential(data, unique_values):
     return nt.takeDict(relabeling, data)
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _block_features(block_id, blocking,
                     ds_in, ds_labels, ds_out,
                     ignore_label, channel,

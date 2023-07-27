@@ -1,13 +1,12 @@
 #! /bin/python
 
+# IMPORTANT do threadctl import first (before numpy imports)
+from threadpoolctl import threadpool_limits
+
 import os
 import sys
 import json
 
-# this is a task called by multiple processes,
-# so we need to restrict the number of threads used by numpy
-from elf.util import set_numpy_threads
-set_numpy_threads(1)
 import numpy as np
 
 import luigi
@@ -136,6 +135,7 @@ class ScaleToBoundariesLSF(ScaleToBoundariesBase, LSFTask):
 #
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def compute_halo(erode_by, erode_3d):
     if isinstance(erode_by, int):
         halo = erode_by
@@ -146,6 +146,7 @@ def compute_halo(erode_by, erode_3d):
     return halo
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _scale_block(block_id, blocking,
                  ds_in, ds_bd, ds_out,
                  offset, erode_by, erode_3d, channel):

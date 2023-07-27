@@ -1,5 +1,8 @@
 #! /bin/python
 
+# IMPORTANT do threadctl import first (before numpy imports)
+from threadpoolctl import threadpool_limits
+
 import os
 import sys
 import json
@@ -12,10 +15,6 @@ import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
-# this is a task called by multiple processes,
-# so we need to restrict the number of threads used by numpy
-from elf.util import set_numpy_threads
-set_numpy_threads(1)
 import numpy as np
 from elf.label_multiset import (deserialize_multiset, serialize_multiset,
                                 downsample_multiset, merge_multisets,
@@ -126,6 +125,7 @@ class DownscaleMultisetLSF(DownscaleMultisetBase, LSFTask):
 #
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def background_multiset(shape, effective_pixel_size):
     size = np.prod(list(shape))
     amax = np.zeros(size, dtype='uint64')
@@ -135,6 +135,7 @@ def background_multiset(shape, effective_pixel_size):
     return LabelMultiset(amax, offsets, ids, counts, shape)
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def normalize_chunks(chunk_ids):
     # find the leftmost chunk
     chunks = np.array(chunk_ids)
@@ -146,6 +147,7 @@ def normalize_chunks(chunk_ids):
     return chunk_ids
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _downscale_multiset_block(blocking, block_id, ds_in, ds_out,
                               blocking_prev, scale_factor, restrict_set,
                               effective_pixel_size):
@@ -191,6 +193,7 @@ def _downscale_multiset_block(blocking, block_id, ds_in, ds_out,
     fu.log_block_success(block_id)
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def write_metadata(ds_out, restrict_set, scale_factor):
     attrs = ds_out.attrs
     attrs['isLabelMultiset'] = True

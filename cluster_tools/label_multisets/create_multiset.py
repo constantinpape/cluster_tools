@@ -1,5 +1,8 @@
 #! /bin/python
 
+# IMPORTANT do threadctl import first (before numpy imports)
+from threadpoolctl import threadpool_limits
+
 import os
 import sys
 import json
@@ -11,10 +14,6 @@ import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
 from cluster_tools.cluster_tasks import SlurmTask, LocalTask, LSFTask
 
-# this is a task called by multiple processes,
-# so we need to restrict the number of threads used by numpy
-from elf.util import set_numpy_threads
-set_numpy_threads(1)
 from elf.io.label_multiset_wrapper import LabelMultisetWrapper
 from elf.label_multiset import create_multiset_from_labels, serialize_multiset
 
@@ -105,6 +104,7 @@ class CreateMultisetLSF(CreateMultisetBase, LSFTask):
 #
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _create_multiset_block(blocking, block_id, ds_in, ds_out):
     fu.log("start processing block %i" % block_id)
     block = blocking.getBlock(block_id)
@@ -138,6 +138,7 @@ def write_metadata(ds_out, max_id):
     attrs['isLabelMultiset'] = True
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def create_multiset(job_id, config_path):
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
