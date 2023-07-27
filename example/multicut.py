@@ -2,6 +2,7 @@
 
 import os
 import json
+import sys
 import luigi
 
 from cluster_tools import MulticutSegmentationWorkflow
@@ -60,7 +61,8 @@ def run_mc(input_path, tmp_folder, max_jobs,
     # global workflow config
     # python interpreter of conda environment with dependencies, see
     # https://github.com/constantinpape/cluster_tools/blob/master/environment.yml
-    shebang = "#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python"
+    # shebang = "#! /g/kreshuk/pape/Work/software/conda/miniconda3/envs/cluster_env37/bin/python"
+    shebang = f"#! {sys.executable}"
 
     # block shape used for parallelization
     block_shape = [30, 256, 256]
@@ -115,7 +117,8 @@ def run_mc(input_path, tmp_folder, max_jobs,
 
 
 if __name__ == '__main__':
-    path = '/g/kreshuk/data/cremi/example/sampleA.n5'
+    # path = '/g/kreshuk/data/cremi/example/sampleA.n5'
+    path = "./sampleA.n5"
     tmp_folder = './tmp_mc'
 
     target = 'local'
