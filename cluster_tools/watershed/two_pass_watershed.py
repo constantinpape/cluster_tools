@@ -1,13 +1,12 @@
 #! /bin/python
 
+# IMPORTANT do threadctl import first (before numpy imports)
+from threadpoolctl import threadpool_limits
+
 import os
 import sys
 import json
 
-# this is a task called by multiple processes,
-# so we need to restrict the number of threads used by numpy
-from elf.util import set_numpy_threads
-set_numpy_threads(1)
 import numpy as np
 
 import luigi
@@ -125,6 +124,7 @@ class TwoPassWatershedLSF(TwoPassWatershedBase, LSFTask):
 #
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _apply_watershed_with_seeds(input_, dt, initial_seeds, config, mask, offset):
     apply_2d = config.get('apply_ws_2d', True)
     size_filter = config.get('size_filter', 25)
@@ -213,6 +213,7 @@ def _apply_watershed_with_seeds(input_, dt, initial_seeds, config, mask, offset)
         return ws
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _ws_pass2(blocking, block_id, ds_in, ds_out, mask, config):
     fu.log("start processing block %i" % block_id)
 

@@ -1,15 +1,14 @@
 #! /bin/python
 
+# IMPORTANT do threadctl import first (before numpy imports)
+from threadpoolctl import threadpool_limits
+
 import os
 import sys
 import json
 from functools import partial
 from concurrent import futures
 
-# this is a task called by multiple processes,
-# so we need to restrict the number of threads used by numpy
-from elf.util import set_numpy_threads
-set_numpy_threads(1)
 import numpy as np
 
 import luigi
@@ -219,6 +218,7 @@ class DownscalingLSF(DownscalingBase, LSFTask):
 #
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _ds_vol(x, out_shape, sampler, scale_factor, dtype):
     sample_2d = not isinstance(scale_factor, int)
     out = sampler(x, out_shape, sample_2d)
@@ -229,6 +229,7 @@ def _ds_vol(x, out_shape, sampler, scale_factor, dtype):
     return out.astype(dtype)
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _ds_block(blocking, block_id, ds_in, ds_out, scale_factor, halo, sampler):
     fu.log("start processing block %i" % block_id)
 
@@ -295,6 +296,7 @@ def _ds_block(blocking, block_id, ds_in, ds_out, scale_factor, halo, sampler):
 
 
 # wrap vigra.sampling.resize
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _ds_vigra(inp, output_shape, sample_2d, **vigra_kwargs):
     if sample_2d:
         out = np.zeros(output_shape, dtype="float32")
@@ -306,6 +308,7 @@ def _ds_vigra(inp, output_shape, sample_2d, **vigra_kwargs):
 
 
 # wrap skimage block_reduce
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _ds_skimage(inp, output_shape, sample_2d, block_size, func):
     return block_reduce(inp, block_size=block_size, func=func)
 

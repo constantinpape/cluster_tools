@@ -1,15 +1,14 @@
 #! /bin/python
 
+# IMPORTANT do threadctl import first (before numpy imports)
+from threadpoolctl import threadpool_limits
+
 import os
 import sys
 import json
 import pickle
 from concurrent import futures
 
-# this is a task called by multiple processes,
-# so we need to restrict the number of threads used by numpy
-from elf.util import set_numpy_threads
-set_numpy_threads(1)
 import numpy as np
 from elf.io.label_multiset_wrapper import LabelMultisetWrapper
 
@@ -153,6 +152,7 @@ class WriteLSF(WriteBase, LSFTask):
 #
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _apply_node_labels(seg, node_labels, allow_empty_assignments):
     # choose the appropriate mapping:
     # - 1d np.array -> just apply it
@@ -181,6 +181,7 @@ def _apply_node_labels(seg, node_labels, allow_empty_assignments):
     return seg
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _write_block_with_offsets(ds_in, ds_out, blocking, block_id,
                               node_labels, offsets, allow_empty_assignments):
     fu.log("start processing block %i" % block_id)
@@ -201,6 +202,7 @@ def _write_block_with_offsets(ds_in, ds_out, blocking, block_id,
     fu.log_block_success(block_id)
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _write_with_offsets(ds_in, ds_out, blocking, block_list,
                         n_threads, node_labels, offset_path,
                         allow_empty_assignments):
@@ -219,6 +221,7 @@ def _write_with_offsets(ds_in, ds_out, blocking, block_list,
         [t.result() for t in tasks]
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _write_block(ds_in, ds_out, blocking, block_id, node_labels,
                  allow_empty_assignments):
     fu.log("start processing block %i" % block_id)
@@ -235,6 +238,7 @@ def _write_block(ds_in, ds_out, blocking, block_id, node_labels,
     fu.log_block_success(block_id)
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _write(ds_in, ds_out, blocking, block_list,
            n_threads, node_labels, allow_empty_assignments):
     with futures.ThreadPoolExecutor(n_threads) as tp:
@@ -245,6 +249,7 @@ def _write(ds_in, ds_out, blocking, block_list,
         [t.result() for t in tasks]
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _load_assignments(path, key, n_threads):
     # if we have no key, this is a pickle file
     if key is None:
@@ -277,6 +282,7 @@ def _load_assignments(path, key, n_threads):
     return node_labels
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _write_maxlabel(output_path, output_key, node_labels):
     if isinstance(node_labels, np.ndarray):
         max_id = int(node_labels.max())

@@ -1,5 +1,8 @@
 #! /bin/python
 
+# IMPORTANT do threadctl import first (before numpy imports)
+from threadpoolctl import threadpool_limits
+
 import os
 import sys
 import json
@@ -7,10 +10,6 @@ from functools import partial
 from concurrent import futures
 from math import ceil
 
-# this is a task called by multiple processes,
-# so we need to restrict the number of threads used by numpy
-from elf.util import set_numpy_threads
-set_numpy_threads(1)
 import numpy as np
 
 import luigi
@@ -203,6 +202,7 @@ class UpscalingLSF(UpscalingBase, LSFTask):
 #
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _upsample_block(blocking, block_id, ds_in, ds_out, scale_factor, sampler):
     fu.log("start processing block %i" % block_id)
 

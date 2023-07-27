@@ -3,12 +3,7 @@
 import os
 import sys
 import json
-import pickle
 
-# this is a task called by multiple processes,
-# so we need to restrict the number of threads used by numpy
-from elf.util import set_numpy_threads
-set_numpy_threads(1)
 import numpy as np
 
 import luigi
@@ -180,7 +175,7 @@ def embedding_distances(job_id, config_path):
 
     # TODO support thresholding
     threshold = config['threshold']
-    threshold_mode = config['threshold_mode']
+    # threshold_mode = config['threshold_mode']
     assert threshold is None
 
     with open(path_dict) as f:

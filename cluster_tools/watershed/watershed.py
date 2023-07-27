@@ -1,13 +1,12 @@
 #! /bin/python
 
+# IMPORTANT do threadctl import first (before numpy imports)
+from threadpoolctl import threadpool_limits
+
 import os
 import sys
 import json
 
-# this is a task called by multiple processes,
-# so we need to restrict the number of threads used by numpy
-from elf.util import set_numpy_threads
-set_numpy_threads(1)
 import numpy as np
 
 import luigi
@@ -138,6 +137,7 @@ class WatershedLSF(WatershedBase, LSFTask):
 #
 
 # apply the distance transform to the input
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _apply_dt(input_, config):
     # threshold the input before distance transform
     threshold = config.get('threshold', .5)
@@ -162,6 +162,7 @@ def _apply_dt(input_, config):
     return dt
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _make_hmap(input_, distances, alpha, sigma_weights, apply_filters_2d):
     distances = 1. - vu.normalize(distances)
     hmap = alpha * input_ + (1. - alpha) * distances
@@ -172,6 +173,7 @@ def _make_hmap(input_, distances, alpha, sigma_weights, apply_filters_2d):
     return hmap
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _points_to_vol(points, shape):
     vol = np.zeros(shape, dtype='uint32')
     coords = tuple(points[:, i] for i in range(points.shape[1]))
@@ -179,6 +181,7 @@ def _points_to_vol(points, shape):
     return vigra.analysis.labelMultiArrayWithBackground(vol)
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _make_seeds(dt, config):
     sigma_seeds = config.get('sigma_seeds', 2.)
     apply_nonmax_suppression = config.get('non_maximum_suppression', True)
@@ -212,6 +215,7 @@ def _make_seeds(dt, config):
 
 
 # apply watershed
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _apply_watershed(input_, dt, config, mask=None):
     apply_2d = config.get('apply_ws_2d', True)
     sigma_weights = config.get('sigma_weights', 2.)
@@ -253,6 +257,7 @@ def _apply_watershed(input_, dt, config, mask=None):
     return ws
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _get_bbs(blocking, block_id, config):
     # read the input config
     halo = list(config.get('halo', [0, 0, 0]))
@@ -268,6 +273,7 @@ def _get_bbs(blocking, block_id, config):
     return input_bb, inner_bb, output_bb
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _read_data(ds_in, input_bb, config):
     # read the input data
     if ds_in.ndim == 4:
@@ -286,6 +292,7 @@ def _read_data(ds_in, input_bb, config):
     return input_
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _ws_block(blocking, block_id, ds_in, ds_out, mask, config):
     fu.log("start processing block %i" % block_id)
     input_bb, inner_bb, output_bb = _get_bbs(blocking, block_id,

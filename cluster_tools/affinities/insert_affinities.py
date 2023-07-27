@@ -1,13 +1,12 @@
 #! /usr/bin/python
 
+# IMPORTANT do threadctl import first (before numpy imports)
+from threadpoolctl import threadpool_limits
+
 import os
 import sys
 import json
 
-# this is a task called by multiple processes,
-# so we need to restrict the number of threads used by numpy
-from elf.util import set_numpy_threads
-set_numpy_threads(1)
 import numpy as np
 
 import luigi
@@ -116,6 +115,7 @@ class InsertAffinitiesLSF(InsertAffinitiesBase, LSFTask):
     pass
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def cast(input_, dtype):
     if np.dtype(input_.dtype) == np.dtype(dtype):
         return input_
@@ -124,6 +124,7 @@ def cast(input_, dtype):
     return input_.astype('uint8')
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def dilate(inp, iterations, dilate_2d):
     assert inp.ndim == 3
     if dilate_2d:
@@ -135,6 +136,7 @@ def dilate(inp, iterations, dilate_2d):
         return binary_dilation(inp, iterations=iterations).astype('float32')
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _insert_affinities(affs, objs, offsets, dilate_by):
     dtype = affs.dtype
     # compute affinities to objs and bring them to our aff convention
@@ -157,6 +159,7 @@ def _insert_affinities(affs, objs, offsets, dilate_by):
     return affs
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _insert_affinities_block(block_id, blocking, ds_in, ds_out, objects, offsets,
                              erode_by, erode_3d, zero_objects_list, dilate_by):
     fu.log("start processing block %i" % block_id)

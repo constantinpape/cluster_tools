@@ -1,14 +1,13 @@
 #! /bin/python
 
+# IMPORTANT do threadctl import first (before numpy imports)
+from threadpoolctl import threadpool_limits
+
 import os
 import sys
 import json
 import pickle
 
-# this is a task called by multiple processes,
-# so we need to restrict the number of threads used by numpy
-from elf.util import set_numpy_threads
-set_numpy_threads(1)
 import numpy as np
 
 import luigi
@@ -107,6 +106,7 @@ class ObjectDistancesLSF(ObjectDistancesBase, LSFTask):
 #
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _labels_and_distances(ds, bb, resolution, label_id):
     labels = ds[bb].astype('uint32')
     object_mask = (labels == label_id).astype('uint32')
@@ -114,6 +114,7 @@ def _labels_and_distances(ds, bb, resolution, label_id):
     return labels, distances
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _get_faces():
     faces = [np.s_[0, :, :], np.s_[-1, :, :],
              np.s_[:, 0, :], np.s_[:, -1, :],
@@ -121,6 +122,7 @@ def _get_faces():
     return faces
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _compute_face_distances(distances):
     # I probably have implemented this somewheres else already ...
     face_distances = []
@@ -130,6 +132,7 @@ def _compute_face_distances(distances):
     return face_distances
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _enlarge_bb(bb, face_distances, resolution, shape, max_distance):
     enlarged = []
     face_id = 0
@@ -153,6 +156,7 @@ def _enlarge_bb(bb, face_distances, resolution, shape, max_distance):
     return tuple(enlarged)
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _object_distances(label_id, ds, bb_start, bb_stop,
                       max_distance, resolution):
     bb = tuple(slice(sta, sto) for sta, sto in zip(bb_start[label_id], bb_stop[label_id]))
@@ -179,6 +183,7 @@ def _object_distances(label_id, ds, bb_start, bb_stop,
     return dist_dict
 
 
+@threadpool_limits.wrap(limits=1)  # restrict the numpy threadpool to 1 to avoid oversubscription
 def _distances_id_chunks(blocking, block_id, ds_in,
                          bb_start, bb_stop, max_distance, resolution,
                          sizes, max_size):
