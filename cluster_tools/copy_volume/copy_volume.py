@@ -83,6 +83,16 @@ class CopyVolumeBase(luigi.Task):
         with vu.file_reader(self.input_path, "r") as f:
             ds = f[self.input_key]
             shape = ds.shape
+
+            if type(self.input_key) is int:
+            # if the key is an integer, we assume relevant image stack dimension is 0 (like channel for multi-channel tifs).
+                self.input_key = (self.input_key, 0)
+
+            if type(self.input_key) in [tuple, list]:
+                newshape = list(shape)
+                _unused_ = newshape.pop(self.input_key[1])
+                shape = tuple(newshape)
+
             ds_chunks = ds.chunks
 
             # if this is a label multi-set, the dtypes needs to be changed
@@ -116,7 +126,7 @@ class CopyVolumeBase(luigi.Task):
                 out_shape = shape
         else:
             out_shape = shape
-
+    # I think this is obsolete by now...
         if task_config.get("reduce_channels", None) is not None and len(out_shape) == 4:
             out_shape = out_shape[1:]
 
@@ -327,12 +337,23 @@ def copy_volume(job_id, config_path):
             ds_in = LabelMultisetWrapper(ds_in)
         ds_out = f_out[output_key]
 
+        if type(input_key) is int:
+            # if the key is an integer, we assume relevant image stack dimension is 0 (like channel for multi-channel tifs).
+            input_key = (input_key, 0)
+
+        if type(input_key) in [tuple, list]:
+            ds_in = np.take(ds_in, input_key[0], axis=input_key[1])
+
         ndim = ds_in.ndim
+
         shape = list(ds_in.shape)
+
         if len(shape) == 4:
             ndim = 3
             shape = shape[1:]
+
         blocking = nt.blocking([0] * ndim, shape, block_shape)
+
         _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin,
                      reduce_function, n_threads, map_uniform_blocks_to_background,
                      value_list, offset, insert_mode, int_to_uint)
