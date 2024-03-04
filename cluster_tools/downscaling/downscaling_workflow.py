@@ -75,7 +75,19 @@ class DownscalingWorkflow(WorkflowBase):
         return halos
 
     @staticmethod
-    def validate_resolution(metadata_dict):
+    def validate_resolution(metadata_dict, ndim=3):
+        resolution = metadata_dict["resolution"]
+        assert isinstance(resolution, (list, tuple))
+        resolution = list(resolution)
+        assert len(resolution) == ndim
+
+        for idx, pxs in enumerate(resolution):
+            assert isinstance(pxs, (str, int, float))
+            resolution[idx] = float(pxs)
+            assert resolution[idx] > 0
+
+        metadata_dict["resolution"] = resolution
+
         return metadata_dict
 
     def _is_h5(self):
@@ -169,6 +181,7 @@ class DownscalingWorkflow(WorkflowBase):
         self.validate_scale_factors(self.scale_factors, self.metadata_format)
         ndim = len(self.scale_factors[0])
         halos = self.validate_halos(self.halos, len(self.scale_factors), ndim)
+        self.metadata_dict = self.validate_resolution(self.metadata_dict, ndim)
         self.validate_format()
 
         out_path = self.input_path if self.output_path == "" else self.output_path

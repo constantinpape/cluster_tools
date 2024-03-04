@@ -188,7 +188,22 @@ class TestDownscaling(BaseTest):
         self.check_result_bdv_n5(shape, scales, int_to_uint=True)
 
     def test_resolution_metadata(self):
-        pass
+        # metadata_dict = {"resolution": resolution, "unit": unit, "setup_name": source_name}
+
+        for wrong_res in [1, [], [1,2], ('4'), [1,2,-3], [0,1,2], ('1', '2.0', 'non_numeric_string')]:
+            wrong_metadata = {"resolution": wrong_res, "unit": "lightyears", "setup_name": "image1"}
+            with self.assertRaises(AssertionError):
+                __ = self._downscale(metadata_format="ome.zarr", metadata_dict=wrong_metadata)
+
+        res2 =(1, 2.0, '3.1415')
+        good_metadata = {"resolution": res2, "unit": "lightyears", "setup_name": "image1"}
+
+        scales = self._downscale(metadata_format="ome.zarr", metadata_dict=good_metadata)
+        shape = z5py.File(self.input_path)[self.input_key].shape
+        scales = [[1, 1, 1]] + scales
+        self.check_result_ome_zarr(shape, scales)
+
+#         TODO: check metadata
 
 
 
