@@ -74,6 +74,10 @@ class DownscalingWorkflow(WorkflowBase):
         assert all(len(halo) == ndim for halo in halos if halo)
         return halos
 
+    @staticmethod
+    def validate_resolution(metadata_dict):
+        return metadata_dict
+
     def _is_h5(self):
         h5_exts = (".h5", ".hdf5", ".hdf")
         out_path = self.input_path if self.output_path == "" else self.output_path

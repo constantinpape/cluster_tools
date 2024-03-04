@@ -118,7 +118,7 @@ class TestDownscaling(BaseTest):
             data = ds[:]
             self.assertFalse(np.allclose(data, 0))
 
-    def _downscale(self, metadata_format, int_to_uint=False):
+    def _downscale(self, metadata_format, metadata_dict={}, int_to_uint=False):
         from cluster_tools.downscaling import DownscalingWorkflow
         task = DownscalingWorkflow
 
@@ -150,6 +150,7 @@ class TestDownscaling(BaseTest):
                  config_dir=self.config_folder, tmp_folder=self.tmp_folder,
                  target=self.target, max_jobs=max_jobs,
                  metadata_format=metadata_format,
+                 metadata_dict=metadata_dict,
                  int_to_uint=int_to_uint)
 
         ret = luigi.build([t], local_scheduler=True)
@@ -185,6 +186,10 @@ class TestDownscaling(BaseTest):
         shape = z5py.File(self.input_path)[self.input_key].shape
         scales = [[1, 1, 1]] + scales
         self.check_result_bdv_n5(shape, scales, int_to_uint=True)
+
+    def test_resolution_metadata(self):
+        pass
+
 
 
 if __name__ == "__main__":

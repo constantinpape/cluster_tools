@@ -351,7 +351,7 @@ def downscaling(job_id, config_path):
     with open(config_path, "r") as f:
         config = json.load(f)
 
-    # read the input cofig
+    # read the input config
     input_path = config["input_path"]
     input_key = config["input_key"]
 
