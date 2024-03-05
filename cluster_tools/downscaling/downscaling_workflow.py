@@ -76,6 +76,9 @@ class DownscalingWorkflow(WorkflowBase):
 
     @staticmethod
     def validate_resolution(metadata_dict, ndim=3):
+        if "resolution" not in metadata_dict.keys():
+            return metadata_dict
+
         resolution = metadata_dict["resolution"]
         assert isinstance(resolution, (list, tuple))
         resolution = list(resolution)
