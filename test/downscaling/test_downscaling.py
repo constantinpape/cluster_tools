@@ -108,6 +108,7 @@ class TestDownscaling(BaseTest):
         multiscales = multiscales[0]
         datasets = multiscales["datasets"]
         expected_shape = shape
+        effective_scale = np.array([1] * len(expected_shape))
         for level, scale in enumerate(scales):
             key = datasets[level]["path"]
             ds = f[key]
@@ -117,8 +118,25 @@ class TestDownscaling(BaseTest):
             data = ds[:]
             self.assertFalse(np.allclose(data, 0))
 
+            if metadata is not None:
+                tf = datasets[level]["coordinateTransformations"]
+                tf_keys = []
+                effective_scale *= np.array(scale)
+                for trafo in tf:
+                    tf_keys.extend(list(trafo.keys()))
+                    if "scale" in trafo.keys():
+                        scale_tf = trafo
+
+                self.assertTrue("scale" in tf_keys)
+                for idx, pxs in enumerate(scale_tf['scale']):
+                    self.assertEqual(pxs, float(metadata['resolution'][idx]) * effective_scale[idx])
+
         if metadata is not None:
-            pass
+            for axis in multiscales["axes"]:
+                if axis["type"] == "space":
+                    self.assertEqual(axis["unit"], metadata["unit"])
+
+
 
     def _downscale(self, metadata_format, metadata_dict={}, int_to_uint=False):
         from cluster_tools.downscaling import DownscalingWorkflow
@@ -204,7 +222,6 @@ class TestDownscaling(BaseTest):
         shape = z5py.File(self.input_path)[self.input_key].shape
         scales = [[1, 1, 1]] + scales
         self.check_result_ome_zarr(shape, scales, metadata=good_metadata)
-
 
 if __name__ == "__main__":
     unittest.main()
