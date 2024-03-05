@@ -86,9 +86,10 @@ class DownscalingWorkflow(WorkflowBase):
             resolution[idx] = float(pxs)
             assert resolution[idx] > 0
 
-        metadata_dict["resolution"] = resolution
-
-        return metadata_dict
+        tmp_dict = dict(metadata_dict)
+        tmp_dict["resolution"] = resolution
+        out_dict = luigi.freezing.recursively_freeze(tmp_dict)
+        return out_dict
 
     def _is_h5(self):
         h5_exts = (".h5", ".hdf5", ".hdf")
