@@ -74,6 +74,26 @@ class DownscalingWorkflow(WorkflowBase):
         assert all(len(halo) == ndim for halo in halos if halo)
         return halos
 
+    @staticmethod
+    def validate_resolution(metadata_dict, ndim=3):
+        if "resolution" not in metadata_dict.keys():
+            return metadata_dict
+
+        resolution = metadata_dict["resolution"]
+        assert isinstance(resolution, (list, tuple))
+        resolution = list(resolution)
+        assert len(resolution) == ndim
+
+        for idx, pxs in enumerate(resolution):
+            assert isinstance(pxs, (str, int, float))
+            resolution[idx] = float(pxs)
+            assert resolution[idx] > 0
+
+        tmp_dict = dict(metadata_dict)
+        tmp_dict["resolution"] = resolution
+        out_dict = luigi.freezing.recursively_freeze(tmp_dict)
+        return out_dict
+
     def _is_h5(self):
         h5_exts = (".h5", ".hdf5", ".hdf")
         out_path = self.input_path if self.output_path == "" else self.output_path
@@ -165,6 +185,7 @@ class DownscalingWorkflow(WorkflowBase):
         self.validate_scale_factors(self.scale_factors, self.metadata_format)
         ndim = len(self.scale_factors[0])
         halos = self.validate_halos(self.halos, len(self.scale_factors), ndim)
+        self.metadata_dict = self.validate_resolution(self.metadata_dict, ndim)
         self.validate_format()
 
         out_path = self.input_path if self.output_path == "" else self.output_path
