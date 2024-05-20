@@ -5,6 +5,7 @@ from itertools import product
 import elf.io
 import numpy as np
 import vigra
+import z5py
 
 from elf.wrapper.resized_volume import ResizedVolume
 from scipy.ndimage.morphology import binary_erosion
@@ -31,6 +32,9 @@ AXES_TYPE_DICT = {
 
 
 def file_reader(path, mode="a", **kwargs):
+    # Make sure to use z5py for zarr files to avoid errors due to changes in the zarr interface.
+    if path.endswith(".zarr"):
+        return z5py.File(path, mode=mode, **kwargs)
     return elf.io.open_file(path, mode=mode, **kwargs)
 
 
@@ -48,7 +52,7 @@ def blocks_in_volume(shape, block_shape,
     have_roi = roi_begin is not None
     have_path = block_list_path is not None
     if have_path:
-        assert os.path.exists(block_list_path),\
+        assert os.path.exists(block_list_path), \
             "Was given block_list_path %s that doesn't exist" % block_list_path
 
     blocking_ = blocking([0] * len(shape), list(shape), list(block_shape))
@@ -209,7 +213,7 @@ def get_face(blocking, block_id, ngb_id, axis, halo=[1, 1, 1]):
     # validate exhaustively, because a lot of errors may happen here ...
     # validate the non-overlapping axes
     assert all(beg_a == beg_b for dim, beg_a, beg_b
-               in zip(range(ndim), block_a.begin, block_b.begin) if dim != axis),\
+               in zip(range(ndim), block_a.begin, block_b.begin) if dim != axis), \
         "begin_a: %s, begin_b: %s, axis: %i" % (str(block_a.begin), str(block_b.begin), axis)
     assert all(end_a == end_b for dim, end_a, end_b
                in zip(range(ndim), block_a.end, block_b.end) if dim != axis)
