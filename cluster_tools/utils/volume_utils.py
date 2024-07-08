@@ -8,7 +8,7 @@ import vigra
 import z5py
 
 from elf.wrapper.resized_volume import ResizedVolume
-from scipy.ndimage.morphology import binary_erosion
+from scipy.ndimage import binary_erosion
 from nifty.tools import blocking
 from pybdv.metadata import (write_h5_metadata,
                             write_n5_metadata,
