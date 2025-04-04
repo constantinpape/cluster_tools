@@ -54,6 +54,7 @@ class DownscalingWorkflow(WorkflowBase):
     force_copy = luigi.BoolParameter(default=False)
     skip_existing_levels = luigi.BoolParameter(default=False)
     scale_offset = luigi.IntParameter(default=0)
+    use_memmap = luigi.BoolParameter(default=False)
 
     formats = vu.get_formats()
 
@@ -110,10 +111,10 @@ class DownscalingWorkflow(WorkflowBase):
         return os.path.splitext(out_path)[1].lower() in zarr_exts
 
     def validate_format(self):
-        assert self.metadata_format in self.formats,\
+        assert self.metadata_format in self.formats, \
                 "Invalid format: %s not in %s" % (self.metadata_format, str(self.formats))
         if self.metadata_format == "paintera":
-            assert self.output_key_prefix != "",\
+            assert self.output_key_prefix != "", \
                 "Need output_key_prefix for paintera data format"
             assert self._is_n5(), "paintera format only supports n5 output"
         # for now, we only support a single "setup" and a single
@@ -159,7 +160,8 @@ class DownscalingWorkflow(WorkflowBase):
                    input_path=self.input_path, input_key=self.input_key,
                    output_path=out_path, output_key=out_key,
                    int_to_uint=int_to_uint, dtype=dtype,
-                   prefix=prefix, dependency=dep, dimension_separator=dimension_separator)
+                   prefix=prefix, dependency=dep, dimension_separator=dimension_separator,
+                   use_memmap=self.use_memmap)
         return dep
 
     def require_initial_scale(self, out_path, out_key, dep, dtype, int_to_uint):

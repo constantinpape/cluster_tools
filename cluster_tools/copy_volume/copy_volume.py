@@ -9,6 +9,7 @@ from concurrent import futures
 import numpy as np
 import luigi
 import nifty.tools as nt
+import tifffile
 from elf.io.label_multiset_wrapper import LabelMultisetWrapper
 
 import cluster_tools.utils.volume_utils as vu
@@ -54,6 +55,7 @@ class CopyVolumeBase(luigi.Task):
     effective_scale_factor = luigi.ListParameter(default=[])
     dimension_separator = luigi.Parameter(default=None)
     dependency = luigi.TaskParameter(default=DummyTask())
+    use_memmap = luigi.BoolParameter(default=False)
 
     @staticmethod
     def default_task_config():
@@ -72,23 +74,30 @@ class CopyVolumeBase(luigi.Task):
         # TODO remove any output of failed blocks because it might be corrupted
 
     def run_impl(self):
-        assert not (self.int_to_uint and self.dtype is not None),\
+        assert not (self.int_to_uint and self.dtype is not None), \
             "Setting int_to_uint and passing dtype is not supported."
 
         # get the global config and init configs
         shebang, block_shape, roi_begin, roi_end = self.global_config_values()
         self.init(shebang)
 
-        # get shape, dtype and make block config
-        with vu.file_reader(self.input_path, "r") as f:
-            ds = f[self.input_key]
+        # Get shape, dtype and make block config
+        if self.use_memmap:
+            ds = tifffile.memmap(self.input_path)
             shape = ds.shape
-            ds_chunks = ds.chunks
+            ds_chunks = block_shape
+            is_label_multiset = False
+            ds_dtype = ds.dtype
+        else:
+            with vu.file_reader(self.input_path, "r") as f:
+                ds = f[self.input_key]
+                shape = ds.shape
+                ds_chunks = ds.chunks
 
-            # if this is a label multi-set, the dtypes needs to be changed
-            # to be uint64
-            is_label_multiset = ds.attrs.get("isLabelMultiset", False)
-            ds_dtype = "uint64" if is_label_multiset else ds.dtype
+                # if this is a label multi-set, the dtypes needs to be changed
+                # to be uint64
+                is_label_multiset = ds.attrs.get("isLabelMultiset", False)
+                ds_dtype = "uint64" if is_label_multiset else ds.dtype
 
         # load the config
         task_config = self.get_task_config()
@@ -138,14 +147,14 @@ class CopyVolumeBase(luigi.Task):
         file_kwargs = {} if self.dimension_separator is None else dict(dimension_separator=self.dimension_separator)
         with vu.file_reader(self.output_path, mode="a", **file_kwargs) as f:
             chunks = tuple(min(ch, sh) for ch, sh in zip(chunks, out_shape))
-            f.require_dataset(self.output_key, shape=out_shape, chunks=chunks,
-                              compression=compression, dtype=dtype)
+            f.require_dataset(self.output_key, shape=out_shape, chunks=chunks, compression=compression, dtype=dtype)
 
         # update the config with input and output paths and keys
         # as well as block shape
         task_config.update({"input_path": self.input_path, "input_key": self.input_key,
                             "output_path": self.output_path, "output_key": self.output_key,
-                            "block_shape": block_shape, "dtype": dtype, "int_to_uint": self.int_to_uint})
+                            "block_shape": block_shape, "dtype": dtype, "int_to_uint": self.int_to_uint,
+                            "use_memmap": self.use_memmap})
 
         if len(shape) == 4:
             shape = shape[1:]
@@ -282,6 +291,14 @@ def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin, reduce_function
         [_copy_block(block_id) for block_id in block_list]
 
 
+def _file_wrapper(input_path, use_memmap):
+    # TODO create a fake context manager (to support the with statement) and wrap the memmap call in it
+    if use_memmap:
+        pass
+    else:
+        return vu.file_reader(input_path, mode="r")
+
+
 def copy_volume(job_id, config_path):
     fu.log("start processing job %i" % job_id)
     fu.log("reading config from %s" % config_path)
@@ -316,15 +333,19 @@ def copy_volume(job_id, config_path):
     # check if we are in insert mode
     insert_mode = config.get("insert_mode", False)
     int_to_uint = config.get("int_to_uint", False)
+    use_memmap = config.get("use_memmap", False)
 
     map_uniform_blocks_to_background = config.get("map_uniform_blocks_to_background", False)
     n_threads = config.get("threads_per_job", 1)
 
     # submit blocks
-    with vu.file_reader(input_path, mode="r") as f_in, vu.file_reader(output_path, mode="a") as f_out:
-        ds_in = f_in[input_key]
-        if ds_in.attrs.get("isLabelMultiset", False):
-            ds_in = LabelMultisetWrapper(ds_in)
+    with _file_wrapper(input_path, use_memmap) as f_in, vu.file_reader(output_path, mode="a") as f_out:
+        if use_memmap:
+            ds_in = f_in
+        else:
+            ds_in = f_in[input_key]
+            if ds_in.attrs.get("isLabelMultiset", False):
+                ds_in = LabelMultisetWrapper(ds_in)
         ds_out = f_out[output_key]
 
         ndim = ds_in.ndim
