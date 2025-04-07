@@ -291,10 +291,20 @@ def _copy_blocks(ds_in, ds_out, blocking, block_list, roi_begin, reduce_function
         [_copy_block(block_id) for block_id in block_list]
 
 
-def _file_wrapper(input_path, use_memmap):
-    # TODO create a fake context manager (to support the with statement) and wrap the memmap call in it
-    if use_memmap:
+class _TiffFileWrapper:
+    def __init__(self, path):
+        self.path = path
+
+    def __enter__(self):
+        return tifffile.memmap(self.path)
+
+    def __exit__(self, exc_type, exc_value, traceback):
         pass
+
+
+def _file_wrapper(input_path, use_memmap):
+    if use_memmap:
+        return _TiffFileWrapper(input_path)
     else:
         return vu.file_reader(input_path, mode="r")
 
