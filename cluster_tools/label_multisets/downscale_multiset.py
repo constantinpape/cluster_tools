@@ -9,6 +9,7 @@ import json
 
 import luigi
 import nifty.tools as nt
+import z5py
 from elf.util import chunks_overlapping_roi, downscale_shape
 
 import cluster_tools.utils.volume_utils as vu
@@ -239,7 +240,8 @@ def downscale_multiset(job_id, config_path):
     effective_pixel_size = int(np.prod(effective_scale_factor) / np.prod(scale_factor))
 
     # submit blocks
-    with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
+    # NOTE: we have to explicitly use z5py here, zarr doesn't work here.
+    with z5py.File(input_path, 'r') as f_in, z5py.File(output_path, 'a') as f_out:
         ds_in = f_in[input_key]
         ds_out = f_out[output_key]
 

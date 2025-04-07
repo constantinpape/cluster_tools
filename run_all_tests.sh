@@ -87,11 +87,11 @@ then
     exit 1
 fi
 
-# python test/label_multisets/test_label_multisets.py
-# if [[ $? != 0 ]]
-# then
-#     exit 1
-# fi
+python test/label_multisets/test_label_multisets.py
+if [[ $? != 0 ]]
+then
+    exit 1
+fi
 
 python test/lifted_features/lifted_features.py
 if [[ $? != 0 ]]
