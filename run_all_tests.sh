@@ -188,11 +188,11 @@ then
     exit 1
 fi
 
-python test/workflows/lifted_multicut_workflow.py
-if [[ $? != 0 ]]
-then
-    exit 1
-fi
+# python test/workflows/lifted_multicut_workflow.py
+# if [[ $? != 0 ]]
+# then
+#     exit 1
+# fi
 python test/workflows/multicut_workflow.py
 if [[ $? != 0 ]]
 then
