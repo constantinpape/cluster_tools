@@ -110,16 +110,16 @@ then
     exit 1
 fi
 
-# python test/mutex_watershed/test_mws.py
-# if [[ $? != 0 ]]
-# then
-#     exit 1
-# fi
-# python test/mutex_watershed/test_mws_with_mask.py
-# if [[ $? != 0 ]]
-# then
-#     exit 1
-# fi
+python test/mutex_watershed/test_mws.py
+if [[ $? != 0 ]]
+then
+    exit 1
+fi
+python test/mutex_watershed/test_mws_with_mask.py
+if [[ $? != 0 ]]
+then
+    exit 1
+fi
 
 python test/node_labels/test_node_labels.py
 if [[ $? != 0 ]]
@@ -185,17 +185,16 @@ then
     exit 1
 fi
 
-# The "ReduceProblem" task hangs for both these tests.
-# python test/workflows/lifted_multicut_workflow.py
-# if [[ $? != 0 ]]
-# then
-#     exit 1
-# fi
-# python test/workflows/multicut_workflow.py
-# if [[ $? != 0 ]]
-# then
-#     exit 1
-# fi
+python test/workflows/lifted_multicut_workflow.py
+if [[ $? != 0 ]]
+then
+    exit 1
+fi
+python test/workflows/multicut_workflow.py
+if [[ $? != 0 ]]
+then
+    exit 1
+fi
 
 python test/write/test_write.py
 if [[ $? != 0 ]]
