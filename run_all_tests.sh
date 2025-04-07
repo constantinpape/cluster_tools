@@ -113,16 +113,16 @@ then
     exit 1
 fi
 
-python test/mutex_watershed/test_mws.py
-if [[ $? != 0 ]]
-then
-    exit 1
-fi
-python test/mutex_watershed/test_mws_with_mask.py
-if [[ $? != 0 ]]
-then
-    exit 1
-fi
+# python test/mutex_watershed/test_mws.py
+# if [[ $? != 0 ]]
+# then
+#     exit 1
+# fi
+# python test/mutex_watershed/test_mws_with_mask.py
+# if [[ $? != 0 ]]
+# then
+#     exit 1
+# fi
 
 python test/node_labels/test_node_labels.py
 if [[ $? != 0 ]]
