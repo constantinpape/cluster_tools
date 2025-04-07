@@ -2,25 +2,22 @@
 # is run in the same python process, as is the case when using unittest discover
 # hence we need to run the tests "by hand" here and exit if any of the tests fails
 
-# This test is failing, likely due to similar issues to the ones that were fixed in
-# https://github.com/constantinpape/elf/commit/7e4380b14d242716df0c80fe94dff5968df19887
-# for some reason these tests also need to be run all separately
-# python test/connected_components/connected_components.py TestConnectedComponents.test_greater
-# if [[ $? != 0 ]]
-# then
-#     exit 1
-# fi
-# python test/connected_components/connected_components.py TestConnectedComponents.test_less
-# if [[ $? != 0 ]]
-# then
-#     exit 1
-# fi
-# python test/connected_components/connected_components.py TestConnectedComponents.test_equal
-# if [[ $? != 0 ]]
-# then
-#     exit 1
-# fi
-
+# For some reason these tests also need to be run all separately
+python test/connected_components/connected_components.py TestConnectedComponents.test_greater
+if [[ $? != 0 ]]
+then
+    exit 1
+fi
+python test/connected_components/connected_components.py TestConnectedComponents.test_less
+if [[ $? != 0 ]]
+then
+    exit 1
+fi
+python test/connected_components/connected_components.py TestConnectedComponents.test_equal
+if [[ $? != 0 ]]
+then
+    exit 1
+fi
 
 # need to run test separately due to some failed cleanup
 python test/downscaling/test_downscaling.py TestDownscaling.test_downscaling_paintera
