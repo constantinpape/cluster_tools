@@ -63,11 +63,12 @@ class DownscaleMultisetBase(luigi.Task):
         # load the downscale_multiset config
         config = self.get_task_config()
 
+        # require output dataset
         compression = config.get('compression', 'gzip')
         out_shape = downscale_shape(shape, self.scale_factor)
-        # require output dataset
+        chunks = tuple(min(bs, sh) for bs, sh in zip(block_shape, out_shape))
         with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, shape=out_shape, chunks=tuple(block_shape),
+            f.require_dataset(self.output_key, shape=out_shape, chunks=chunks,
                               compression=compression, dtype='uint8')
 
         # update the config with input and output paths and keys
