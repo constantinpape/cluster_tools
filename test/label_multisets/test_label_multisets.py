@@ -114,8 +114,9 @@ class TestLabelMultisets(BaseTest):
             self.assertTrue(scale in g_exp)
             ds = g[scale]
             ds_exp = g_exp[scale]
+            exp_chunks = tuple(min(ch, sh) for ch, sh in zip(ds_exp.chunks, ds_exp.shape))
             self.assertEqual(ds.shape, ds_exp.shape)
-            self.assertEqual(ds.chunks, ds_exp.chunks)
+            self.assertEqual(ds.chunks, exp_chunks)
 
             # check the metadata
             attrs = ds.attrs

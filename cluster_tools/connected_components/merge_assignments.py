@@ -114,7 +114,8 @@ def merge_assignments(job_id, config_path):
         have_assignments = False
 
     if have_assignments:
-        ufd = nufd.boost_ufd(labels)
+        n_elements = int(labels.max()) + 1
+        ufd = nufd.ufd(n_elements)
         ufd.merge(assignments)
         label_assignments = ufd.find(labels)
     else:

@@ -150,17 +150,16 @@ def _merge_nodes(problem_path, scale, blocking,
                  initial_node_labeling, n_threads):
     # load the cut edge ids
     n_edges = len(uv_ids)
-    cut_edge_ids = _load_cut_edges(problem_path, scale, blocking,
-                                   block_list, n_threads)
-    assert len(cut_edge_ids) < n_edges, "%i = %i, does not reduce problem" % (len(cut_edge_ids),
-                                                                              n_edges)
+    cut_edge_ids = _load_cut_edges(problem_path, scale, blocking, block_list, n_threads)
+    assert len(cut_edge_ids) < n_edges, "%i = %i, does not reduce problem" % (len(cut_edge_ids), n_edges)
 
     merge_edges = np.ones(n_edges, dtype="bool")
     merge_edges[cut_edge_ids] = False
     fu.log("merging %i / %i edges" % (np.sum(merge_edges), n_edges))
 
     # merge node pairs with ufd
-    ufd = nufd.boost_ufd(nodes)
+    n_nodes = int(nodes.max()) + 1
+    ufd = nufd.ufd(n_nodes)
     ufd.merge(uv_ids[merge_edges])
 
     # get the node results and label them consecutively
