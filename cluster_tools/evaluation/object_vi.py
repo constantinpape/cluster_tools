@@ -22,7 +22,7 @@ class ObjectViBase(luigi.Task):
     """ ObjectVi base class
     """
 
-    task_name = 'object_vi'
+    task_name = "object_vi"
     src_file = os.path.abspath(__file__)
     allow_retry = False
 
@@ -86,13 +86,13 @@ def object_vi(job_id, config_path):
     with open(config_path) as f:
         config = json.load(f)
 
-    input_path = config['input_path']
-    overlap_key = config['overlap_key']
+    input_path = config["input_path"]
+    overlap_key = config["overlap_key"]
 
-    output_path = config['output_path']
-    n_threads = config.get('threads_per_job', 1)
+    output_path = config["output_path"]
+    n_threads = config.get("threads_per_job", 1)
 
-    f = vu.file_reader(input_path, 'r')
+    f = vu.file_reader(input_path, "r")
 
     # load overlaps in parallel and merge them
     n_chunks = f[overlap_key].number_of_chunks
@@ -103,14 +103,14 @@ def object_vi(job_id, config_path):
 
     # annoying json ...
     object_scores = {int(gt_id): score for gt_id, score in object_scores.items()}
-    with open(output_path, 'w') as f:
+    with open(output_path, "w") as f:
         json.dump(object_scores, f)
 
     fu.log_job_success(job_id)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     path = sys.argv[1]
     assert os.path.exists(path), path
-    job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
+    job_id = int(os.path.split(path)[1].split(".")[0].split("_")[-1])
     object_vi(job_id, path)
