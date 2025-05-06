@@ -80,8 +80,7 @@ class MergeEdgeFeaturesBase(luigi.Task):
 
         n_jobs = min(len(edge_block_list), self.max_jobs)
         # prime and run the jobs
-        self.prepare_jobs(n_jobs, edge_block_list, config,
-                          consecutive_blocks=True)
+        self.prepare_jobs(n_jobs, edge_block_list, config, consecutive_blocks=True)
         self.submit_jobs(n_jobs)
 
         # wait till jobs finish and check for job success
