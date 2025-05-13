@@ -33,7 +33,7 @@ AXES_TYPE_DICT = {
 
 def file_reader(path, mode="a", **kwargs):
     # Make sure to use z5py for zarr files to avoid errors due to changes in the zarr interface.
-    if path.endswith(".zarr"):
+    if path.endswith((".zarr", ".n5")):
         return z5py.File(path, mode=mode, **kwargs)
     return elf.io.open_file(path, mode=mode, **kwargs)
 

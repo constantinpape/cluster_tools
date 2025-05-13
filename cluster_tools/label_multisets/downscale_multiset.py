@@ -9,6 +9,7 @@ import json
 
 import luigi
 import nifty.tools as nt
+import z5py
 from elf.util import chunks_overlapping_roi, downscale_shape
 
 import cluster_tools.utils.volume_utils as vu
@@ -62,11 +63,12 @@ class DownscaleMultisetBase(luigi.Task):
         # load the downscale_multiset config
         config = self.get_task_config()
 
+        # require output dataset
         compression = config.get('compression', 'gzip')
         out_shape = downscale_shape(shape, self.scale_factor)
-        # require output dataset
+        chunks = tuple(min(bs, sh) for bs, sh in zip(block_shape, out_shape))
         with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, shape=out_shape, chunks=tuple(block_shape),
+            f.require_dataset(self.output_key, shape=out_shape, chunks=chunks,
                               compression=compression, dtype='uint8')
 
         # update the config with input and output paths and keys
@@ -239,7 +241,8 @@ def downscale_multiset(job_id, config_path):
     effective_pixel_size = int(np.prod(effective_scale_factor) / np.prod(scale_factor))
 
     # submit blocks
-    with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
+    # NOTE: we have to explicitly use z5py here, zarr doesn't work here.
+    with z5py.File(input_path, 'r') as f_in, z5py.File(output_path, 'a') as f_out:
         ds_in = f_in[input_key]
         ds_out = f_out[output_key]
 

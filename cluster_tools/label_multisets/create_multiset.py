@@ -9,6 +9,7 @@ import json
 
 import luigi
 import nifty.tools as nt
+import z5py
 
 import cluster_tools.utils.volume_utils as vu
 import cluster_tools.utils.function_utils as fu
@@ -57,8 +58,9 @@ class CreateMultisetBase(luigi.Task):
         compression = config.get('compression', 'gzip')
         # require output dataset
         with vu.file_reader(self.output_path) as f:
-            f.require_dataset(self.output_key, shape=shape, chunks=tuple(block_shape),
-                              compression=compression, dtype='uint8')
+            f.require_dataset(
+                self.output_key, shape=shape, chunks=tuple(block_shape), compression=compression, dtype='uint8'
+            )
 
         # update the config with input and output paths and keys
         # as well as block shape
@@ -161,7 +163,8 @@ def create_multiset(job_id, config_path):
     blocking = nt.blocking([0, 0, 0], shape, block_shape)
 
     # submit blocks
-    with vu.file_reader(input_path, 'r') as f_in, vu.file_reader(output_path) as f_out:
+    # NOTE: we have to explicitly use z5py for the output file, zarr doesn't work here.
+    with vu.file_reader(input_path, 'r') as f_in, z5py.File(output_path, 'a') as f_out:
         ds_in = f_in[input_key]
         if ds_in.attrs.get('isLabelMultiset', False):
             ds_in = LabelMultisetWrapper(ds_in)

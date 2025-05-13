@@ -24,7 +24,7 @@ class BlockNodeLabelsBase(luigi.Task):
     """ BlockNodeLabels base class
     """
 
-    task_name = 'block_node_labels'
+    task_name = "block_node_labels"
     src_file = os.path.abspath(__file__)
 
     ws_path = luigi.Parameter()
@@ -34,7 +34,7 @@ class BlockNodeLabelsBase(luigi.Task):
     output_path = luigi.Parameter()
     output_key = luigi.Parameter()
     ignore_label = luigi.IntParameter(default=None)
-    prefix = luigi.Parameter(default='')
+    prefix = luigi.Parameter(default="")
     #
     dependency = luigi.TaskParameter()
 
@@ -55,14 +55,14 @@ class BlockNodeLabelsBase(luigi.Task):
 
         # update the config with input and graph paths and keys
         # as well as block shape
-        config.update({'ws_path': self.ws_path, 'ws_key': self.ws_key,
-                       'input_path': self.input_path,
-                       'input_key': self.input_key,
-                       'block_shape': block_shape,
-                       'output_path': self.output_path, 'output_key': self.output_key,
-                       'ignore_label': self.ignore_label})
+        config.update({"ws_path": self.ws_path, "ws_key": self.ws_key,
+                       "input_path": self.input_path,
+                       "input_key": self.input_key,
+                       "block_shape": block_shape,
+                       "output_path": self.output_path, "output_key": self.output_key,
+                       "ignore_label": self.ignore_label})
 
-        with vu.file_reader(self.ws_path, 'r') as f:
+        with vu.file_reader(self.ws_path, "r") as f:
             ds = f[self.ws_key]
             shape = ds.shape
 
@@ -70,7 +70,7 @@ class BlockNodeLabelsBase(luigi.Task):
             attrs = ds.attrs
 
             try:
-                max_id = attrs['maxId']
+                max_id = attrs["maxId"]
             except KeyError:
                 raise KeyError("Dataset %s:%s does not have attribute maxId" % (self.ws_path,
                                                                                 self.ws_key))
@@ -78,12 +78,12 @@ class BlockNodeLabelsBase(luigi.Task):
         # create output dataset
         with vu.file_reader(self.output_path) as f:
             ds_out = f.require_dataset(self.output_key, shape=shape,
-                                       dtype='uint64',
+                                       dtype="uint64",
                                        chunks=chunks,
-                                       compression='gzip')
+                                       compression="gzip")
             # need to serialize the label max-id here for
             # the merge_node_labels task
-            ds_out.attrs['maxId'] = int(max_id)
+            ds_out.attrs["maxId"] = int(max_id)
 
         if self.n_retries == 0:
             block_list = vu.blocks_in_volume(shape, block_shape,
@@ -146,7 +146,7 @@ def _labels_for_block(block_id, blocking,
         return
 
     # serialize the overlaps
-    labs = labels[bb].astype('uint64')
+    labs = labels[bb].astype("uint64")
 
     # check if label block is empty:
     if ignore_label is not None:
@@ -174,33 +174,30 @@ def block_node_labels(job_id, config_path):
     with open(config_path) as f:
         config = json.load(f)
 
-    ws_path = config['ws_path']
-    ws_key = config['ws_key']
-    input_path = config['input_path']
-    input_key = config['input_key']
-    output_path = config['output_path']
-    output_key = config['output_key']
+    ws_path = config["ws_path"]
+    ws_key = config["ws_key"]
+    input_path = config["input_path"]
+    input_key = config["input_key"]
+    output_path = config["output_path"]
+    output_key = config["output_key"]
 
-    block_shape = config['block_shape']
-    block_list = config['block_list']
-    ignore_label = config['ignore_label']
+    block_shape = config["block_shape"]
+    block_list = config["block_list"]
+    ignore_label = config["ignore_label"]
 
-    with vu.file_reader(ws_path, 'r') as f:
+    with vu.file_reader(ws_path, "r") as f:
         shape = f[ws_key].shape
 
-    blocking = nt.blocking([0, 0, 0],
-                           list(shape),
-                           list(block_shape))
+    blocking = nt.blocking([0, 0, 0], list(shape), list(block_shape))
 
     # labels can either be interpolated or full volume
-    f_lab = vu.file_reader(input_path, 'r')
+    f_lab = vu.file_reader(input_path, "r")
     ds_labels = f_lab[input_key]
     lab_shape = ds_labels.shape
     # label shape is smaller than ws shape
     # -> interpolated
     if any(lsh < sh for lsh, sh in zip(lab_shape, shape)):
-        assert not any(lsh > sh for lsh, sh in zip(lab_shape, shape)),\
-            "Can't have label shape bigger then volshape"
+        assert not any(lsh > sh for lsh, sh in zip(lab_shape, shape)), "Can't have label shape bigger then volshape"
         labels = ResizedVolume(ds_labels, shape, order=0)
     else:
         assert lab_shape == shape, "%s, %s" % (str(lab_shape), shape)
@@ -211,21 +208,19 @@ def block_node_labels(job_id, config_path):
     else:
         fu.log("accumulating labels with ignore label %i" % ignore_label)
 
-    with vu.file_reader(ws_path, 'r') as f_in:
+    with vu.file_reader(ws_path, "r") as f_in:
         ds_ws = f_in[ws_key]
-        if ds_ws.attrs.get('isLabelMultiset', False):
+        if ds_ws.attrs.get("isLabelMultiset", False):
             ds_ws = LabelMultisetWrapper(ds_ws)
-        [_labels_for_block(block_id, blocking,
-                           ds_ws, output_path, output_key,
-                           labels, ignore_label)
+        [_labels_for_block(block_id, blocking, ds_ws, output_path, output_key, labels, ignore_label)
          for block_id in block_list]
 
     f_lab.close()
     fu.log_job_success(job_id)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     path = sys.argv[1]
     assert os.path.exists(path), path
-    job_id = int(os.path.split(path)[1].split('.')[0].split('_')[-1])
+    job_id = int(os.path.split(path)[1].split(".")[0].split("_")[-1])
     block_node_labels(job_id, path)

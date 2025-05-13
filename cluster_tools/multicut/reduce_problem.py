@@ -150,21 +150,20 @@ def _merge_nodes(problem_path, scale, blocking,
     n_edges = len(uv_ids)
     cut_edge_ids = _load_cut_edges(problem_path, scale, blocking,
                                    block_list, n_threads)
-    assert len(cut_edge_ids) < n_edges, "%i = %i, does not reduce problem" % (len(cut_edge_ids),
-                                                                              n_edges)
+    assert len(cut_edge_ids) < n_edges, "%i = %i, does not reduce problem" % (len(cut_edge_ids), n_edges)
 
     merge_edges = np.ones(n_edges, dtype='bool')
     merge_edges[cut_edge_ids] = False
     fu.log('merging %i / %i edges' % (np.sum(merge_edges), n_edges))
 
     # merge node pairs with ufd
-    ufd = nufd.boost_ufd(nodes)
+    n_nodes = int(nodes.max()) + 1
+    ufd = nufd.ufd(n_nodes)
     ufd.merge(uv_ids[merge_edges])
 
     # get the node results and label them consecutively
     node_labeling = ufd.find(nodes)
-    node_labeling, max_new_id, _ = relabelConsecutive(node_labeling, start_label=0,
-                                                      keep_zeros=False)
+    node_labeling, max_new_id, _ = relabelConsecutive(node_labeling, start_label=0, keep_zeros=False)
     assert node_labeling[0] == 0
     # FIXME this looks fishy, redo !!!
     # # make sure that zero is still mapped to zero
