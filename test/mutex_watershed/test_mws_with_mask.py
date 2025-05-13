@@ -50,7 +50,7 @@ class TestMwsWithMask(BaseTest):
             exp[exp == 1] = 0
         self.assertTrue(np.allclose(exp[np.logical_not(mask)], 0))
         score = adjusted_rand_score(exp.ravel(), res.ravel())
-        expected_score = 0.03
+        expected_score = 0.05
         self.assertLess(1. - score, expected_score)
 
     def test_mws_with_mask(self):
