@@ -6,6 +6,11 @@ import elf.io
 import numpy as np
 import vigra
 import z5py
+try:
+  import zarr
+  zarr_version = list(map(int, zarr.__version__.split('.')))
+except ImportError:
+  zarr = None
 
 from elf.wrapper.resized_volume import ResizedVolume
 from scipy.ndimage import binary_erosion
@@ -33,7 +38,11 @@ AXES_TYPE_DICT = {
 
 def file_reader(path, mode="a", **kwargs):
     # Make sure to use z5py for zarr files to avoid errors due to changes in the zarr interface.
-    if path.endswith((".zarr", ".n5")):
+    if path.endswith(".zarr"):
+        return z5py.File(path, mode=mode, **kwargs)
+    elif path.endswith(".n5") and zarr is not None and zarr_version[0] < 3:
+        return zarr.open(path, mode=mode)  # If we have zarr < 3 use it for n5 files due to better compression support.
+    elif path.endswith(".n5"):
         return z5py.File(path, mode=mode, **kwargs)
     return elf.io.open_file(path, mode=mode, **kwargs)
 
