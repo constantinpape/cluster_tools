@@ -174,7 +174,7 @@ def _apply_node_labels(seg, node_labels, allow_empty_assignments):
             else:
                 this_assignment = {label: node_labels[label] for label in this_labels}
         else:
-            this_assignment = node_labels[:, 1][np.in1d(node_labels[:, 0], this_labels)]
+            this_assignment = node_labels[:, 1][np.isin(node_labels[:, 0], this_labels)]
             this_assignment = {label: this_assignment[ii] for ii, label in enumerate(this_labels)}
         # FIXME this casts to uint32 which can lead to nasty over-flows
         seg = nt.takeDict(this_assignment, seg)

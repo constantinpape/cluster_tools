@@ -40,7 +40,7 @@ class TestNHWorkflow(BaseTest):
         # filter by nodes which have a node labeling
         node_ids = np.arange(len(node_labels))
         nodes_with_label = node_ids[node_labels != 0]
-        nh_mask = np.in1d(nh, nodes_with_label).reshape(nh.shape)
+        nh_mask = np.isin(nh, nodes_with_label).reshape(nh.shape)
         nh_mask = nh_mask.all(axis=1)
         nh = nh[nh_mask]
         # need to lexsort - awkward in numpy ...

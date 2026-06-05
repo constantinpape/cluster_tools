@@ -118,7 +118,7 @@ def apply_block(block_id, blocking, ds_in, ds_out, discard_ids):
         fu.log_block_success(block_id)
         return
 
-    discard_mask = np.in1d(labels, discard_ids).reshape(labels.shape)
+    discard_mask = np.isin(labels, discard_ids).reshape(labels.shape)
     # check if the discard-mask is empty
     if np.sum(discard_mask) == 0:
         ds_out[bb] = labels

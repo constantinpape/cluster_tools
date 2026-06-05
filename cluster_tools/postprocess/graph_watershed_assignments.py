@@ -163,7 +163,7 @@ def graph_watershed_assignments(job_id, config_path):
     # map zero label to new id
     assignments[assignments == 0] = seed_offset
 
-    discard_mask = np.in1d(assignments, discard_ids)
+    discard_mask = np.isin(assignments, discard_ids)
     assignments[discard_mask] = 0
 
     n_discard = int(discard_mask.sum())
