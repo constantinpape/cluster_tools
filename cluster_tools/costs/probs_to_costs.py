@@ -132,7 +132,7 @@ def _apply_node_labels(costs, uv_ids, mode, labels,
         # isolate mode: set all edges that connect to a node with label to node without label to max repulsive
         fu.log("Node-label mode: isolate")
         # ignore mode: set all edges that connect two node with label to max attractive
-        edges_with_label = np.in1d(uv_ids, with_label).reshape(uv_ids.shape)
+        edges_with_label = np.isin(uv_ids, with_label).reshape(uv_ids.shape)
         label_sum = edges_with_label.sum(axis=1)
         att_edges = label_sum == 2
         rep_edges = label_sum == 1

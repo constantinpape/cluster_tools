@@ -248,7 +248,7 @@ def _mws_block_pass2(block_id, blocking,
             with vu.file_reader(save_path) as f:
                 # first, load the edges and see if they have overlap with our seed ids
                 ngb_edges = f['edges'][:]
-                ngb_edge_mask = np.in1d(ngb_edges, seed_ids).reshape(ngb_edges.shape)
+                ngb_edge_mask = np.isin(ngb_edges, seed_ids).reshape(ngb_edges.shape)
                 ngb_edge_mask = ngb_edge_mask.all(axis=1)
 
                 # if we have edges, load the corresponding weights
@@ -292,7 +292,7 @@ def _mws_block_pass2(block_id, blocking,
 
     # filter the assignments from ids that are not in the crop
     crop_ids = np.unique(seg_crop)
-    filter_mask = np.in1d(assignments[:, 1], crop_ids)
+    filter_mask = np.isin(assignments[:, 1], crop_ids)
     assignments = assignments[filter_mask]
 
     # store assignments to tmp folder

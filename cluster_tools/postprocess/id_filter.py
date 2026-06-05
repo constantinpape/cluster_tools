@@ -98,7 +98,7 @@ def id_filter(job_id, config_path):
         node_labels = f[node_label_key][:]
 
     # find the node ids that overlap with the filter labels
-    filter_mask = np.in1d(node_labels, filter_labels)
+    filter_mask = np.isin(node_labels, filter_labels)
     filter_ids = np.where(filter_mask)[0].tolist()
 
     fu.log("%i ids will be filtered" % len(filter_ids))

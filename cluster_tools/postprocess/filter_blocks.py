@@ -117,7 +117,7 @@ def _filter_block(blocking, block_id,
         return
 
     # check for filter_ids
-    filter_mask = np.in1d(seg, filter_ids).reshape(seg.shape)
+    filter_mask = np.isin(seg, filter_ids).reshape(seg.shape)
     seg[filter_mask] = 0
     ds_out[bb] = seg
     fu.log_block_success(block_id)
@@ -138,7 +138,7 @@ def _filter_block_inplace(blocking, block_id,
         return
 
     # check for filter_ids
-    filter_mask = np.in1d(seg, filter_ids).reshape(seg.shape)
+    filter_mask = np.isin(seg, filter_ids).reshape(seg.shape)
 
     # check if we filter any ids
     if filter_mask.sum() == 0:
